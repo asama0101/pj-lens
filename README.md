@@ -14,27 +14,40 @@
 
 ## クイックスタート
 
-必要なもの: Windows、Node.js（24 で動作確認）、Microsoft Edge（または Chrome）。ローカルサーバー・常駐プロセス・外部パッケージ・データベースは使いません。
+必要なもの: Windows、Claude Code、Node.js（24 で動作確認）、Microsoft Edge（または Chrome）。ローカルサーバー・常駐プロセス・外部パッケージ・データベースは使いません。
 
 **1人で使う前提です。** 複数人が同じ `data.json` を同時に編集する用途は想定していません（保存前に更新日時を比べて上書きを止めますが、ロックや統合はしません）。共有にはレポートを使ってください。
 
-1. サンプルをコピーして、データファイルを作ります（サンプルは架空のデータです）。
+1. Claude Code でプラグインを入れます。
 
    ```
-   copy data\sample.json data\data.json
+   /plugin marketplace add asama0101/pj-lens
+   /plugin install pj-lens
    ```
 
-2. ダッシュボードを作ります。`dist/dashboard.html` が1ファイルでできます（外部通信なし）。
+2. 管理したいプロジェクトのフォルダで Claude Code を開き、セットアップします。
 
    ```
-   node tools/build.js
+   /pj-lens:init
    ```
 
-3. `dist/dashboard.html` を Edge で開き、「ファイルを開く」で `data/data.json` を選びます。以後、画面での変更はこのファイルに直接保存されます。次回からは「ファイルを開く」を押すだけで前回のファイルが開きます（アクセス許可の確認が出ることがあります）。
+   `pj-lens.html`（ダッシュボード）と `.pj-lens/data.json`（データ）ができます。架空のサンプルで試したいときは `/pj-lens:init --sample` です。
 
-4. 自分のデータに切り替えます。プロジェクト画面で、サンプルのプロジェクトを削除し、「＋ プロジェクトを追加」から登録します。サンプルのまま試すときは、日付が 2026 年 10 月前後なので、URL に `?today=2026-10-20` を付けると期限超過だらけになりません。
+3. `pj-lens.html` を Edge で開き、「ファイルを開く」で `.pj-lens/data.json` を選びます。以後、画面での変更はこのファイルに直接保存されます。次回からは「ファイルを開く」を押すだけで前回のファイルが開きます（アクセス許可の確認が出ることがあります）。
 
-`data/data.json` は `.gitignore` 済みなので、git にはコミットされません。
+4. 「＋ プロジェクトを追加」から登録します。サンプルで試したときは、先にサンプルのプロジェクトを削除してください。サンプルの日付は 2026 年 10 月前後なので、URL に `?today=2026-10-20` を付けると期限超過だらけになりません。
+
+### プロジェクトに作られるファイル
+
+| パス | 内容 |
+|---|---|
+| `pj-lens.html` | ダッシュボード（プラグインに同梱の完成版のコピー） |
+| `.pj-lens/data.json` | あなたのデータ |
+| `.pj-lens/report/` | `/pj-lens:report` で出力したレポート（実行したときだけ） |
+| `.gitignore` の `.pj-lens/` の1行 | `.git` があるプロジェクトのときだけ追記します |
+
+- `/pj-lens:init` は何度実行しても安全です。既存の `data.json` は変更せず、`pj-lens.html` はプラグインの更新に合わせて新しい版にします。同名の別ファイル `pj-lens.html` が既にあるときは、何も作らずに止まります。
+- プラグインを削除しても、上のファイルは残ります。不要なら手で消してください。
 
 ## 画面と操作
 
@@ -57,15 +70,17 @@
 
 ## Claude Code 連携
 
-リポジトリの直下で Claude Code を起動して、自然文で頼みます（エージェント名を指定してもかまいません）。エージェントがデータを直したあとは、ダッシュボードの「更新」を押すまで画面に反映されません。押さずに画面を編集すると競合になります。
+Claude Code を開いたフォルダ（`pj-lens.html` があるフォルダ）で、コマンドか自然文で頼みます。エージェントがデータを直したあとは、ダッシュボードの「更新」を押すまで画面に反映されません。押さずに画面を編集すると競合になります。
 
-`.claude/agents/` にサブエージェントが3つあります。いずれも、変更案を示して**承認を得てから**データを書き換え、書き込み後に `node tools/validate.js data/data.json` を実行します。
-
-| 名前 | 使いどころ | 依頼の例 |
+| コマンド | 使いどころ | 例 |
 |---|---|---|
-| `replan` | 外部要因で日程が動いたときの影響範囲の計算と変更案 | 「A3 が 5 日遅れた。影響を見て」 |
-| `daily-planner` | 今日（今週）の会議と空き時間、優先タスクの提案 | 「今日の計画を立てて」 |
-| `intake` | メール・議事録からタスク・日程変更・待ち先を抽出 | 「この議事録からタスクを拾って」＋本文 |
+| `/pj-lens:init` | セットアップ | `/pj-lens:init` |
+| `/pj-lens:replan` | 外部要因で日程が動いたときの影響範囲の計算と変更案 | `/pj-lens:replan A3 が 5 日遅れた` |
+| `/pj-lens:daily-planner` | 今日（今週）の会議と空き時間、優先タスクの提案 | `/pj-lens:daily-planner 今日の計画を立てて` |
+| `/pj-lens:intake` | メール・議事録からタスク・日程変更・待ち先を抽出 | `/pj-lens:intake` ＋本文 |
+| `/pj-lens:report` | 進捗レポート（HTML／PDF）の出力 | `/pj-lens:report` |
+
+`replan`・`daily-planner`・`intake` は同名のサブエージェントです。「A3 が 5 日遅れた。影響を見て」のように普通の言葉で頼んでも動きます。いずれも、変更案を示して**承認を得てから**データを書き換え、書き込み後に検証（`validate`）を実行します。
 
 このリポジトリに MCP は同梱していません（`.mcp.json` はありません）。`daily-planner` は、利用者が Claude Code に用意した予定表の MCP（Outlook、Google カレンダーなど）があれば、それで会議を取得します。なければ、スケジュール画面で会議を手入力してください。
 
@@ -76,13 +91,7 @@
 - **レポート(HTML)**: `report-YYYY-MM-DD.html` を保存します。そのままメールや共有フォルダで渡せます。
 - **レポート(PDF)**: レポートを別のタブで開き、印刷画面を出します。送信先で「PDF として保存」を選びます。ポップアップがブロックされたときは許可してください。
 
-コマンドからも出力できます。`report.html` と `report.pdf` の名前で出力フォルダに作り（毎回上書き）、PDF は Edge で生成します。Edge が見つからないときは HTML だけです。日付を省略すると今日になります。
-
-```
-node tools/report.js data/data.json report [YYYY-MM-DD]
-```
-
-`report/` は `.gitignore` 済みです。
+コマンドからも出力できます。`/pj-lens:report` を実行すると、`.pj-lens/report/` に `report.html` と `report.pdf` ができます（毎回上書き）。PDF は Edge で生成し、Edge が見つからないときは HTML だけです。`/pj-lens:report 2026-10-20` のように日付を付けると、その日時点のレポートになります（省略すると今日）。
 
 内容は、全体一覧、プロジェクト別の詳細、今週の予定です。会議の件名は載せず、時間枠だけです。件名も載せるときは、`data.json` の `settings.reportShowMeetingTitles` を `true` にします。
 
@@ -116,7 +125,7 @@ node tools/report.js data/data.json report [YYYY-MM-DD]
 
 ### データ形式
 
-`data/data.json`（雛形は `data/sample.json`。迷ったらこれが正本です）は、`version`（現在は 1）と次の5つで構成します。`projects`・`tasks`・`events`・`changeLog` は必須の配列で、`settings` は省略できます（既定値が使われます）。日付は `YYYY-MM-DD`、時刻は `HH:MM` の文字列です。
+`.pj-lens/data.json`（雛形は `data/sample.json`。迷ったらこれが正本です）は、`version`（現在は 1）と次の5つで構成します。`projects`・`tasks`・`events`・`changeLog` は必須の配列で、`settings` は省略できます（既定値が使われます）。日付は `YYYY-MM-DD`、時刻は `HH:MM` の文字列です。
 
 | キー | 内容 |
 |---|---|
@@ -128,7 +137,7 @@ node tools/report.js data/data.json report [YYYY-MM-DD]
 
 ### 補助コマンド
 
-主にサブエージェントが使う補助コマンドです。手で実行してもかまいません。
+プラグインとして使うときは、エージェントとコマンドが呼ぶので意識する必要はありません。このリポジトリを直接開いて手で実行する場合の例です（`data/data.json` は `data/sample.json` のコピー）。
 
 ```
 node tools/validate.js data/data.json        # 検証（errors があれば終了コード 1）
@@ -142,13 +151,21 @@ node tools/report.js data/data.json <出力>   # レポート
 
 ```
 npm test        # node --test
-npm run build   # dist/dashboard.html
+npm run build   # assets/pj-lens.html（プラグインに同梱する完成版）
 ```
+
+- ソース（`src/`）を変えたら `npm run build` を実行し、`assets/pj-lens.html` をコミットしてください（古いと `npm test` が失敗します）。
+- このリポジトリを直接開いてプラグインを試すときは、`claude --plugin-dir .` で起動します。
+- プラグインの `version`（`.claude-plugin/plugin.json`）を変えないと、利用者に更新が届きません。公開のたびに `package.json` と一緒に上げます。
 
 | パス | 内容 |
 |---|---|
 | `src/core/` | 判断ロジック（日付、検証、進捗・ガント、作業枠、影響範囲、空き時間・優先順位）。純関数 |
 | `src/ui/` | ダッシュボード（`views/` は HTML 文字列を返す描画、`edit.js` はデータ編集、`store.js` は保存、`app.js` は結線） |
-| `tools/` | ビルド、レポート、サブエージェント用 CLI |
+| `.claude-plugin/` | プラグインとマーケットプレイスの定義 |
+| `skills/` | コマンド（`/pj-lens:init` など） |
+| `agents/` | サブエージェント |
+| `assets/` | 完成版ダッシュボード（`pj-lens.html`） |
+| `tools/` | セットアップ、ビルド、レポート、サブエージェント用 CLI |
 | `tests/` | テスト |
 | `data/sample.json` | 架空のサンプルデータ |
