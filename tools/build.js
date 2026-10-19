@@ -1,4 +1,4 @@
-// 使い方: node tools/build.js [出力先]   （既定: dist/dashboard.html）
+// 使い方: node tools/build.js [出力先]   （既定: assets/pj-lens.html）
 // src の ES モジュールを 1 つの HTML にまとめる。file:// では ES module を読み込めないため、
 // 各モジュールを関数スコープで包み、import を取り除き、export した名前だけを外側へ渡す。
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -63,7 +63,7 @@ export function wrapModule(path, src, known) {
   return `/* ${path} */\n${head}(() => {\n${body}\n${names.length ? `return { ${names.join(", ")} };` : ""}\n})();`;
 }
 
-export function build(out = resolve(ROOT, "dist/dashboard.html")) {
+export function build(out = resolve(ROOT, "assets/pj-lens.html")) {
   const read = (p) => readFileSync(resolve(ROOT, p), "utf8");
   const known = new Set();
   const js = MODULES.map((p) => wrapModule(p, read(p), known)).join("\n\n").replace(/<\/script/gi, "<\\/script");
