@@ -47,7 +47,7 @@ function render() {
   const c = clock();
   $("todaylabel").textContent = `${c.date.replace(/-/g, "/")}(${wdJa(c.date)})`;
   document.querySelectorAll("nav [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.id === "tab-" + S.screen)));
-  $("filebar").innerHTML = S.data ? `<button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
+  $("filebar").innerHTML = S.data ? `<button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="進捗レポートを HTML ファイルとして保存します">レポート(HTML)</button><button class="btn" data-report="pdf" title="進捗レポートを開き、印刷画面から PDF にできます">レポート(PDF)</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
   const prev = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollLeft);
@@ -114,6 +114,25 @@ function downloadJson() {
   a.download = "data.json";
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/** 進捗レポートを作る。html は保存、pdf は別タブで開いて印刷画面を出す(「PDF として保存」を選ぶ) */
+function makeReport(kind) {
+  const day = clock().date;
+  const css = document.querySelector("head style")?.textContent ?? "";
+  let html = buildReport(S.data, day, css);
+  if (kind === "pdf") html = html.replace("</body>", () => "<script>addEventListener('load',function(){setTimeout(print,300)})</script></body>");
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  if (kind === "html") {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `report-${day}.html`;
+    a.click();
+    toast("レポートを保存しました");
+  } else if (!window.open(url, "_blank")) {
+    toast("ポップアップがブロックされました。許可してもう一度押してください");
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 let saveChain = Promise.resolve();
@@ -192,6 +211,8 @@ $("filebar").addEventListener("click", async (e) => {
   }
   if (e.target.closest("[data-openfile]")) openFile(true);
   if (e.target.closest("[data-download]")) downloadJson();
+  const rb = e.target.closest("[data-report]");
+  if (rb) makeReport(rb.dataset.report);
 });
 $("banner").addEventListener("click", async (e) => {
   if (e.target.closest("[data-download]")) downloadJson();

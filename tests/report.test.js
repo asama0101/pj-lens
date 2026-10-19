@@ -47,3 +47,11 @@ test("利用者入力はエスケープされる", () => {
   const html = buildReport(d, TODAY);
   assert.ok(!html.includes("<img src=x") && !html.includes("<script>x"));
 });
+
+test("画面用: views/report.js の buildReport は渡された css を使い、Node の API に依存しない", async () => {
+  const { buildReport: build } = await import("../src/ui/views/report.js");
+  const html = build(load(), TODAY, "/*CSS-MARK*/");
+  assert.ok(html.includes("/*CSS-MARK*/"));
+  assert.ok(html.includes("全体一覧") && html.includes("今週の予定"));
+  assert.equal(html, buildReport(load(), TODAY).replace(/<style>[\s\S]*?<\/style>/, () => html.match(/<style>[\s\S]*?<\/style>/)[0]));
+});

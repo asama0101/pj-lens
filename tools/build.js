@@ -22,6 +22,7 @@ export const MODULES = [
   "src/ui/views/gantt.js",
   "src/ui/views/schedule.js",
   "src/ui/views/project.js",
+  "src/ui/views/report.js",
   "src/ui/app.js",
 ];
 
