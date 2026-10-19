@@ -7,21 +7,24 @@ const read = (p) => readFileSync(new URL(p, root), "utf8");
 
 for (const name of ["replan", "daily-planner", "intake"]) {
   test(`サブエージェント ${name}: frontmatter と共通ルール`, () => {
-    const text = read(`.claude/agents/${name}.md`);
+    const text = read(`agents/${name}.md`);
     const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
     assert.match(fm, new RegExp(`^name: ${name}$`, "m"));
     assert.match(fm, /^description: .+/m);
     assert.match(fm, /^tools: .+/m);
-    assert.ok(text.includes("tools/validate.js"));
+    assert.ok(text.includes("${CLAUDE_PLUGIN_ROOT}/tools/validate.js"));
     assert.ok(text.includes("承認"));
-    assert.ok(text.includes("data/data.json"));
+    assert.ok(text.includes(".pj-lens/data.json"));
+    // リポジトリ直下を前提にしたパスが残っていない
+    assert.doesNotMatch(text, /node "?tools\//);
+    assert.doesNotMatch(text, /(^|[^.\w])data\/data\.json/m);
   });
 }
 
 test("replan は impact、daily-planner は free と rank を使う", () => {
-  assert.ok(read(".claude/agents/replan.md").includes("tools/impact.js"));
-  const d = read(".claude/agents/daily-planner.md");
-  assert.ok(d.includes("tools/free.js") && d.includes("tools/rank.js"));
+  assert.ok(read("agents/replan.md").includes("${CLAUDE_PLUGIN_ROOT}/tools/impact.js"));
+  const d = read("agents/daily-planner.md");
+  assert.ok(d.includes("${CLAUDE_PLUGIN_ROOT}/tools/free.js") && d.includes("${CLAUDE_PLUGIN_ROOT}/tools/rank.js"));
 });
 
 test("MCP を同梱しない（.mcp.json がない）", () => {

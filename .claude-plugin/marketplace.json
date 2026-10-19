@@ -1,0 +1,13 @@
+{
+  "name": "pj-lens",
+  "owner": {
+    "name": "asama0101"
+  },
+  "plugins": [
+    {
+      "name": "pj-lens",
+      "source": ".",
+      "description": "プロジェクト・タスク管理ダッシュボードと、日程見直し・今日の計画・取り込みのサブエージェント"
+    }
+  ]
+}
