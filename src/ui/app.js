@@ -8,7 +8,7 @@ const S = {
   data: null, openError: "", saveFailed: false,
   screen: "project",
   filter: "all", pview: "gantt", gwin: "m6", hideDone: false,
-  askDel: null, askDelProject: null, pendingWait: null,
+  askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
 };
 const $ = (id) => document.getElementById(id);
@@ -38,7 +38,7 @@ function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
   if (S.screen === "project") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait });
+    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone });
   }
   return renderSchedule(S.data, today, scheduleOpts());
 }
@@ -51,21 +51,38 @@ function render() {
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
   const prev = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollLeft);
+  const keepFocus = focusSelector(document.activeElement);
   view.innerHTML = renderBody();
+  if (keepFocus && !S.focusSel) { try { view.querySelector(keepFocus)?.focus(); } catch { /* 無視 */ } }
   const bars = [...view.querySelectorAll(".gscroll")];
   if (S.resetScroll || !prev.length || prev.length !== bars.length) scrollToday(false);
   else bars.forEach((c, i) => { c.scrollLeft = prev[i]; });
   S.resetScroll = false;
   if (S.focusSel) {
-    const el = view.querySelector(S.focusSel);
-    if (el) { el.focus(); el.select?.(); }
+    let el = null;
+    try { el = view.querySelector(S.focusSel); } catch { /* 不正なセレクタは無視 */ }
     S.focusSel = null;
+    if (el) { el.focus(); el.select?.(); }
   }
   if (S.hlId) {
-    const row = view.querySelector(`[data-row="${S.hlId}"]`);
-    if (row) { row.classList.add("hl"); row.scrollIntoView({ block: "center" }); setTimeout(() => row.classList.remove("hl"), 2200); }
+    let row = null;
+    try { row = view.querySelector(`[data-row="${CSS.escape(S.hlId)}"]`); } catch { /* 無視 */ }
     S.hlId = null;
+    if (row) { row.classList.add("hl"); row.scrollIntoView({ block: "center" }); setTimeout(() => row.classList.remove("hl"), 2200); }
   }
+}
+
+/** 描き直しの前後でフォーカスを保つための、入力欄を特定するセレクタ */
+function focusSelector(el) {
+  if (!el || !view.contains(el)) return null;
+  const q = (k, v) => `[${k}="${CSS.escape(v)}"]`;
+  const d = el.dataset;
+  if (d.f && d.id) return q("data-f", d.f) + q("data-id", d.id);
+  if (d.pf && d.pid) return q("data-pf", d.pf) + q("data-pid", d.pid);
+  if (d.mf && d.pid) return q("data-mf", d.mf) + q("data-pid", d.pid) + q("data-i", d.i);
+  if (d.gadd) return q("data-gadd", d.gadd);
+  if (d.waitparty) return q("data-waitparty", d.waitparty);
+  return null;
 }
 
 /** カレンダー部分だけを描き直す(会議の入力欄を作り直さないため) */
@@ -113,7 +130,7 @@ function persist() {
 /** 編集を適用して描画・保存する。edit が例外を投げたら理由を表示して、データは変えない */
 function apply(edit, msg, { partial = false } = {}) {
   let next;
-  try { next = edit(S.data); } catch (e) { toast(e.message); render(); return false; }
+  try { next = edit(S.data); } catch (e) { toast(e.message); if (partial) renderCal(); else render(); return false; }
   S.data = next;
   if (partial) renderCal(); else render();
   if (msg) toast(msg);
@@ -123,6 +140,9 @@ function apply(edit, msg, { partial = false } = {}) {
 
 /* ---------- ファイルを開く ---------- */
 function loaded(data) {
+  for (const k of ["projects", "tasks", "events", "changeLog"]) {
+    if (!Array.isArray(data?.[k])) throw new Error(`データの形が違います（${k} がありません）`);
+  }
   S.data = data;
   S.openError = "";
   const { errors, warnings } = validate(data, clock());
@@ -164,6 +184,9 @@ document.querySelector("nav").addEventListener("click", (e) => {
 });
 $("filebar").addEventListener("click", async (e) => {
   if (e.target.closest("[data-refresh]")) {
+    await saveChain;
+    if (S.saveFailed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }
+    S.confirmRefresh = false;
     try { S.data = await store.reload(); S.saveFailed = false; banner(""); render(); toast("ファイルから読み直しました"); } catch (err) { toast(err.message); }
     return;
   }
@@ -238,6 +261,9 @@ view.addEventListener("click", (e) => {
   const wk = q("[data-waitok]");
   if (wk) { submitWait(wk.dataset.waitok); return; }
   if (q("[data-waitno]")) { S.pendingWait = null; render(); return; }
+  if (q("[data-doneno]")) { S.pendingDone = null; render(); return; }
+  const dk = q("[data-doneok]");
+  if (dk) { const pd = S.pendingDone; S.pendingDone = null; setStatus(pd.id, pd.status, pd.future); return; }
 
   /* スケジュール画面 */
   const sv = q("[data-sview]"); if (sv) { S.sview = sv.dataset.sview; render(); return; }
@@ -249,7 +275,8 @@ view.addEventListener("click", (e) => {
   const cf = q("[data-confirm]");
   if (cf) { apply((d) => { const r = confirmSession(d, cf.dataset.confirm, now); if (r.error) throw new Error(r.error); return r.data; }, "実績にしました。時間が違うときは、枠をドラッグして直します"); return; }
   if (q("[data-confirmall]")) {
-    apply((d) => d.tasks.flatMap((t) => t.sessions ?? []).filter((s) => sessionKind(s, now) === "unconfirmed").reduce((acc, s) => confirmSession(acc, s.id, now).data, d), "未確認の枠を実績にしました");
+    const days = S.sview === "week" ? [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(weekStartOf(S.sdate), i)) : [S.sdate];
+    apply((d) => d.tasks.flatMap((t) => t.sessions ?? []).filter((s) => days.includes(s.date) && sessionKind(s, now) === "unconfirmed").reduce((acc, s) => confirmSession(acc, s.id, now).data, d), "未確認の枠を実績にしました");
     return;
   }
   if (q("[data-delsel]")) { deleteSelected(); return; }
@@ -286,6 +313,14 @@ view.addEventListener("click", (e) => {
   if (cleared) render();
 });
 
+function setStatus(id, status, future) {
+  apply((d) => {
+    let next = updateTask(d, id, { status }, clock().date);
+    for (const sid of future) next = removeSession(next, sid);
+    return next;
+  }, future.length ? `${id} の状態を ${status} にしました。未来の予定の枠 ${future.length} 件を解除しました` : "変更を保存しました");
+}
+
 function submitWait(id) {
   const input = view.querySelector(`[data-waitparty="${id}"]`);
   const party = input?.value.trim();
@@ -295,8 +330,9 @@ function submitWait(id) {
 }
 
 /* ---------- 入力の変更 ---------- */
-view.addEventListener("change", (e) => {
-  const el = e.target;
+// 入力欄から次の欄へ移るとき、フォーカスの移動が終わってから描き直す(先に描き直すと移動先が消える)
+view.addEventListener("change", (e) => { const el = e.target; setTimeout(() => onChange(el), 0); });
+function onChange(el) {
   const { date: today } = clock();
   if (el.dataset.fileinput !== undefined || el.matches?.("[data-fileinput]")) {
     const file = el.files?.[0];
@@ -347,17 +383,14 @@ view.addEventListener("change", (e) => {
     if (f === "status") {
       if (el.value === "Waiting" && !t.waitingOn?.party) { S.pendingWait = id; S.focusSel = `[data-waitparty="${id}"]`; render(); return; }
       const future = el.value === "Done" || el.value === "Cancelled" ? futurePlanned(S.data, id, clock()) : [];
-      apply((d) => {
-        let next = updateTask(d, id, { status: el.value }, today);
-        for (const sid of future) next = removeSession(next, sid);
-        return next;
-      }, future.length ? `${id} の状態を ${el.value} にしました。未来の予定の枠 ${future.length} 件を解除しました` : "変更を保存しました");
+      if (future.length) { S.pendingDone = { id, status: el.value, n: future.length, future }; render(); return; } // 未来の予定枠を消すので確認する
+      setStatus(id, el.value, []);
       return;
     }
     if (f === "party") { apply((d) => updateTask(d, id, { waitingOn: { party: el.value, since: t.waitingOn?.since ?? today } }, today), "変更を保存しました"); return; }
     apply((d) => updateTask(d, id, { [f]: f === "importance" ? el.value || null : el.value }, today), "変更を保存しました");
   }
-});
+}
 
 /* ---------- ドラッグ&ドロップ(枠・会議の配置と移動) ---------- */
 let ghost = null, drag = null;
@@ -421,6 +454,7 @@ view.addEventListener("mousedown", (e) => {
   if (!h) return;
   e.preventDefault(); e.stopPropagation();
   const isMtg = h.dataset.rzm !== undefined, id = isMtg ? h.dataset.rzm : h.dataset.rz, blk = h.closest(".blk");
+  blk.draggable = false; // つまみの操作中にブラウザ標準のドラッグが始まらないようにする
   const g = calendarGeometry(S.data);
   const rec = isMtg ? S.data.events.find((o) => o.id === id) : findSession(id);
   const a0 = Math.max(toMin(rec.start), g.h0);
@@ -432,11 +466,12 @@ view.addEventListener("mousedown", (e) => {
   const up = () => {
     document.removeEventListener("mousemove", move);
     document.removeEventListener("mouseup", up);
+    blk.draggable = true;
     if (end == null) return;
     const e2 = toHHMM(end);
     if (isMtg) apply((d) => updateMeeting(d, id, { end: e2 }), `会議「${rec.title}」の終了を ${hm(end)} に変更しました`);
     else {
-      const r = resizeSession(S.data, id, e2);
+      const r = resizeSession(S.data, id, e2, clock());
       if (r.error) { toast(r.error); render(); } else apply(() => r.data, `終了を ${hm(end)} に変更しました`);
     }
   };
@@ -457,7 +492,7 @@ view.addEventListener("mousedown", (e) => {
     kind = "t"; t = S.data.tasks.find((x) => x.id === tg.dataset.gt);
     en = idx(t.due); s = idx(taskStart(S.data, t.id));
     const hasPre = (t.predecessors ?? []).length > 0;
-    if (tg.classList.contains("dot") || s === en) mode = hasPre || !t.start ? "r" : "both-point";
+    if (tg.classList.contains("dot") || s === en) mode = hasPre || !t.start || t.start > t.due ? "r" : "both-point";
     else if (hasPre && mode === "m") return;
   } else if (tg.dataset.gp) {
     kind = "p"; p = S.data.projects.find((x) => x.id === tg.dataset.gp);

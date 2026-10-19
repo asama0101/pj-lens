@@ -111,3 +111,18 @@ test("rankTasks: 循環があっても終了する", () => {
   const d = { ...base(), tasks: [T("A", "2026-10-25", { predecessors: ["B"] }), T("B", "2026-10-25", { predecessors: ["A"] }), T("C", "2026-10-25")] };
   assert.deepEqual(rankTasks(d, "2026-10-20").map((x) => x.taskId), ["C"]);
 });
+
+test("syncMcpEvents: 消した会議の ID を使い回さず、同じ externalId の重複は 1 件にする（M4）", () => {
+  const d = base([ev("09:00", "10:00", { id: "m1", source: "mcp", externalId: "a" }), ev("10:00", "11:00", { id: "m3", source: "mcp", externalId: "gone" })]);
+  const f = { externalId: "b", title: "新", date: "2026-10-20", start: "13:00", end: "14:00" };
+  const r = syncMcpEvents(d, [{ externalId: "a", title: "a", date: "2026-10-20", start: "09:00", end: "10:00" }, f, f], { start: "2026-10-19", end: "2026-10-25" });
+  assert.equal(r.events.filter((e) => e.externalId === "b").length, 1);
+  assert.ok(!r.events.some((e) => e.externalId === "b" && e.id === "m3"));
+});
+
+test("updateTask 相当: Waiting で待ち先なしでも、他の項目の変更は通る（M11）", async () => {
+  const { updateTask } = await import("../src/ui/edit.js");
+  const d = { projects: [{ id: "P" }], tasks: [{ id: "P1", projectId: "P", title: "t", due: "2026-10-30", status: "Waiting", waitingOn: null, predecessors: [], sessions: [] }] };
+  assert.equal(updateTask(d, "P1", { memo: "x" }, "2026-10-20").tasks[0].memo, "x");
+  assert.throws(() => updateTask(d, "P1", { status: "Waiting" }, "2026-10-20"));
+});

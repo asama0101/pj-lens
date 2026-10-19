@@ -66,7 +66,7 @@ export function rankTasks(data, today) {
       action = "chase";
       score += 15;
       const w = t.waitingOn;
-      reasons.unshift(w ? `${w.party} への${left < 0 ? "催促" : "確認"}（回答待ち ${diffDays(today, w.since)}日）` : "待ち先が未設定");
+      reasons.unshift(w ? `${w.party} への${left < 0 ? "催促" : "確認"}${isDate(w.since) ? `（回答待ち ${diffDays(today, w.since)}日）` : ""}` : "待ち先が未設定");
     }
     out.push({ taskId: t.id, score, reasons, action, due: t.due });
   }
@@ -74,7 +74,8 @@ export function rankTasks(data, today) {
 }
 
 // ---- 会議の操作 ----
-const nextMeetingId = (events) => `m${events.reduce((m, e) => Math.max(m, +(/^m(\d+)$/.exec(e.id)?.[1] ?? 0)), 0) + 1}`;
+const maxMeetingNo = (events) => events.reduce((m, e) => Math.max(m, +(/^m(\d+)$/.exec(e.id)?.[1] ?? 0)), 0);
+const nextMeetingId = (events) => `m${maxMeetingNo(events) + 1}`;
 
 function assertTimes(m) {
   if (!isDate(m.date) || !isTime(m.start) || !isTime(m.end)) throw new Error("日付または時刻の形式が不正です");
@@ -110,6 +111,8 @@ export function deleteMeeting(data, id) {
 /** 取得結果で、range 内の MCP 由来の会議だけを追加・更新・削除する。skip と手入力の会議は保つ */
 export function syncMcpEvents(data, fetched, range) {
   const inRange = (d) => d >= range.start && d <= range.end;
+  fetched = fetched.filter((f, k) => fetched.findIndex((x) => x.externalId === f.externalId) === k); // 同じ externalId は 1 件
+  let seq = maxMeetingNo(data.events); // 消えた会議の ID を使い回さない
   const seen = new Set(fetched.map((f) => f.externalId));
   const existing = new Map(data.events.filter((e) => e.source === "mcp").map((e) => [e.externalId, e]));
   const kept = data.events.filter((e) => e.source !== "mcp" || seen.has(e.externalId) || !inRange(e.date));
@@ -119,7 +122,7 @@ export function syncMcpEvents(data, fetched, range) {
   });
   for (const f of fetched) {
     if (existing.has(f.externalId)) continue;
-    events.push({ id: nextMeetingId(events), date: f.date, start: f.start, end: f.end, title: f.title, source: "mcp", skip: false, externalId: f.externalId });
+    events.push({ id: `m${++seq}`, date: f.date, start: f.start, end: f.end, title: f.title, source: "mcp", skip: false, externalId: f.externalId });
   }
   return { ...data, events };
 }

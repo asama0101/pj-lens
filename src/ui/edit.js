@@ -75,8 +75,9 @@ export function updateTask(data, taskId, patch, today = nowLocal().date) {
     }
     if (n.status === "Waiting") {
       const w = "waitingOn" in patch ? patch.waitingOn : t.waitingOn;
-      if (!w || !String(w.party ?? "").trim()) throw new Error("Waiting にするときは待ち先を入力してください");
-      n.waitingOn = { party: String(w.party).trim(), since: w.since ?? t.waitingOn?.since ?? today };
+      if (w && String(w.party ?? "").trim()) n.waitingOn = { party: String(w.party).trim(), since: w.since ?? t.waitingOn?.since ?? today };
+      else if ("status" in patch || "waitingOn" in patch) throw new Error("Waiting にするときは待ち先を入力してください");
+      else n.waitingOn = t.waitingOn; // 既存データの待ち先なしは、他の項目の編集を妨げない(validate が警告する)
     } else {
       n.waitingOn = null;
     }

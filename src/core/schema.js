@@ -87,6 +87,9 @@ export function validate(data, now = nowLocal()) {
       if (!taskIds.has(pid)) err(`タスク ${t.id}: 存在しない先行 "${pid}"`);
       if (pid === t.id) err(`タスク ${t.id}: 自分自身を先行にしています（循環）`);
     }
+    const predDue = preds.map((id) => data.tasks.find((x) => x.id === id)?.due).filter(isDate);
+    if (isDate(t.due) && predDue.length && predDue.reduce((a, b) => (a > b ? a : b)) > t.due) warn(`タスク ${t.id}: 先行の期限が自分の期限より後です`);
+    if (t.waitingOn && !isDate(t.waitingOn.since)) err(`タスク ${t.id}: 待ち開始日 (waitingOn.since) の形式が不正です`);
     if (t.status === "Waiting" && !t.waitingOn) warn(`タスク ${t.id}: Waiting なのに待ち先 (waitingOn) がありません`);
     if (preds.length && t.start != null) warn(`タスク ${t.id}: 先行があるため start は無視されます`);
     if (!preds.length && isDate(t.start) && isDate(t.due) && t.start > t.due) warn(`タスク ${t.id}: 開始日が期限より後です`);
@@ -122,6 +125,7 @@ export function validate(data, now = nowLocal()) {
   for (const c of data.changeLog) {
     if (!isDate(c.at)) err("changeLog: 日付が不正です");
     for (const id of c.taskIds ?? []) if (!taskIds.has(id)) warn(`changeLog: 存在しないタスク ${id}`);
+    if (!Number.isInteger(c.deltaDays)) err("changeLog: deltaDays が整数ではありません");
     if (c.cause != null && !CAUSES.includes(c.cause)) err(`changeLog: 不明な原因 "${c.cause}"`);
   }
 

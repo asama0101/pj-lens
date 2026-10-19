@@ -64,7 +64,7 @@ function detail(data, p, today) {
   }).join("");
   const ids = new Set(tasks.map((t) => t.id));
   const log = (data.changeLog ?? []).filter((l) => (l.taskIds ?? []).some((id) => ids.has(id)))
-    .map((l) => `<tr>${cell(`<span class="mono">${fmtMD(l.at)}</span>`)}${cell(esc((l.taskIds ?? []).join(", ")))}${cell(`<span class="mono">${l.deltaDays > 0 ? "+" : ""}${l.deltaDays}日</span>`)}${cell(esc(l.cause ?? "—"))}${cell(esc(l.reason))}</tr>`).join("");
+    .map((l) => `<tr>${cell(`<span class="mono">${fmtMD(l.at)}</span>`)}${cell(esc((l.taskIds ?? []).join(", ")))}${cell(`<span class="mono">${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日</span>`)}${cell(esc(l.cause ?? "—"))}${cell(esc(l.reason))}</tr>`).join("");
   // ガントの見出しにプロジェクト名と概要が出るので、タスクがあるときは重ねて出さない
   const heading = tasks.length ? "" : `<h3>${esc(p.name)}</h3><div class="sub">${esc(p.type)} ・ ${esc(p.status)} ・ ${fmtMD(p.start)}〜${fmtMD(p.due)}</div>`;
   return `<section class="proj">${heading}
@@ -79,11 +79,11 @@ function thisWeek(data, today) {
   const showTitles = data.settings?.reportShowMeetingTitles === true;
   const now = { date: today, time: "00:00" };
   const days = [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(start, i)).map((d) => {
-    const meetings = (data.events ?? []).filter((m) => m.date === d && !m.skip).map((m) => ({ s: m.start, html: `<div class="slot"><span class="t">${m.start}〜${m.end}</span><span class="tag mtg">会議</span>${showTitles ? esc(m.title) : ""}</div>` }));
+    const meetings = (data.events ?? []).filter((m) => m.date === d && !m.skip).map((m) => ({ s: m.start, html: `<div class="slot"><span class="t">${esc(m.start)}〜${esc(m.end)}</span><span class="tag mtg">会議</span>${showTitles ? esc(m.title) : ""}</div>` }));
     const sessions = data.tasks.flatMap((t) => (t.sessions ?? []).filter((s) => s.date === d).map((s) => {
       const kind = sessionKind(s, now);
       const label = { planned: ["plan", "予定"], actual: ["act", "実績"], unconfirmed: ["unconf", "未確認"] }[kind];
-      return { s: s.start, html: `<div class="slot"><span class="t">${s.start}〜${s.end}</span><span class="tag ${label[0]}">${label[1]}</span>${esc(t.title)}</div>` };
+      return { s: s.start, html: `<div class="slot"><span class="t">${esc(s.start)}〜${esc(s.end)}</span><span class="tag ${label[0]}">${label[1]}</span>${esc(t.title)}</div>` };
     }));
     const due = data.tasks.filter((t) => t.due === d && t.status !== "Done" && t.status !== "Cancelled").map((t) => `<div class="slot"><span class="t">期限</span>${esc(t.title)}</div>`);
     const slots = [...meetings, ...sessions].sort((a, b) => toMin(a.s) - toMin(b.s)).map((x) => x.html);

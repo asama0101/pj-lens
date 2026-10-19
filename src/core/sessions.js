@@ -51,7 +51,6 @@ export function addSession(data, taskId, slot, now) {
 
 /** slot は { date, start }。長さは元のまま。種別は変えない（予定を過去へ動かしても未確認のまま） */
 export function moveSession(data, sessionId, slot, now) {
-  void now;
   const cur = findSession(data, sessionId);
   if (!cur) return { data, error: `枠 ${sessionId} がありません` };
   const len = toMin(cur.end) - toMin(cur.start);
@@ -59,15 +58,18 @@ export function moveSession(data, sessionId, slot, now) {
   if (toMin(slot.start) + len > 24 * 60) return { data, error: "勤務時間の外になります" };
   const r = check(data, next, sessionId);
   if (r.error) return { data, error: r.error };
-  return { data: mapSessions(data, sessionId, (s) => ({ ...s, ...next })), ...(r.warning && { warning: r.warning }) };
+  // 実績の枠を未来へ動かしたら予定に戻す（未来の枠は実績にできない）
+  const kind = cur.kind === "actual" && !isPast(next, now) ? "planned" : cur.kind;
+  return { data: mapSessions(data, sessionId, (s) => ({ ...s, ...next, kind })), ...(r.warning && { warning: r.warning }) };
 }
 
-export function resizeSession(data, sessionId, end) {
+export function resizeSession(data, sessionId, end, now) {
   const cur = findSession(data, sessionId);
   if (!cur) return { data, error: `枠 ${sessionId} がありません` };
   const r = check(data, { date: cur.date, start: cur.start, end }, sessionId);
   if (r.error) return { data, error: r.error };
-  return { data: mapSessions(data, sessionId, (s) => ({ ...s, end })) };
+  const kind = now && cur.kind === "actual" && !isPast({ date: cur.date, end }, now) ? "planned" : cur.kind;
+  return { data: mapSessions(data, sessionId, (s) => ({ ...s, end, kind })) };
 }
 
 export function confirmSession(data, sessionId, now) {

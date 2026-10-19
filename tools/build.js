@@ -26,19 +26,46 @@ export const MODULES = [
 ];
 
 const EXPORT_RE = /^export\s+(?:async\s+)?(?:function\*?|const|let|class)\s+([A-Za-z_$][\w$]*)/gm;
+const IMPORT_RE = /^import\s[\s\S]*?\sfrom\s+["'][^"']+["'];?[ \t]*$/gm;
+const NAMED_IMPORT_RE = /^import\s*\{([^}]*)\}\s*from\s*["'][^"']+["'];?/gm;
 
-function wrap(path, src) {
+// 構文は正しいのに、まとめたあと実行時にだけ壊れる記法。見つけたらビルドを止める
+const UNSUPPORTED = [
+  [/^import\s+["']/m, "副作用だけの import"],
+  [/^export\s*\{/m, "export { ... }"],
+  [/^export\s+default/m, "export default"],
+  [/^export\s+(?:var|const\s*[{[])/m, "export var / 分割代入の export"],
+  [/^import\s+\*/m, "import * as"],
+  [/^import\s*\{[^}]*\bas\b[^}]*\}/m, "import { a as b }"],
+];
+
+/**
+ * 1 モジュールを関数スコープで包む。対応しない記法と、先に並んでいない名前の import は例外にする
+ * （実行時まで壊れに気づけないため）。known は先に並んだモジュールが export した名前の集合で、ここに今回の export を足す
+ */
+export function wrapModule(path, src, known) {
+  for (const [re, what] of UNSUPPORTED) {
+    if (re.test(src)) throw new Error(`${path}: ビルドが対応しない記法です（${what}）`);
+  }
+  for (const m of src.matchAll(NAMED_IMPORT_RE)) {
+    for (const name of m[1].split(",").map((x) => x.trim()).filter(Boolean)) {
+      if (!known.has(name)) throw new Error(`${path}: import した ${name} が、先に並んだモジュールの export にありません（MODULES の順序を確認）`);
+    }
+  }
   const names = [...src.matchAll(EXPORT_RE)].map((m) => m[1]);
-  const body = src
-    .replace(/^import\s[\s\S]*?\sfrom\s+["'][^"']+["'];?[ \t]*$/gm, "")
-    .replace(/^export\s+/gm, "");
+  for (const n of names) {
+    if (known.has(n)) throw new Error(`${path}: export 名 ${n} が他のモジュールと重複しています`);
+    known.add(n);
+  }
+  const body = src.replace(IMPORT_RE, "").replace(/^export\s+/gm, "");
   const head = names.length ? `const { ${names.join(", ")} } = ` : "";
   return `/* ${path} */\n${head}(() => {\n${body}\n${names.length ? `return { ${names.join(", ")} };` : ""}\n})();`;
 }
 
 export function build(out = resolve(ROOT, "dist/dashboard.html")) {
   const read = (p) => readFileSync(resolve(ROOT, p), "utf8");
-  const js = MODULES.map((p) => wrap(p, read(p))).join("\n\n").replace(/<\/script/gi, "<\\/script");
+  const known = new Set();
+  const js = MODULES.map((p) => wrapModule(p, read(p), known)).join("\n\n").replace(/<\/script/gi, "<\\/script");
   const html = read("src/ui/index.html")
     .replace("/*__CSS__*/", () => read("src/ui/theme.css"))
     .replace("/*__JS__*/", () => js);

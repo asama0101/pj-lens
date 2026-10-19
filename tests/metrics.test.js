@@ -98,3 +98,12 @@ test("taskFlags / projectFlags", () => {
   const late = mk([{ id: "1" }], { due: "2026-10-01" });
   assert.ok(projectFlags(late, "P", TODAY).includes("past-due"));
 });
+
+test("週目盛り: 年をまたぐ週に yearStart が付く（M7）", () => {
+  const w = timeTicks({ start: "2026-12-14", end: "2027-01-20" }, "week");
+  assert.deepEqual(w.filter((t) => t.yearStart).map((t) => t.date), ["2026-12-28"]);
+});
+
+test("taskFlags: since が無くても落ちない（I4）", () => {
+  assert.deepEqual(taskFlags({ status: "Waiting", due: "2027-01-01", waitingOn: { party: "x" } }, TODAY, { waitingLongDays: 7 }), []);
+});

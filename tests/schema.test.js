@@ -71,3 +71,15 @@ test("空データは有効", () => {
   const d = { version: 1, settings: load().settings, projects: [], tasks: [], events: [], changeLog: [] };
   assert.deepEqual(v(d).errors, []);
 });
+
+test("警告: 先行の期限が自分の期限より後（I2）", () => {
+  const d = load(); task(d, "A2").due = "2020-01-01";
+  assert.ok(hit(v(d).warnings, "A2"));
+});
+
+test("waitingOn.since が無い・不正ならエラー、deltaDays が整数でなければエラー（I4, M5）", () => {
+  const a = load(); delete task(a, "A3").waitingOn.since;
+  assert.ok(hit(v(a).errors, "A3"));
+  const b = load(); b.changeLog[0].deltaDays = "<b>";
+  assert.ok(hit(v(b).errors, "deltaDays"));
+});

@@ -1,5 +1,5 @@
 // 進捗率・遅延判定・ガント用の算出（純関数）
-import { addDays, diffDays, weekday, isWeekend } from "./dates.js";
+import { addDays, diffDays, weekday, isWeekend, isDate } from "./dates.js";
 
 const WINDOW_DAYS = { m1: 31, m3: 92, m6: 183, y1: 365 };
 const MARGIN_DAYS = 7;
@@ -68,7 +68,8 @@ export function timeTicks(range, scale) {
       if (scale === "day") {
         out.push({ date: d, label: day === 1 ? `${m}/${day}` : String(day), yearStart: m === 1 && day === 1, weekend: isWeekend(d) });
       } else if (weekday(d) === 1) {
-        out.push({ date: d, label: `${m}/${day}`, yearStart: m === 1 && day === 1, weekend: false });
+        // 1 月 1 日を含む週の月曜に年の境目を付ける
+        out.push({ date: d, label: `${m}/${day}`, yearStart: ymd(addDays(d, 6))[0] !== ymd(d)[0] || (m === 1 && day === 1), weekend: false });
       }
     }
     return out;
@@ -98,7 +99,7 @@ export function taskFlags(task, today, settings) {
   const open = task.status !== "Done" && task.status !== "Cancelled";
   if (open && task.due < today) flags.push("overdue");
   const long = settings?.waitingLongDays ?? 7;
-  if (task.status === "Waiting" && task.waitingOn && diffDays(today, task.waitingOn.since) >= long) flags.push("waiting-long");
+  if (task.status === "Waiting" && task.waitingOn && isDate(task.waitingOn.since) && diffDays(today, task.waitingOn.since) >= long) flags.push("waiting-long");
   return flags;
 }
 

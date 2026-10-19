@@ -99,3 +99,15 @@ test("taskActual / projectActualHours / futurePlanned", () => {
   assert.deepEqual(futurePlanned(d, "A1", NOW), []);
   assert.equal(t.sessions.length, 3);
 });
+
+test("実績の枠を未来へ動かす・延ばすと予定に戻る（I3）", () => {
+  const d = load();
+  const m = moveSession(d, "S1", { date: "2026-10-28", start: "13:00" }, NOW);
+  assert.equal(sess(m.data, "S1").kind, "planned");
+  assert.equal(sess(moveSession(d, "S1", { date: "2026-10-16", start: "13:00" }, NOW).data, "S1").kind, "actual", "過去へなら実績のまま");
+  // 10/20 09:00-10:00 の実績を 14:00 まで延ばす（現在 12:00 より後）
+  const d2 = load(); d2.tasks.find((t) => t.id === "A4").sessions.push({ id: "S9", date: "2026-10-20", start: "09:00", end: "10:00", kind: "actual" });
+  d2.events = [];
+  assert.equal(sess(resizeSession(d2, "S9", "14:00", NOW).data, "S9").kind, "planned");
+  assert.equal(sess(resizeSession(d2, "S9", "11:00", NOW).data, "S9").kind, "actual");
+});
