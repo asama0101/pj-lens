@@ -3,18 +3,9 @@ import { projectProgress, projectFlags, taskFlags, taskStart } from "../../core/
 import { taskActual, projectActualHours } from "../../core/sessions.js";
 import { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE } from "../../core/schema.js";
 import { esc, fmtMD, statusDotHtml, flagPills } from "../common.js";
+import { predecessorCandidates } from "../edit.js";
 import { renderGantt } from "./gantt.js";
 import { renderPrio } from "./prio.js";
-
-/** 先行の候補（自分・既に先行・自分の後続を除く）。循環を作らせない */
-function candidates(data, task) {
-  const next = new Map();
-  for (const t of data.tasks) for (const p of t.predecessors ?? []) next.set(p, [...(next.get(p) ?? []), t.id]);
-  const down = new Set();
-  const stack = [task.id];
-  while (stack.length) for (const id of next.get(stack.pop()) ?? []) if (!down.has(id)) { down.add(id); stack.push(id); }
-  return data.tasks.filter((u) => u.projectId === task.projectId && u.id !== task.id && !(task.predecessors ?? []).includes(u.id) && !down.has(u.id));
-}
 
 const actText = (data, id) => {
   const a = taskActual(data, id);
@@ -26,7 +17,7 @@ function renderList(data, p, today, opts) {
   const tasks = data.tasks.filter((t) => t.projectId === p.id);
   const rows = tasks.map((t) => {
     const preds = t.predecessors ?? [];
-    const cand = candidates(data, t);
+    const cand = predecessorCandidates(data, t.id).map((id) => data.tasks.find((u) => u.id === id));
     const chips = preds.map((id) => `<span class="chip">${esc(id)}<button data-rmpre="${esc(t.id)}|${esc(id)}" aria-label="${esc(id)} を先行から外す">×</button></span>`).join("");
     const add = cand.length ? `<select class="in sm" data-addpre="${esc(t.id)}" aria-label="先行タスクを追加"><option value="">＋先行</option>${cand.map((u) => `<option value="${esc(u.id)}">${esc(u.id)} ${esc(u.title)}</option>`).join("")}</select>` : "";
     const needParty = t.status === "Waiting" && !t.waitingOn?.party ? `<span class="pill wait">待ち先を入力</span>` : "";
@@ -37,7 +28,9 @@ function renderList(data, p, today, opts) {
     const late = taskFlags(t, today, data.settings).includes("overdue");
     return `<tr data-row="${esc(t.id)}"><td class="id" data-l="ID">${esc(t.id)}</td>
       <td data-l="件名"><input class="in" id="f-${esc(t.id)}-t" data-f="title" data-id="${esc(t.id)}" value="${esc(t.title)}" aria-label="${esc(t.id)} の件名"></td>
-      <td data-l="状態"><select class="in" data-f="status" data-id="${esc(t.id)}" aria-label="${esc(t.id)} の状態">${TASK_STATUS.map((o) => `<option ${o === t.status ? "selected" : ""}>${o}</option>`).join("")}</select>${late ? ` <span class="pill late">期限超過</span>` : ""}</td>
+      <td data-l="状態">${opts.pendingWait === t.id
+        ? `<div class="ask" style="max-width:none">待ち先を入力<input class="in" data-waitparty="${esc(t.id)}" placeholder="ベンダー・部署名" aria-label="${esc(t.id)} の待ち先"><div style="display:flex;gap:6px;margin-top:4px"><button class="btn" data-waitok="${esc(t.id)}">Waiting にする</button><button class="btn" data-waitno>やめる</button></div></div>`
+        : `<select class="in" data-f="status" data-id="${esc(t.id)}" aria-label="${esc(t.id)} の状態">${TASK_STATUS.map((o) => `<option ${o === t.status ? "selected" : ""}>${o}</option>`).join("")}</select>${late ? ` <span class="pill late">期限超過</span>` : ""}`}</td>
       <td data-l="開始">${preds.length ? `<span class="mono muted" title="先行タスクの期限から決まります">${fmtMD(taskStart(data, t.id))} <small>先行から</small></span>` : `<input class="in" type="date" data-f="start" data-id="${esc(t.id)}" value="${esc(t.start ?? "")}" aria-label="${esc(t.id)} の開始日">`}</td>
       <td data-l="期限"><input class="in" type="date" data-f="due" data-id="${esc(t.id)}" value="${esc(t.due)}" aria-label="${esc(t.id)} の期限"></td>
       <td data-l="先行"><div class="chips">${chips}${add}</div></td>

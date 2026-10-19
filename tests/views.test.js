@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { addDays, diffDays } from "../src/core/dates.js";
 import { renderProjects } from "../src/ui/views/project.js";
 import { renderGantt } from "../src/ui/views/gantt.js";
+import { renderSchedule, snapStart } from "../src/ui/views/schedule.js";
+import { taskActual } from "../src/core/sessions.js";
 
 const load = () => JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
 const TODAY = "2026-10-20";
@@ -139,4 +141,78 @@ test("readonly（レポート用）は編集用の属性を出さない", () => 
 
 test("addDays は表示範囲の計算に使える", () => {
   assert.equal(addDays(TODAY, -10), "2026-10-10");
+});
+
+// ---- スケジュール画面 ----
+const NOW = { date: "2026-10-20", time: "10:15" };
+const sched = (d, o = {}) => renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW, ...o });
+
+test("snapStart: 15分刻み・勤務時間内に収める", () => {
+  const wd = { start: "09:00", end: "18:00" };
+  assert.equal(snapStart(10 * 60 + 7, 60, wd), 10 * 60);
+  assert.equal(snapStart(17 * 60 + 50, 60, wd), 17 * 60);
+  assert.equal(snapStart(8 * 60, 60, wd), 9 * 60);
+});
+
+test("renderSchedule(day): 空き時間・優先タスクと理由・枠の種別クラス・実績時間", () => {
+  const d = load();
+  d.tasks.find((t) => t.id === "A5").sessions.push({ id: "S9", date: "2026-10-20", start: "09:00", end: "09:30", kind: "planned" }); // 過ぎた予定 = 未確認
+  const html = sched(d);
+  assert.ok(html.includes("10:30-13:00 空き"), "会議と枠を除いた空き");
+  assert.ok(html.includes("今日の優先") && html.includes("催促") && html.includes("期限超過 4日"));
+  assert.ok(html.includes('class="blk task unconf'), "未確認");
+  const w = renderSchedule(load(), TODAY, { view: "week", date: "2026-10-19", now: NOW });
+  assert.ok(w.includes("class=\"blk task act"), "実績");
+  assert.ok(w.includes("class=\"blk task plan"), "予定");
+  assert.ok(w.includes(`${(2.5).toFixed(1)}時間`), "週の実績(10/19 の 1.5h + 1h)");
+  assert.equal(taskActual(load(), "A5").hours + taskActual(load(), "B2").hours, 4.5);
+});
+
+test("renderSchedule(week): 7 日分の列と会議の時間枠・件名（画面では常に件名を出す）", () => {
+  const d = load();
+  assert.equal(d.settings.reportShowMeetingTitles, false);
+  const html = renderSchedule(d, TODAY, { view: "week", date: TODAY, now: NOW });
+  assert.equal(count(html, /class="col dz/g), 7);
+  for (const day of ["2026-10-19", "2026-10-25"]) assert.ok(html.includes(`data-date="${day}"`));
+  assert.ok(html.includes("NW運用定例"));
+  assert.ok(html.includes("class=\"blk mtg"));
+});
+
+test("renderSchedule: 未確認 0 件なら『すべて実績にする』は出ない／選択がなければ『枠を削除』は無効", () => {
+  const d = load();
+  const html = sched(d);
+  assert.ok(!html.includes("data-confirmall"));
+  assert.ok(/data-delsel disabled>枠や会議を選んで削除/.test(html));
+  assert.ok(!sched(d, { selSess: "S2" }).includes("の枠を削除"), "表示外の選択は無効");
+  const sel = sched(d, { selSess: "S2", date: "2026-10-19" });
+  assert.ok(sel.includes("「切替手順書の作成」の枠を削除"));
+  assert.ok(!/data-delsel disabled/.test(sel));
+  assert.ok(sel.includes("blk task act sel"));
+});
+
+test("renderSchedule: 凡例（会議・予定・実績・未確認、日は空き時間と現在時刻）", () => {
+  const day = sched(load());
+  for (const w of ["会議", "予定", "実績", "未確認", "空き時間", "現在時刻"]) assert.ok(day.includes(w), w);
+  const wk = renderSchedule(load(), TODAY, { view: "week", date: TODAY, now: NOW });
+  assert.ok(!wk.includes("現在時刻") && wk.includes("未確認"));
+  assert.ok(day.includes('class="nowline"'));
+});
+
+test("renderSchedule: 手入力の会議だけドラッグ可、参加しない会議は skip 表示、MCP 会議は編集不可の注意", () => {
+  const d = load();
+  d.events.find((e) => e.id === "m1").skip = true;
+  const html = sched(d, { selMtg: "m1" });
+  assert.ok(/data-mtg="m2"[^>]*draggable="true"/.test(html));
+  assert.ok(!/data-mtg="m1"[^>]*draggable/.test(html));
+  assert.ok(html.includes("blk mtg skip"));
+  assert.ok(html.includes("予定表から取得した会議です") && html.includes("data-mt=\"title\" value=\"NW運用定例\" placeholder=\"会議名\" style=\"min-width:200px\" disabled"));
+});
+
+test("renderSchedule: 優先リストはドラッグ可で、置いた回数と実績時間を出す。勤務時間外の会議は表示しない", () => {
+  const d = load();
+  d.events.push({ id: "m9", date: "2026-10-20", start: "07:00", end: "08:30", title: "早朝作業", source: "manual", skip: false, externalId: null });
+  const html = sched(d);
+  assert.ok(/draggable="true" data-pick="B2"/.test(html));
+  assert.ok(html.includes("2回・実績 1.0h"));
+  assert.ok(!html.includes("早朝作業"));
 });

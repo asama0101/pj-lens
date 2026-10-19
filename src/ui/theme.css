@@ -310,3 +310,7 @@ tr.hl td{transition:background .3s}
 .filebar{display:flex;gap:8px}
 .banner{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:13px}
 code{font-family:var(--f-mono);font-size:12px;background:var(--line-soft);padding:0 4px;border-radius:3px}
+
+/* 狭い画面では、週表示のカレンダーの中だけを横スクロールにする(ページ全体は横スクロールさせない) */
+.cal.wk{overflow-x:auto}
+.cal.wk .week{min-width:560px}
