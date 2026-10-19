@@ -102,8 +102,5 @@ node --test                                  # テスト
 | `src/ui/` | ダッシュボード（`views/` は HTML 文字列を返す描画、`edit.js` はデータ編集、`store.js` は保存、`app.js` は結線） |
 | `tools/` | ビルド、レポート、サブエージェント用 CLI |
 | `data/sample.json` | 架空のサンプルデータ |
-| `docs/design/` | 承認したデザイン（`tokens.md` が色・書体の値） |
-| `grill-specs/…/SPEC.md` | 仕様 |
-| `docs/superpowers/plans/` | 実装計画 |
 
 データの形は `data/sample.json` を見てください（`projects`、`tasks`、`events`、`changeLog`、`settings`）。日付は `YYYY-MM-DD`、時刻は `HH:MM` の文字列です。
