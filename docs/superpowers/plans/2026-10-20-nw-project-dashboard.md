@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node 24（`node --test`、依存パッケージなし）、素の HTML/CSS/JS、Edge ヘッドレス（PDF）。Windows 専用。
 
-**Spec:** `C:\Users\sioay\OneDrive\github\xxx\grill-specs\2026-10-20_0005_nw-project-dashboard\SPEC.md`
+**Spec:** `grill-specs/2026-10-20_0005_nw-project-dashboard/SPEC.md`
 
 ## Global Constraints
 
