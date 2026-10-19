@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { build } from "../tools/build.js";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { build, MODULES } from "../tools/build.js";
 import { MARKER } from "../tools/init.js";
 
 const ASSET = new URL("../assets/pj-lens.html", import.meta.url);
@@ -18,6 +19,22 @@ test("同梱の完成版は、いまのソースのビルド結果と完全に�
   try {
     const out = build(join(dir, "pj-lens.html"));
     assert.equal(readFileSync(ASSET, "utf8"), readFileSync(out, "utf8"), "assets/pj-lens.html が古いです。npm run build を実行してコミットしてください");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("ソースが CRLF（autocrlf の clone）でも、同じビルド結果になる", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pjlens-crlf-"));
+  try {
+    const root = join(dir, "repo");
+    const repo = fileURLToPath(new URL("../", import.meta.url));
+    for (const f of ["src/ui/index.html", "src/ui/theme.css", ...MODULES]) {
+      mkdirSync(dirname(join(root, f)), { recursive: true });
+      writeFileSync(join(root, f), readFileSync(join(repo, f), "utf8").replace(/\r?\n/g, "\r\n"));
+    }
+    const out = build(join(dir, "out.html"), root);
+    assert.equal(readFileSync(out, "utf8"), readFileSync(ASSET, "utf8"));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -48,3 +48,12 @@ for (const [name, script] of [["init", "init.js"], ["report", "report.js"]]) {
     assert.doesNotMatch(line, /Bash\(node \*\)/, "node を何でも許可しない");
   });
 }
+
+test("エージェントとコマンドの本文に、リポジトリ直下の src/ を指す記述がない", async () => {
+  const { readdirSync } = await import("node:fs");
+  const files = [...NAMES.map((n) => `skills/${n}/SKILL.md`), ...readdirSync(new URL("../agents/", import.meta.url)).map((f) => `agents/${f}`)];
+  for (const f of files) {
+    const text = readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
+    assert.doesNotMatch(text, /(^|[`\s(])src\//m, `${f} に src/ の直接参照があります（\${CLAUDE_PLUGIN_ROOT} から組み立てる）`);
+  }
+});

@@ -17,6 +17,14 @@ const SKELETON = {
   projects: [], tasks: [], events: [], changeLog: [],
 };
 
+/** cwd か、その親のどこかに .git があるか(サブフォルダで実行しても、親のリポジトリに入りうる) */
+function inGitRepo(dir) {
+  for (let d = resolve(dir); ; d = dirname(d)) {
+    if (existsSync(join(d, ".git"))) return true;
+    if (dirname(d) === d) return false;
+  }
+}
+
 const lineOf = (s) => s.split(/\r?\n/).some((l) => l.trim() === IGNORE || l.trim() === ".pj-lens");
 
 /**
@@ -53,12 +61,17 @@ export function init({ cwd, pluginRoot, sample = false }) {
     results.push({ path: HTML, status: "updated" });
   }
 
-  if (!existsSync(join(cwd, ".git"))) {
-    results.push({ path: ".gitignore", status: "skipped", note: ".git がないため、.gitignore は変更しません" });
+  if (!inGitRepo(cwd)) {
+    results.push({ path: ".gitignore", status: "skipped", note: "この場所も親のフォルダにも .git がないため、.gitignore は変更しません" });
   } else {
     const giPath = join(cwd, ".gitignore");
-    const gi = existsSync(giPath) ? readFileSync(giPath, "utf8") : null;
-    if (gi !== null && lineOf(gi)) {
+    const raw = existsSync(giPath) ? readFileSync(giPath) : null;
+    // UTF-16 など UTF-8 以外の .gitignore は、壊さないように触らない
+    const notUtf8 = raw !== null && (raw.includes(0) || (raw[0] === 0xff && raw[1] === 0xfe) || (raw[0] === 0xfe && raw[1] === 0xff));
+    const gi = raw === null || notUtf8 ? null : raw.toString("utf8");
+    if (notUtf8) {
+      results.push({ path: ".gitignore", status: "skipped", note: ".gitignore が UTF-8 ではないため変更しません。.pj-lens/ を自分で追記してください" });
+    } else if (gi !== null && lineOf(gi)) {
       results.push({ path: ".gitignore", status: "unchanged" });
     } else {
       const eol = gi && gi.includes("\r\n") ? "\r\n" : "\n";

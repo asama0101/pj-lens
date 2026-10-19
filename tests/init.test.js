@@ -123,3 +123,25 @@ test("空のひな形に対して validate・rank・free が落ちない", () =>
     assert.equal(r.status, 0, `${args[0]}: ${r.stderr}${r.stdout}`);
   }
 });
+
+test("親フォルダが git 管理のとき、サブフォルダにも .gitignore を作って .pj-lens/ を除外する", () => {
+  const parent = proj("repo"), pluginRoot = plugin();
+  mkdirSync(join(parent, ".git"));
+  const cwd = join(parent, "network");
+  mkdirSync(cwd);
+  const r = init({ cwd, pluginRoot });
+  assert.equal(status(r, ".gitignore"), "created");
+  assert.equal(readFileSync(join(cwd, ".gitignore"), "utf8"), ".pj-lens/\n");
+});
+
+test("UTF-16 の .gitignore は壊さずに、変更しないで知らせる", () => {
+  const cwd = proj(), pluginRoot = plugin();
+  mkdirSync(join(cwd, ".git"));
+  const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("dist/\r\n", "utf16le")]);
+  writeFileSync(join(cwd, ".gitignore"), utf16);
+  const r = init({ cwd, pluginRoot });
+  assert.ok(readFileSync(join(cwd, ".gitignore")).equals(utf16));
+  const g = r.results.find((x) => x.path === ".gitignore");
+  assert.equal(g.status, "skipped");
+  assert.match(g.note, /UTF-8/);
+});

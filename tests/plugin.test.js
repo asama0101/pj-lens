@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const root = new URL("../", import.meta.url);
 const json = (p) => JSON.parse(readFileSync(new URL(p, root), "utf8"));
@@ -26,4 +28,16 @@ test(".claude-plugin/ の中にコンポーネントを置かない（置くと�
   for (const dir of ["agents", "skills", "commands", "hooks"]) {
     assert.equal(existsSync(new URL(`.claude-plugin/${dir}`, root)), false, dir);
   }
+});
+
+test("配布に必要なファイルが git に入っている（.gitignore で除外されていない）", (t) => {
+  const r = spawnSync("git", ["ls-files"], { cwd: fileURLToPath(root), encoding: "utf8" });
+  if (r.status !== 0) return t.skip("git で調べられません");
+  const tracked = new Set(r.stdout.split(/\r?\n/));
+  const need = [
+    ".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "assets/pj-lens.html", "data/sample.json", "tools/init.js", "tools/report.js",
+    ...["init", "replan", "daily-planner", "intake", "report"].map((n) => `skills/${n}/SKILL.md`),
+    ...["replan", "daily-planner", "intake"].map((n) => `agents/${n}.md`),
+  ];
+  assert.deepEqual(need.filter((p) => !tracked.has(p)), []);
 });

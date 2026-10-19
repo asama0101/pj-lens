@@ -1,8 +1,8 @@
 # 利用者の実データ（data/sample.json だけを共有する）
 data/data.json
 
-# レポート出力（node tools/report.js data/data.json report/）
-report/
+# レポート出力（node tools/report.js data/data.json report/）。skills/report/ には当てない
+/report/
 
 # 作業用
 .superpowers/

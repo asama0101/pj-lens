@@ -63,8 +63,8 @@ export function wrapModule(path, src, known) {
   return `/* ${path} */\n${head}(() => {\n${body}\n${names.length ? `return { ${names.join(", ")} };` : ""}\n})();`;
 }
 
-export function build(out = resolve(ROOT, "assets/pj-lens.html")) {
-  const read = (p) => readFileSync(resolve(ROOT, p), "utf8");
+export function build(out = resolve(ROOT, "assets/pj-lens.html"), root = ROOT) {
+  const read = (p) => readFileSync(resolve(root, p), "utf8").replace(/\r\n/g, "\n"); // autocrlf の clone でも同じ出力にする
   const known = new Set();
   const js = MODULES.map((p) => wrapModule(p, read(p), known)).join("\n\n").replace(/<\/script/gi, "<\\/script");
   const html = read("src/ui/index.html")
