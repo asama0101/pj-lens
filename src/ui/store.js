@@ -7,7 +7,7 @@ const PICKER_TYPES = [{ description: "プロジェクトデータ (JSON)", accep
 /** 既定の IndexedDB 保存先（使えない環境では記憶しないだけ） */
 function defaultIdb() {
   const open = () => new Promise((resolve, reject) => {
-    const req = indexedDB.open("compass", 1);
+    const req = indexedDB.open("pj-lens", 1);
     req.onupgradeneeded = () => req.result.createObjectStore("kv");
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

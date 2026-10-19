@@ -137,7 +137,7 @@
 
 ### 公開前の作業（GitHub への push）
 
-- ツール名は `compass`（`package.json`・README・画面・IndexedDB 名に反映済み）。GitHub のリポジトリ名は `compass` が一般的な名前で埋もれやすいため、別名にするかは未決。
+- ツール名は `pj-lens`（`package.json`・README・画面・IndexedDB 名に反映済み）。GitHub に同名の完全一致なし（2026-10-20 時点）。リポジトリ名も `pj-lens` を想定。
 - 公開か非公開か未決。公開する場合は `grill-specs/` の `request.md`（依頼の原文）と `docs/` に含めて良い内容かを確認する。
 - git の作成者名・メールは仮の `dev`。設定し直してからコミットする。
 - 今回の変更（名称変更・`.gitignore`・SPEC）は未コミット。
