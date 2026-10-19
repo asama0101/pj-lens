@@ -1,0 +1,85 @@
+// 使い方: node tools/init.js [--sample]
+// 作業フォルダ(利用者のプロジェクト)に、ダッシュボード(pj-lens.html)とデータ(.pj-lens/data.json)を用意する。何度実行しても同じ結果になる。
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { join, resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** この目印があるファイルだけを、pj-lens が作ったものとみなして更新する */
+export const MARKER = '<meta name="generator" content="pj-lens">';
+
+const HTML = "pj-lens.html";
+const DATA = ".pj-lens/data.json";
+const IGNORE = ".pj-lens/";
+
+const SKELETON = {
+  version: 1,
+  settings: { workday: { start: "09:00", end: "18:00" }, waitingLongDays: 7, reportShowMeetingTitles: false },
+  projects: [], tasks: [], events: [], changeLog: [],
+};
+
+const lineOf = (s) => s.split(/\r?\n/).some((l) => l.trim() === IGNORE || l.trim() === ".pj-lens");
+
+/**
+ * 結果は { ok, results: [{ path, status, note? }], error? }。ok が false のときは何も書き込んでいない。
+ * status は created / updated / unchanged / appended / skipped
+ */
+export function init({ cwd, pluginRoot, sample = false }) {
+  const bundled = readFileSync(join(pluginRoot, "assets", HTML), "utf8");
+  const htmlPath = join(cwd, HTML);
+  const current = existsSync(htmlPath) ? readFileSync(htmlPath, "utf8") : null;
+  // 利用者の既存ファイルを守る: 検査に通らなければ、何も作らずに止める
+  if (current !== null && !current.includes(MARKER)) {
+    return { ok: false, results: [], error: `${HTML} が既にあり、pj-lens が作ったものではないため、何も変更せずに止めました。名前を変えるか移動してから、もう一度実行してください` };
+  }
+
+  const results = [];
+
+  const dataPath = join(cwd, DATA);
+  if (existsSync(dataPath)) {
+    results.push({ path: DATA, status: "unchanged" });
+  } else {
+    mkdirSync(dirname(dataPath), { recursive: true });
+    writeFileSync(dataPath, sample ? readFileSync(join(pluginRoot, "data", "sample.json"), "utf8") : JSON.stringify(SKELETON, null, 2) + "\n");
+    results.push({ path: DATA, status: "created", ...(sample && { note: "サンプルデータ" }) });
+  }
+
+  if (current === null) {
+    writeFileSync(htmlPath, bundled);
+    results.push({ path: HTML, status: "created" });
+  } else if (current === bundled) {
+    results.push({ path: HTML, status: "unchanged" });
+  } else {
+    writeFileSync(htmlPath, bundled);
+    results.push({ path: HTML, status: "updated" });
+  }
+
+  if (!existsSync(join(cwd, ".git"))) {
+    results.push({ path: ".gitignore", status: "skipped", note: ".git がないため、.gitignore は変更しません" });
+  } else {
+    const giPath = join(cwd, ".gitignore");
+    const gi = existsSync(giPath) ? readFileSync(giPath, "utf8") : null;
+    if (gi !== null && lineOf(gi)) {
+      results.push({ path: ".gitignore", status: "unchanged" });
+    } else {
+      const eol = gi && gi.includes("\r\n") ? "\r\n" : "\n";
+      const lead = gi && !gi.endsWith("\n") ? eol : "";
+      writeFileSync(giPath, (gi ?? "") + lead + IGNORE + eol);
+      results.push({ path: ".gitignore", status: gi === null ? "created" : "appended" });
+    }
+  }
+  return { ok: true, results };
+}
+
+const LABEL = { created: "作りました", updated: "更新しました", unchanged: "そのままです", appended: "追記しました", skipped: "変更しませんでした" };
+
+function main() {
+  const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  let r;
+  try { r = init({ cwd: process.cwd(), pluginRoot, sample: process.argv.includes("--sample") }); }
+  catch (e) { console.error(`失敗しました: ${e.message}`); process.exit(1); }
+  if (!r.ok) { console.error(r.error); process.exit(1); }
+  for (const x of r.results) console.log(`${x.path}: ${LABEL[x.status]}${x.note ? `（${x.note}）` : ""}`);
+  console.log(`\n次の手順: ブラウザで ${HTML} を開き、「ファイルを開く」で ${DATA} を選びます。`);
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
