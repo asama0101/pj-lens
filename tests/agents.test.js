@@ -11,7 +11,12 @@ for (const name of ["replan", "daily-planner", "intake"]) {
     const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
     assert.match(fm, new RegExp(`^name: ${name}$`, "m"));
     assert.match(fm, /^description: .+/m);
-    assert.match(fm, /^tools: .+/m);
+    if (name === "daily-planner") {
+      // 予定表 MCP のツールを使うため、tools で絞らず全ツールを引き継ぐ(絞ると MCP が呼べない)
+      assert.doesNotMatch(fm, /^tools:/m);
+    } else {
+      assert.match(fm, /^tools: .+/m);
+    }
     assert.ok(text.includes("${CLAUDE_PLUGIN_ROOT}/tools/validate.js"));
     assert.ok(text.includes("承認"));
     assert.ok(text.includes(".pj-lens/data.json"));

@@ -21,9 +21,10 @@
 1. Claude Code でプラグインを入れます。
 
    ```
-   /plugin marketplace add asama0101/pj-lens
-   /plugin install pj-lens
+   /plugin install pj-lens --marketplace asama0101/pj-lens
    ```
+
+   Claude Code 2.1.275 より前のバージョンでは、`/plugin marketplace add asama0101/pj-lens` のあとに `/plugin install pj-lens` を実行します。
 
 2. 管理したいプロジェクトのフォルダで Claude Code を開き、セットアップします。
 
@@ -81,6 +82,8 @@ Claude Code を開いたフォルダ（`pj-lens.html` があるフォルダ）�
 | `/pj-lens:report` | 進捗レポート（HTML／PDF）の出力 | `/pj-lens:report` |
 
 `replan`・`daily-planner`・`intake` は同名のサブエージェントです。「A3 が 5 日遅れた。影響を見て」のように普通の言葉で頼んでも動きます。いずれも、変更案を示して**承認を得てから**データを書き換え、書き込み後に検証（`validate`）を実行します。
+
+エージェントが計算コマンド（`impact` など）を実行するとき、Claude Code が許可の確認を出すことがあります。このプラグインのコマンドなので、許可して構いません（「今後も許可」を選べます）。`/pj-lens:init` と `/pj-lens:report` は、自分のスクリプトだけを事前に許可しているため、確認は出ません。
 
 このリポジトリに MCP は同梱していません（`.mcp.json` はありません）。`daily-planner` は、利用者が Claude Code に用意した予定表の MCP（Outlook、Google カレンダーなど）があれば、それで会議を取得します。なければ、スケジュール画面で会議を手入力してください。
 

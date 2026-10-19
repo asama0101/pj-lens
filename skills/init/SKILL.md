@@ -2,6 +2,7 @@
 name: init
 description: pj-lens のセットアップ。作業フォルダに、ダッシュボード(pj-lens.html)とデータ(.pj-lens/data.json)を用意する。何度実行しても既存のデータは変えない
 argument-hint: "[--sample]"
+allowed-tools: 'Bash(node "${CLAUDE_PLUGIN_ROOT}/tools/init.js" *)'
 disable-model-invocation: true
 ---
 

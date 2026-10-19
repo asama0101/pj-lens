@@ -39,3 +39,12 @@ for (const name of ["replan", "daily-planner", "intake"]) {
     assert.ok(text.includes("$ARGUMENTS"));
   });
 }
+
+for (const [name, script] of [["init", "init.js"], ["report", "report.js"]]) {
+  test(`${name}: そのスクリプトだけを、確認なしで実行できるよう事前承認する`, () => {
+    const fm = front(read(name));
+    const line = /^allowed-tools: (.+)$/m.exec(fm)?.[1] ?? "";
+    assert.ok(line.includes(`Bash(node "\${CLAUDE_PLUGIN_ROOT}/tools/${script}"`), line);
+    assert.doesNotMatch(line, /Bash\(node \*\)/, "node を何でも許可しない");
+  });
+}
