@@ -47,7 +47,7 @@ function render() {
   const c = clock();
   $("todaylabel").textContent = `${c.date.replace(/-/g, "/")}(${wdJa(c.date)})`;
   document.querySelectorAll("nav [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.id === "tab-" + S.screen)));
-  $("filebar").innerHTML = S.data ? `<button class="btn" data-openfile>別のファイルを開く</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
+  $("filebar").innerHTML = S.data ? `<button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
   const prev = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollLeft);
@@ -162,7 +162,11 @@ document.querySelector("nav").addEventListener("click", (e) => {
   S.resetScroll = true;
   render();
 });
-$("filebar").addEventListener("click", (e) => {
+$("filebar").addEventListener("click", async (e) => {
+  if (e.target.closest("[data-refresh]")) {
+    try { S.data = await store.reload(); S.saveFailed = false; banner(""); render(); toast("ファイルから読み直しました"); } catch (err) { toast(err.message); }
+    return;
+  }
   if (e.target.closest("[data-openfile]")) openFile(true);
   if (e.target.closest("[data-download]")) downloadJson();
 });
@@ -351,7 +355,7 @@ view.addEventListener("change", (e) => {
       return;
     }
     if (f === "party") { apply((d) => updateTask(d, id, { waitingOn: { party: el.value, since: t.waitingOn?.since ?? today } }, today), "変更を保存しました"); return; }
-    apply((d) => updateTask(d, id, { [f]: el.value }, today), "変更を保存しました");
+    apply((d) => updateTask(d, id, { [f]: f === "importance" ? el.value || null : el.value }, today), "変更を保存しました");
   }
 });
 

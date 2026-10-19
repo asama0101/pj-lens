@@ -216,3 +216,10 @@ test("renderSchedule: 優先リストはドラッグ可で、置いた回数と�
   assert.ok(html.includes("2回・実績 1.0h"));
   assert.ok(!html.includes("早朝作業"));
 });
+
+test("リスト: 重要度とメモを編集できる", () => {
+  const html = renderProjects(load(), TODAY, { filter: "A", view: "list" });
+  assert.ok(html.includes('data-f="importance" data-id="A3"'));
+  assert.ok(/<option value="high" selected>高<\/option>/.test(html), "A3 は重要度 高");
+  assert.ok(html.includes('data-f="memo" data-id="A3" value="納期回答待ち"'));
+});
