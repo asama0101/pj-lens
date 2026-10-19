@@ -1,0 +1,4 @@
+dist/
+data/data.json
+.superpowers/
+node_modules/

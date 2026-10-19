@@ -1,0 +1,11 @@
+{
+  "name": "nw-project-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "build": "node tools/build.js",
+    "report": "node tools/report.js"
+  }
+}
