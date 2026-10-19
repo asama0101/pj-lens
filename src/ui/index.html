@@ -7,7 +7,19 @@
 <style>/*__CSS__*/</style>
 </head>
 <body>
-<div id="app"></div>
+<div class="wrap">
+  <header class="top">
+    <div><h1>NW プロジェクトダッシュボード</h1><div class="today" id="todaylabel"></div></div>
+    <nav role="tablist" aria-label="画面">
+      <button role="tab" id="tab-project" aria-selected="true">プロジェクト</button>
+      <button role="tab" id="tab-schedule" aria-selected="false">スケジュール</button>
+    </nav>
+    <div class="filebar" id="filebar"></div>
+  </header>
+  <div id="banner" role="status"></div>
+  <main id="view"></main>
+</div>
+<div id="toast" class="toast" hidden></div>
 <script>/*__JS__*/</script>
 </body>
 </html>

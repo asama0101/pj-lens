@@ -16,6 +16,10 @@ export const MODULES = [
   "src/core/impact.js",
   "src/core/schedule.js",
   "src/ui/store.js",
+  "src/ui/common.js",
+  "src/ui/views/prio.js",
+  "src/ui/views/gantt.js",
+  "src/ui/views/project.js",
   "src/ui/app.js",
 ];
 
