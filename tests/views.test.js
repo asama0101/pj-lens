@@ -223,3 +223,24 @@ test("リスト: 重要度とメモを編集できる", () => {
   assert.ok(/<option value="high" selected>高<\/option>/.test(html), "A3 は重要度 高");
   assert.ok(html.includes('data-f="memo" data-id="A3" value="納期回答待ち"'));
 });
+
+// ---- 表示スイッチ（Task 12） ----
+test("renderGantt: showActual:false で .gact と凡例の実績が消える（true では従来どおり）", () => {
+  const d = load();
+  const on = gantt(d, ["A", "B"]);
+  assert.ok(count(on, /class="gact"/g) > 0 && on.includes("実績(最初の作業日"));
+  const off = gantt(d, ["A", "B"], { showActual: false });
+  assert.equal(count(off, /class="gact"/g), 0);
+  assert.ok(!off.includes("実績(最初の作業日"));
+  assert.equal(count(gantt(d, ["A", "B"], { showActual: true }), /class="gact"/g), count(on, /class="gact"/g));
+});
+
+test("renderProjects/renderSchedule: showPrio:false で『今日の優先』が出ず、cols に one が付く", () => {
+  const d = load();
+  const p = renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6", showPrio: false });
+  assert.ok(!p.includes("今日の優先") && p.includes('class="cols one"'));
+  const s = sched(d, { showPrio: false });
+  assert.ok(!s.includes("今日の優先") && s.includes('class="cols one"'));
+  assert.ok(renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6" }).includes("今日の優先"));
+  assert.ok(sched(d).includes("今日の優先"));
+});

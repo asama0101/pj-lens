@@ -314,7 +314,10 @@ tr.hl td{transition:background .3s}
 .gov .msl{position:absolute;top:0;bottom:0;border-left:1px dashed var(--ink);opacity:.3}
 .g-lane{width:var(--lanew)}
 
-.filebar{display:flex;gap:8px}
+.filebar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.fsep{width:1px;align-self:stretch;background:var(--line)}
+.chip-btn.pref[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:400}
+.cols.one{grid-template-columns:minmax(0,1fr)}
 .banner{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:13px}
 code{font-family:var(--f-mono);font-size:12px;background:var(--line-soft);padding:0 4px;border-radius:3px}
 
@@ -1302,6 +1305,38 @@ function createStore(deps = {}) {
 return { createStore };
 })();
 
+/* src/ui/prefs.js */
+const { DEFAULT_PREFS, loadPrefs, savePrefs } = (() => {
+// 画面の表示の好み（今日の優先・ガントの実績を隠す）。データではないので、ブラウザ（localStorage）に保存する。
+// localStorage が使えない・壊れているときは、既定のまま動く。
+
+const KEY = "pj-lens.prefs";
+const DEFAULT_PREFS = { showPrio: true, showActual: true };
+
+const browserStorage = () => {
+  try { return typeof window !== "undefined" ? window.localStorage : null; } catch { return null; }
+};
+
+/** 保存された好み（真偽値のキーだけ採用）。保存が無い・壊れている・storage が使えないときは既定 */
+function loadPrefs(storage = browserStorage()) {
+  const out = { ...DEFAULT_PREFS };
+  try {
+    const raw = storage?.getItem(KEY);
+    if (!raw) return out;
+    const v = JSON.parse(raw);
+    for (const k of Object.keys(DEFAULT_PREFS)) if (typeof v?.[k] === "boolean") out[k] = v[k];
+  } catch { /* 既定のまま */ }
+  return out;
+}
+
+/** 好みを保存する。保存できなくても黙って諦める */
+function savePrefs(prefs, storage = browserStorage()) {
+  try { storage?.setItem(KEY, JSON.stringify(prefs)); } catch { /* 保存できない環境 */ }
+}
+
+return { DEFAULT_PREFS, loadPrefs, savePrefs };
+})();
+
 /* src/ui/common.js */
 const { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills } = (() => {
 // 画面共通の小さな道具（HTML エスケープ、日付・時刻の表示、状態の見た目）。DOM には触れない。
@@ -1633,7 +1668,7 @@ const { GANTT_WINDOWS, renderGantt } = (() => {
 
 const GANTT_WINDOWS = [["m1", "1か月"], ["m3", "3か月"], ["m6", "6か月"], ["y1", "1年"], ["all", "全期間"]];
 
-const LEGEND = `<div class="legend"><span><i class="gbar b-todo" style="position:static;display:inline-block;width:22px;height:10px"></i>To Do</span><span><i class="gbar b-prog" style="position:static;display:inline-block;width:22px;height:10px"></i>In Progress</span><span><i class="gbar b-wait" style="position:static;display:inline-block;width:22px;height:10px"></i>Waiting</span><span><i class="gbar b-done" style="position:static;display:inline-block;width:22px;height:10px"></i>Done</span><span><i class="gbar gsum" style="position:static;display:inline-block;width:22px;height:8px"></i>プロジェクト全体</span><span><i class="ms" style="position:static;display:inline-block;transform:rotate(45deg);width:9px;height:9px"></i>マイルストーン</span><span><i class="gact" style="position:static;display:inline-block;width:22px;height:5px"></i>実績(最初の作業日〜完了日・今日)</span><span>開始日は、未入力なら先行タスクの期限から</span></div>`;
+const legend = (showActual) => `<div class="legend"><span><i class="gbar b-todo" style="position:static;display:inline-block;width:22px;height:10px"></i>To Do</span><span><i class="gbar b-prog" style="position:static;display:inline-block;width:22px;height:10px"></i>In Progress</span><span><i class="gbar b-wait" style="position:static;display:inline-block;width:22px;height:10px"></i>Waiting</span><span><i class="gbar b-done" style="position:static;display:inline-block;width:22px;height:10px"></i>Done</span><span><i class="gbar gsum" style="position:static;display:inline-block;width:22px;height:8px"></i>プロジェクト全体</span><span><i class="ms" style="position:static;display:inline-block;transform:rotate(45deg);width:9px;height:9px"></i>マイルストーン</span>${showActual ? `<span><i class="gact" style="position:static;display:inline-block;width:22px;height:5px"></i>実績(最初の作業日〜完了日・今日)</span>` : ""}<span>開始日は、未入力なら先行タスクの期限から</span></div>`;
 
 function tools(win, hideDone) {
   const seg = GANTT_WINDOWS.map(([k, l]) => `<button data-gwin="${k}" aria-pressed="${win === k}">${l}</button>`).join("");
@@ -1645,9 +1680,10 @@ function tools(win, hideDone) {
  * @param opts.hideDone  Done の行を隠す（全体バーの進捗には影響しない）
  * @param opts.readonly  true なら編集用の部品・属性を出さない（レポート用）
  * @param opts.askDel    削除確認を出すタスク ID
+ * @param opts.showActual false なら実績の線と凡例を出さない
  */
 function renderGantt(data, projectIds, today, opts = {}) {
-  const { window: win = "m6", hideDone = false, readonly = false, askDel = null } = opts;
+  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true } = opts;
   const ps = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
   if (!ps.length || !data.tasks.some((t) => projectIds.includes(t.projectId))) {
     return `<p class="muted">タスクがありません。${readonly ? "" : "リスト表示で追加してください。"}</p>`;
@@ -1719,7 +1755,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
       const bar = r.point
         ? `<i class="dot mk${drag} ${ui.dot}${late ? " is-late" : ""}"${gt} style="left:${x(r.end)};top:13px" title="${label}${readonly ? "" : "(ドラッグで期限を変更)"}"></i>`
         : `<i class="gbar${drag}${hasPre ? " fixl" : ""} ${ui.bar}${late ? " is-late" : ""}"${gt} style="left:${x(r.start)};width:${((diffDays(r.end, r.start) / total) * 100).toFixed(3)}%;min-width:5px" title="${label}${readonly ? "" : hasPre ? "(開始は先行から決まります。右端のドラッグで期限を変更)" : "(ドラッグで移動、両端で開始・期限を変更)"}">${readonly ? "" : `${hasPre ? "" : '<b class="gh l" data-gh="l"></b>'}<b class="gh r" data-gh="r"></b>`}</i>`;
-      const act = r.actual
+      const act = r.actual && showActual
         ? `<i class="gact" style="left:${x(r.actual.start)};width:${(Math.max(diffDays(r.actual.end, r.actual.start), 0) / total * 100).toFixed(3)}%;min-width:4px" title="実績 ${fmtMD(r.actual.start)}〜${fmtMD(r.actual.end)}"></i>`
         : "";
       const dependents = data.tasks.filter((o) => (o.predecessors ?? []).includes(t.id)).map((o) => o.id);
@@ -1740,7 +1776,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
     return `<section class="pg" aria-label="${esc(p.name)}">${head}<div class="gbody" style="--lanew:${laneW}"><div class="gov under">${grid}</div><div class="gov over">${msLines}${todayLine}</div>${headRow}${msRow}${sumRow}${rows}${addRow}</div></section>`;
   }).join("");
 
-  return `${readonly ? "" : tools(win, hideDone)}<div class="gscroll" data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"><div class="gwide">${sections}</div></div>${LEGEND}`;
+  return `${readonly ? "" : tools(win, hideDone)}<div class="gscroll" data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"><div class="gwide">${sections}</div></div>${legend(showActual)}`;
 }
 
 return { GANTT_WINDOWS, renderGantt };
@@ -1864,6 +1900,7 @@ function renderCalendar(data, today, opts) {
  * @param opts.now       {date, time}  現在時刻（過ぎた予定の判定に使う）
  * @param opts.selSess   選択中の枠 ID / opts.selMtg 選択中の会議 ID / opts.mtgDraft 追加中の会議の下書き
  * @param opts.picked    選択中のタスク ID（キーボード配置用）
+ * @param opts.showPrio  false なら今日の優先を出さない
  */
 function renderSchedule(data, today, opts) {
   const { view = "week", date = today } = opts;
@@ -1885,7 +1922,7 @@ function renderSchedule(data, today, opts) {
   const nav = `<div class="toolbar"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn" data-nav="${-step}" aria-label="前へ">←</button><button class="btn" data-nav="${step}" aria-label="次へ">→</button><button class="btn" data-sgoto>今日</button><strong style="margin-left:6px">${title}</strong></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" data-mtgadd>＋ 会議を追加</button><div class="seg" role="group" aria-label="表示"><button data-sview="week" aria-pressed="${view === "week"}">週</button><button data-sview="day" aria-pressed="${view === "day"}">日</button></div></div></div>
     <div class="summary"><span>実績 <b class="mono">${hours.toFixed(1)}時間</b></span><span>予定 <b class="mono">${planned}件</b></span>${unconf ? `<span class="pill wait">未確認 ${unconf}件</span><button class="btn" data-confirmall>未確認をすべて実績にする</button>` : ""}<button class="btn danger" data-delsel ${delOk ? "" : "disabled"}>${delLabel}</button></div>`;
-  return `<div class="cols"><section class="panel">${nav}<div id="mtgslot">${meetingForm(data, { mtgDraft: opts.mtgDraft, selMtg: selMtg?.id })}</div><div id="calslot">${renderCalendar(data, today, calOpts)}</div></section>${renderPrio(data, today, { sched: true, picked: opts.picked })}</div>`;
+  return `<div class="cols${opts.showPrio === false ? " one" : ""}"><section class="panel">${nav}<div id="mtgslot">${meetingForm(data, { mtgDraft: opts.mtgDraft, selMtg: selMtg?.id })}</div><div id="calslot">${renderCalendar(data, today, calOpts)}</div></section>${opts.showPrio === false ? "" : renderPrio(data, today, { sched: true, picked: opts.picked })}</div>`;
 }
 
 
@@ -1968,9 +2005,10 @@ function renderList(data, p, today, opts) {
  * @param opts.filter  "all" か projectId
  * @param opts.view    "gantt" | "list"
  * @param opts.window  ガントの表示期間
+ * @param opts.showPrio / opts.showActual  今日の優先・ガントの実績を出すか(既定は出す)
  */
 function renderProjects(data, today, opts = {}) {
-  const { view = "gantt", hideDone = false } = opts;
+  const { view = "gantt", hideDone = false, showPrio = true, showActual = true } = opts;
   const addBtn = `<button class="btn" data-addproject>＋ プロジェクトを追加</button>`;
   if (!data.projects.length) {
     return `<div class="toolbar"><div></div>${addBtn}</div><section class="panel"><p class="muted" style="margin:0">プロジェクトがありません。「＋ プロジェクトを追加」から追加してください。</p></section>`;
@@ -1980,11 +2018,11 @@ function renderProjects(data, today, opts = {}) {
   const chips = [["all", "すべて"], ...data.projects.map((p) => [p.id, p.name])]
     .map(([k, l]) => `<button class="chip-btn" data-filter="${esc(k)}" aria-pressed="${filter === k}">${esc(l)}</button>`).join("");
   const body = view === "gantt"
-    ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel })}</section>`
+    ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual })}</section>`
     : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, opts)).join("")}</div>`;
   return `<div class="toolbar"><div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="プロジェクトで絞り込み">${chips}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${addBtn}<div class="seg" role="group" aria-label="表示"><button data-pview="gantt" aria-pressed="${view === "gantt"}">ガント</button><button data-pview="list" aria-pressed="${view === "list"}">リスト</button></div></div></div>
-    <div class="cols">${body}${renderPrio(data, today, { sched: false })}</div>`;
+    <div class="cols${showPrio ? "" : " one"}">${body}${showPrio ? renderPrio(data, today, { sched: false }) : ""}</div>`;
 }
 
 return { renderProjects };
@@ -2104,6 +2142,7 @@ const S = {
   filter: "all", pview: "gantt", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
+  prefs: loadPrefs(),
 };
 const $ = (id) => document.getElementById(id);
 const view = $("view");
@@ -2126,13 +2165,13 @@ function startScreen() {
     ${S.openError ? `<p class="ask" style="max-width:none" role="alert">${esc(S.openError)}</p>` : ""}</section>`;
 }
 
-const scheduleOpts = () => ({ view: S.sview, date: S.sdate, now: clock(), selSess: S.selSess, selMtg: S.selMtg, mtgDraft: S.mtgDraft, picked: S.picked });
+const scheduleOpts = () => ({ view: S.sview, date: S.sdate, now: clock(), selSess: S.selSess, selMtg: S.selMtg, mtgDraft: S.mtgDraft, picked: S.picked, showPrio: S.prefs.showPrio });
 
 function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
   if (S.screen === "project") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone });
+    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
   return renderSchedule(S.data, today, scheduleOpts());
 }
@@ -2141,7 +2180,7 @@ function render() {
   const c = clock();
   $("todaylabel").textContent = `${c.date.replace(/-/g, "/")}(${wdJa(c.date)})`;
   document.querySelectorAll("nav [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.id === "tab-" + S.screen)));
-  $("filebar").innerHTML = S.data ? `<button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="進捗レポートを HTML ファイルとして保存します">レポート(HTML)</button><button class="btn" data-report="pdf" title="進捗レポートを開き、印刷画面から PDF にできます">レポート(PDF)</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
+  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="prio" aria-pressed="${S.prefs.showPrio}" title="画面右の「今日の優先」を出したり隠したりします">今日の優先</button><button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="進捗レポートを HTML ファイルとして保存します">レポート(HTML)</button><button class="btn" data-report="pdf" title="進捗レポートを開き、印刷画面から PDF にできます">レポート(PDF)</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
   const prev = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollLeft);
@@ -2296,6 +2335,8 @@ document.querySelector("nav").addEventListener("click", (e) => {
   render();
 });
 $("filebar").addEventListener("click", async (e) => {
+  const pf = e.target.closest("[data-pref]");
+  if (pf) { const k = pf.dataset.pref === "prio" ? "showPrio" : "showActual"; S.prefs = { ...S.prefs, [k]: !S.prefs[k] }; savePrefs(S.prefs); render(); return; }
   if (e.target.closest("[data-refresh]")) {
     await saveChain;
     if (S.saveFailed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }

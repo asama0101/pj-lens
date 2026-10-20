@@ -72,9 +72,10 @@ function renderList(data, p, today, opts) {
  * @param opts.filter  "all" か projectId
  * @param opts.view    "gantt" | "list"
  * @param opts.window  ガントの表示期間
+ * @param opts.showPrio / opts.showActual  今日の優先・ガントの実績を出すか(既定は出す)
  */
 export function renderProjects(data, today, opts = {}) {
-  const { view = "gantt", hideDone = false } = opts;
+  const { view = "gantt", hideDone = false, showPrio = true, showActual = true } = opts;
   const addBtn = `<button class="btn" data-addproject>＋ プロジェクトを追加</button>`;
   if (!data.projects.length) {
     return `<div class="toolbar"><div></div>${addBtn}</div><section class="panel"><p class="muted" style="margin:0">プロジェクトがありません。「＋ プロジェクトを追加」から追加してください。</p></section>`;
@@ -84,9 +85,9 @@ export function renderProjects(data, today, opts = {}) {
   const chips = [["all", "すべて"], ...data.projects.map((p) => [p.id, p.name])]
     .map(([k, l]) => `<button class="chip-btn" data-filter="${esc(k)}" aria-pressed="${filter === k}">${esc(l)}</button>`).join("");
   const body = view === "gantt"
-    ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel })}</section>`
+    ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual })}</section>`
     : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, opts)).join("")}</div>`;
   return `<div class="toolbar"><div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="プロジェクトで絞り込み">${chips}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${addBtn}<div class="seg" role="group" aria-label="表示"><button data-pview="gantt" aria-pressed="${view === "gantt"}">ガント</button><button data-pview="list" aria-pressed="${view === "list"}">リスト</button></div></div></div>
-    <div class="cols">${body}${renderPrio(data, today, { sched: false })}</div>`;
+    <div class="cols${showPrio ? "" : " one"}">${body}${showPrio ? renderPrio(data, today, { sched: false }) : ""}</div>`;
 }
