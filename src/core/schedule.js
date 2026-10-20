@@ -105,6 +105,8 @@ export function updateMeeting(data, id, patch) {
   }
   const next = { ...cur, ...Object.fromEntries(Object.entries(patch).filter(([k]) => allowed.includes(k) && k !== "projectId")) };
   if (cur.source === "manual") { assertTimes(next); next.title = (next.title ?? "").trim() || "会議"; }
+  // 日時が変わったら、確認済みは外す(別の時間の会議を、確認したことにしない)。confirmed を明示したときは、その値に従う
+  if (!("confirmed" in patch) && cur.confirmed === true && (next.date !== cur.date || next.start !== cur.start || next.end !== cur.end)) next.confirmed = false;
   let auto = false;
   if ("projectId" in patch) {
     if (patch.projectId === "" || patch.projectId == null) { delete next.projectBy; next.projectId = null; auto = true; }
@@ -153,7 +155,9 @@ export function syncMcpEvents(data, fetched, range) {
   const kept = data.events.filter((e) => e.source !== "mcp" || seen.has(e.externalId) || !inRange(e.date));
   const events = kept.map((e) => {
     const f = e.source === "mcp" ? fetched.find((x) => x.externalId === e.externalId) : null;
-    return f ? { ...e, title: f.title, date: f.date, start: f.start, end: f.end } : e;
+    if (!f) return e;
+    const moved = f.date !== e.date || f.start !== e.start || f.end !== e.end;
+    return { ...e, title: f.title, date: f.date, start: f.start, end: f.end, ...(moved && e.confirmed ? { confirmed: false } : {}) };
   });
   for (const f of fetched) {
     if (existing.has(f.externalId)) continue;

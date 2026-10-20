@@ -1125,6 +1125,8 @@ function updateMeeting(data, id, patch) {
   }
   const next = { ...cur, ...Object.fromEntries(Object.entries(patch).filter(([k]) => allowed.includes(k) && k !== "projectId")) };
   if (cur.source === "manual") { assertTimes(next); next.title = (next.title ?? "").trim() || "会議"; }
+  // 日時が変わったら、確認済みは外す(別の時間の会議を、確認したことにしない)。confirmed を明示したときは、その値に従う
+  if (!("confirmed" in patch) && cur.confirmed === true && (next.date !== cur.date || next.start !== cur.start || next.end !== cur.end)) next.confirmed = false;
   let auto = false;
   if ("projectId" in patch) {
     if (patch.projectId === "" || patch.projectId == null) { delete next.projectBy; next.projectId = null; auto = true; }
@@ -1173,7 +1175,9 @@ function syncMcpEvents(data, fetched, range) {
   const kept = data.events.filter((e) => e.source !== "mcp" || seen.has(e.externalId) || !inRange(e.date));
   const events = kept.map((e) => {
     const f = e.source === "mcp" ? fetched.find((x) => x.externalId === e.externalId) : null;
-    return f ? { ...e, title: f.title, date: f.date, start: f.start, end: f.end } : e;
+    if (!f) return e;
+    const moved = f.date !== e.date || f.start !== e.start || f.end !== e.end;
+    return { ...e, title: f.title, date: f.date, start: f.start, end: f.end, ...(moved && e.confirmed ? { confirmed: false } : {}) };
   });
   for (const f of fetched) {
     if (existing.has(f.externalId)) continue;
@@ -2202,7 +2206,7 @@ function renderList(data, p, today, opts) {
   }).join("");
 
   const projTaskIds = new Set(tasks.map((t) => t.id));
-  const log = (data.changeLog ?? []).filter((l) => (l.taskIds ?? []).some((id) => projTaskIds.has(id)))
+  const log = (data.changeLog ?? []).filter((l) => l.source == null || Number(l.deltaDays) !== 0).filter((l) => (l.taskIds ?? []).some((id) => projTaskIds.has(id)))
     .map((l) => `<li><span class="d">${fmtMD(l.at)}</span><span><span class="pill">${esc(l.cause ?? "—")}</span> ${esc(l.reason)} <span class="mono muted">(${esc((l.taskIds ?? []).join(", "))}・${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日)</span></span></li>`).join("")
     || `<li class="muted">変更履歴はありません。</li>`;
 
@@ -2318,7 +2322,7 @@ function detail(data, p, today) {
     return `<tr>${cell(`<span class="mono">${esc(t.id)}</span>`)}${cell(esc(t.title))}${cell(statusDotHtml(t, late))}${cell(`<span class="mono">${fmtMD(taskStart(data, t.id))}〜${fmtMD(t.due)}</span>`)}${cell(esc((t.predecessors ?? []).join(", ")) || "—")}${cell(t.waitingOn ? `${esc(t.waitingOn.party)}（${esc(t.waitingOn.since.slice(5).replace("-", "/"))}〜）` : "—")}${cell(a.count ? `<span class="mono">${a.hours.toFixed(1)}h・${a.count}回</span>` : "—")}</tr>`;
   }).join("");
   const ids = new Set(tasks.map((t) => t.id));
-  const log = (data.changeLog ?? []).filter((l) => (l.taskIds ?? []).some((id) => ids.has(id)))
+  const log = (data.changeLog ?? []).filter((l) => l.source == null || Number(l.deltaDays) !== 0).filter((l) => (l.taskIds ?? []).some((id) => ids.has(id)))
     .map((l) => `<tr>${cell(`<span class="mono">${fmtMD(l.at)}</span>`)}${cell(esc((l.taskIds ?? []).join(", ")))}${cell(`<span class="mono">${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日</span>`)}${cell(esc(l.cause ?? "—"))}${cell(esc(l.reason))}</tr>`).join("");
   // ガントの見出しにプロジェクト名と概要が出るので、タスクがあるときは重ねて出さない
   const heading = tasks.length ? "" : `<h3>${esc(p.name)}</h3><div class="sub">${esc(p.type)} ・ ${esc(p.status)} ・ ${fmtMD(p.start)}〜${fmtMD(p.due)}</div>`;
@@ -2452,6 +2456,7 @@ function focusSelector(el) {
   if (d.mf && d.pid) return q("data-mf", d.mf) + q("data-pid", d.pid) + q("data-i", d.i);
   if (d.gadd) return q("data-gadd", d.gadd);
   if (d.waitparty) return q("data-waitparty", d.waitparty);
+  if (d.rp) return q("data-rp", d.rp);
   return null;
 }
 
@@ -2546,6 +2551,16 @@ async function openFile(choose) {
     S.openError = `開けません: ${e.message}`;
   }
   render();
+}
+
+/** 大項目で絞り込み中に追加したタスクは、その大項目に入れる(入れないと、追加した行がその場で見えなくなる) */
+function addTaskInView(d, pid, name, today) {
+  const had = new Set(d.tasks.map((t) => t.id));
+  let next = addTaskQuick(d, pid, name, today);
+  if (S.group !== "all" && d.tasks.some((t) => t.projectId === pid && t.group === S.group)) {
+    next = updateTask(next, next.tasks.find((t) => !had.has(t.id)).id, { group: S.group }, today);
+  }
+  return next;
 }
 
 /* ---------- 日程変更の確認(期限を変えたとき、後続への影響を見てから反映する) ---------- */
@@ -2660,7 +2675,7 @@ view.addEventListener("click", (e) => {
   const at = q("[data-addtask]");
   if (at) {
     const pid = at.dataset.addtask, before = S.data.tasks.map((t) => t.id);
-    if (apply((d) => addTaskQuick(d, pid, "新しいタスク", today))) {
+    if (apply((d) => addTaskInView(d, pid, "新しいタスク", today))) {
       const id = S.data.tasks.map((t) => t.id).find((x) => !before.includes(x));
       S.focusSel = `#f-${id}-t`; render(); toast(`${id} を追加しました`);
     }
@@ -3012,7 +3027,7 @@ view.addEventListener("keydown", (e) => {
     const name = e.target.value.trim(), pid = e.target.dataset.gadd;
     if (!name) { toast("タスク名を入力してください"); return; }
     const before = S.data.tasks.map((t) => t.id);
-    if (apply((d) => addTaskQuick(d, pid, name, clock().date))) {
+    if (apply((d) => addTaskInView(d, pid, name, clock().date))) {
       S.focusSel = `[data-gadd="${pid}"]`; render();
       toast(`${S.data.tasks.map((t) => t.id).find((x) => !before.includes(x))} を追加しました。バーをドラッグして日程を決めます`);
     }

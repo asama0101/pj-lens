@@ -207,3 +207,12 @@ npm run build   # assets/pj-lens.html（プラグインに同梱する完成版�
 | `tools/` | セットアップ、ビルド、取り込み、Excel の読み取り（`xlsx.js`・`xlsx_dump.py`）などの CLI |
 | `tests/` | テスト（`fixtures/` は Excel のサンプル） |
 | `data/sample.json` | 架空のサンプルデータ |
+
+## 変更履歴
+
+### 0.1.0
+
+- 廃止: `/pj-lens:daily-planner`（画面の「今日の優先」で足りるため）、`/pj-lens:report` と CLI `tools/report.js`（画面のレポートボタンで足りるため）、CLI `tools/rank.js`・`tools/free.js`。`npm run report` も廃止しました。画面のレポート(HTML／PDF)ボタンと「今日の優先」は残っています。
+- 追加: 取り込み（`/pj-lens:intake` の `wbs`・`mail`・`calendar`・`rules`）、MCP の指定（`/pj-lens:mcp`）、日程変更の確認パネルと前倒しの詰め、大項目・中項目、会議のプロジェクトと実績の確認、「稼働」画面、表示スイッチ。
+- データ形式: 追加した項目はすべて任意で、従来の `data.json` はそのまま読めます。
+- 予定表の会議の同期は、`daily-planner` から `intake calendar` に移りました。

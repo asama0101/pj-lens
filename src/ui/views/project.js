@@ -50,7 +50,7 @@ function renderList(data, p, today, opts) {
   }).join("");
 
   const projTaskIds = new Set(tasks.map((t) => t.id));
-  const log = (data.changeLog ?? []).filter((l) => (l.taskIds ?? []).some((id) => projTaskIds.has(id)))
+  const log = (data.changeLog ?? []).filter((l) => l.source == null || Number(l.deltaDays) !== 0).filter((l) => (l.taskIds ?? []).some((id) => projTaskIds.has(id)))
     .map((l) => `<li><span class="d">${fmtMD(l.at)}</span><span><span class="pill">${esc(l.cause ?? "—")}</span> ${esc(l.reason)} <span class="mono muted">(${esc((l.taskIds ?? []).join(", "))}・${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日)</span></span></li>`).join("")
     || `<li class="muted">変更履歴はありません。</li>`;
 

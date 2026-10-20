@@ -6,6 +6,9 @@ import { renderProjects } from "../src/ui/views/project.js";
 import { renderGantt } from "../src/ui/views/gantt.js";
 import { renderSchedule, snapStart } from "../src/ui/views/schedule.js";
 import { taskActual } from "../src/core/sessions.js";
+import { buildReport } from "../src/ui/views/report.js";
+
+const buildReportHtml = (d) => buildReport(d, "2026-10-20", "");
 
 const load = () => JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
 const TODAY = "2026-10-20";
@@ -339,4 +342,19 @@ test("サマリー: 未確認の会議も件数に入り（内訳つき）、0 �
   assert.ok(html.includes("未確認の会議"));
   d.events.find((e) => e.id === "m2").confirmed = true;
   assert.ok(!renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW15 }).includes("data-confirmall"));
+});
+
+// ---- 見送った Minor の修正: 日程変更の履歴に、取り込みの記録を出さない ----
+test("日程変更の履歴: 取り込み（source があり、日数が 0）の記録は出さず、メールによる期限の変更（日数あり）は出す", () => {
+  const d = load();
+  d.changeLog.push(
+    { at: "2026-10-20", taskIds: ["A4"], reason: "WBS 取り込み: 追加 3 件", cause: null, deltaDays: 0, source: "wbs" },
+    { at: "2026-10-20", taskIds: ["A4"], reason: "メール報告: 着手", cause: null, deltaDays: 0, source: "mail", messageIds: ["m1"] },
+    { at: "2026-10-20", taskIds: ["A4"], reason: "メール報告: 納期延期", cause: "ベンダー", deltaDays: 5, source: "mail", messageIds: ["m2"] },
+  );
+  for (const html of [renderProjects(d, TODAY, { filter: "A", view: "list" }), buildReportHtml(d)]) {
+    assert.ok(html.includes("ベンダーX の納期回答が遅れたため"));
+    assert.ok(html.includes("メール報告: 納期延期"));
+    assert.ok(!html.includes("WBS 取り込み: 追加 3 件") && !html.includes("メール報告: 着手"));
+  }
 });

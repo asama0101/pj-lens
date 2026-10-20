@@ -200,3 +200,22 @@ test("updateMeeting: 件名を変えると、規則で付けたプロジェク�
   const c = updateMeeting(a, "m2", { title: "社内レビュー" });
   assert.deepEqual([c.events[1].projectId, c.events[1].projectBy], ["B", "manual"]);
 });
+
+// ---- 見送った Minor の修正: 日時が変わった会議は、確認済みを外す ----
+test("updateMeeting: 確認済みの会議の日時を変えると未確認に戻る（時間以外の変更や、confirmed を明示したときは除く）", () => {
+  const d = base([ev("09:00", "10:00", { id: "m1", confirmed: true })]);
+  assert.equal(updateMeeting(d, "m1", { start: "09:30" }).events[0].confirmed, false);
+  assert.equal(updateMeeting(d, "m1", { date: "2026-10-21" }).events[0].confirmed, false);
+  assert.equal(updateMeeting(d, "m1", { title: "改題" }).events[0].confirmed, true);
+  assert.equal(updateMeeting(d, "m1", { start: "09:30", confirmed: true }).events[0].confirmed, true);
+  assert.equal(updateMeeting(d, "m1", { start: "09:00" }).events[0].confirmed, true, "同じ時刻なら変えない");
+});
+
+test("syncMcpEvents: 取得で日時が変わった確認済みの会議は未確認に戻り、同じ日時なら確認済みのまま", () => {
+  const d = base([ev("09:00", "10:00", { id: "m1", source: "mcp", externalId: "e1", confirmed: true })]);
+  const r = { start: "2026-10-20", end: "2026-10-20" };
+  const moved = syncMcpEvents(d, [{ externalId: "e1", title: "会議", date: "2026-10-20", start: "10:00", end: "11:00" }], r);
+  assert.equal(moved.events[0].confirmed, false);
+  const same = syncMcpEvents(d, [{ externalId: "e1", title: "改題", date: "2026-10-20", start: "09:00", end: "10:00" }], r);
+  assert.equal(same.events[0].confirmed, true);
+});

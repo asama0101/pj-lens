@@ -8,10 +8,20 @@ const s = (v) => String(v ?? "").trim();
 const nz = (v) => (s(v) === "" ? null : s(v));
 const FIELDS = ["due", "start", "group", "subgroup", "status", "importance", "memo"];
 
-/** WBS 上の項目名を `/` で連結した、照合用のキー。空の項目は飛ばし、前後の空白（全角を含む）を除く */
+const esc = (p) => s(p).replace(/\\/g, "\\\\").replace(/\//g, "\\/");
+
+/**
+ * WBS 上の項目名を `/` で連結した、照合用のキー（大項目/中項目/件名）。前後の空白（全角を含む）は除き、名前に含まれる `/` は
+ * エスケープする。空の段は位置を残す（`構築//機器設定`）ので、空の段の位置が違う行は別のキーになる。件名だけの行は件名のまま
+ */
 export function wbsKey(row) {
-  return [row.group, row.subgroup, row.title].map(s).filter(Boolean).join("/");
+  const [g, sg, t] = [row.group, row.subgroup, row.title].map(esc);
+  if (!g && !sg) return t;
+  return `${g}/${sg}/${t}`;
 }
+
+/** 空の段を詰めた形（`構築/機器設定`）。先行キーの書き方の揺れを許すための比較用 */
+const squeeze = (k) => k.split("/").filter(Boolean).join("/");
 
 function rowProblem(r) {
   if (!s(r.title)) return "件名がありません";
@@ -34,6 +44,11 @@ export function planWbsImport(data, projectId, rows) {
   const tasks = data.tasks.filter((t) => t.projectId === projectId);
   const byId = new Map(data.tasks.map((t) => [t.id, t]));
   const existing = new Map(tasks.filter((t) => t.wbsKey).map((t) => [t.wbsKey, t]));
+  // wbsKey の無い手入力のタスクは、同じ件名のものが1つだけのときに限り、その件名の行と照合する（取り込みで wbsKey を付ける）
+  const titleCount = new Map();
+  for (const t of tasks.filter((x) => !x.wbsKey)) titleCount.set(s(t.title), (titleCount.get(s(t.title)) ?? 0) + 1);
+  const legacy = new Map(tasks.filter((t) => !t.wbsKey && titleCount.get(s(t.title)) === 1).map((t) => [s(t.title), t]));
+  const usedLegacy = new Set();
   const plan = { add: [], update: [], same: [], missing: [], rejected: [], warnings: [] };
 
   const seen = new Set();
@@ -42,18 +57,33 @@ export function planWbsImport(data, projectId, rows) {
     const key = wbsKey(r);
     let reason = rowProblem(r);
     if (!reason && seen.has(key)) reason = "WBS の項目名が重複しています";
-    if (!reason && !existing.has(key) && !s(r.due)) reason = "期限がありません（新しい項目には期限が必要です）";
+    let adopt = null;
+    if (!reason && !existing.has(key)) {
+      const l = legacy.get(s(r.title));
+      if (l && !usedLegacy.has(l.id)) adopt = l;
+    }
+    if (!reason && !existing.has(key) && !adopt && !s(r.due)) reason = "期限がありません（新しい項目には期限が必要です）";
     if (reason) { plan.rejected.push({ index, key, reason }); return; }
+    if (adopt) usedLegacy.add(adopt.id);
     seen.add(key);
-    valid.push({ r, key, index });
+    valid.push({ r, key, index, adopt });
   });
 
-  for (const { r, key, index } of valid) {
+  /** 先行キーを、既存・今回の行のキーへ解決する。空の段を詰めた書き方でも、曖昧でなければ解決する */
+  const known = [...new Set([...existing.keys(), ...seen])];
+  const resolve = (k) => {
+    if (known.includes(k)) return k;
+    const hit = known.filter((x) => squeeze(x) === squeeze(k));
+    return hit.length === 1 ? hit[0] : null;
+  };
+
+  for (const { r, key, index, adopt } of valid) {
     let predKeys;
     if (r.predecessorKeys != null) {
       predKeys = [];
       for (const k of r.predecessorKeys.map(s).filter(Boolean)) {
-        if (existing.has(k) || seen.has(k)) predKeys.push(k);
+        const hit = resolve(k);
+        if (hit) predKeys.push(hit);
         else plan.warnings.push(`行 ${index + 1}「${key}」: 先行 "${k}" が見つかりません`);
       }
     }
@@ -61,9 +91,10 @@ export function planWbsImport(data, projectId, rows) {
     for (const f of FIELDS) if (given(r, f)) row[f] = value(f, r[f]);
     if (predKeys) row.predecessorKeys = predKeys;
 
-    const cur = existing.get(key);
+    const cur = existing.get(key) ?? adopt;
     if (!cur) { plan.add.push({ key, row }); continue; }
     const before = {}, after = {};
+    if (adopt) { before.wbsKey = null; after.wbsKey = key; }
     for (const f of FIELDS) {
       if (row[f] === undefined) continue;
       if ((row[f] ?? "") !== (f === "memo" ? s(cur[f]) : (cur[f] ?? ""))) { before[f] = cur[f] ?? null; after[f] = row[f]; }
@@ -85,6 +116,7 @@ export function applyWbsImport(data, projectId, plan, { today }) {
   if (!plan.add.length && !plan.update.length) return data;
   let d = data;
   const idByKey = new Map(d.tasks.filter((t) => t.projectId === projectId && t.wbsKey).map((t) => [t.wbsKey, t.id]));
+  for (const u of plan.update) idByKey.set(u.key, u.taskId); // wbsKey を付けて取り込む手入力のタスクも、先行として解決できるように
   const added = [];
   for (const a of plan.add) {
     const had = new Set(d.tasks.map((t) => t.id));
@@ -100,7 +132,7 @@ export function applyWbsImport(data, projectId, plan, { today }) {
     for (const f of ["due", "start", "status", "importance", "memo"]) if (f in u.after) patch[f] = u.after[f];
     if (Object.keys(patch).length) d = updateTask(d, u.taskId, patch, today);
     const g = {};
-    for (const f of ["group", "subgroup"]) if (f in u.after) g[f] = u.after[f];
+    for (const f of ["group", "subgroup", "wbsKey"]) if (f in u.after) g[f] = u.after[f];
     if (Object.keys(g).length) d = { ...d, tasks: d.tasks.map((t) => (t.id === u.taskId ? { ...t, ...g } : t)) };
   }
   const setPreds = (id, keys) => { d = updateTask(d, id, { predecessors: keys.map((k) => idByKey.get(k)).filter(Boolean) }, today); };

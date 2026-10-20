@@ -69,7 +69,7 @@ test("統合: fixtures/wbs-merged.xlsx を読むと結合セルが展開され�
   const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), dataDir, fixture], { encoding: "utf8", timeout: 300000 });
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
-  assert.equal(out.sheets.length, 2);
+  assert.equal(out.sheets.length, 3);
   const rows = out.sheets[0].rows;
   const flat = rows.flat();
   assert.ok(flat.includes("設計"), "大項目");
@@ -86,4 +86,19 @@ test("realRun: 1MB を超える標準出力でも切れずに受け取れる（�
   const r = realRun(process.execPath, ["-e", "process.stdout.write('x'.repeat(5 * 1024 * 1024))"]);
   assert.equal(r.status, 0, String(r.error));
   assert.equal(r.stdout.length, 5 * 1024 * 1024);
+});
+
+test("統合: 非表示の行・列は読み取らず、件数を hiddenRows・hiddenColumns で返す", (t) => {
+  const real = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8" });
+  if (!pickPython(real)) return t.skip("Python 3 が見つかりません");
+  const dataDir = join(tmpdir(), "pjlens-test-xlsx");
+  const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), dataDir, join(REPO, "tests/fixtures/wbs-merged.xlsx")], { encoding: "utf8", timeout: 300000 });
+  assert.equal(r.status, 0, r.stderr);
+  const sh = JSON.parse(r.stdout).sheets[2];
+  const flat = sh.rows.flat();
+  assert.ok(flat.includes("表示される行") && flat.includes("表示される列"));
+  assert.ok(!flat.includes("隠れた行") && !flat.includes("隠れた列") && !flat.includes("隠れた行の期限"));
+  assert.deepEqual([sh.hiddenRows, sh.hiddenColumns], [1, 1]);
+  assert.deepEqual(sh.rows[0], ["項目", "期限"], "非表示の列を除いて詰める");
+  assert.equal(JSON.parse(r.stdout).sheets[0].hiddenRows, 0);
 });

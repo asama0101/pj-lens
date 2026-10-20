@@ -2,12 +2,14 @@
 """使い方: python xlsx_dump.py <file.xlsx>
 
 xlsx の全シートを JSON（UTF-8）で標準出力へ出す。
-  {"sheets": [{"name": str, "rows": [[セル, ...], ...], "indents": [int, ...], "truncated": bool, "hidden": bool}]}
+  {"sheets": [{"name": str, "rows": [[セル, ...], ...], "indents": [int, ...], "truncated": bool, "hidden": bool,
+                "hiddenRows": int, "hiddenColumns": int}]}
 - 結合セルは、左上の値を結合範囲のすべてのセルへ展開する（上位項目が縦に結合された WBS を読むため）
 - 日付は YYYY-MM-DD（時刻があれば YYYY-MM-DDTHH:MM）。整数に見える数値は整数にする
 - 文字列は前後の空白（全角を含む）を除き、空は null
 - indents は行ごとのインデント量（各行の最初の値のあるセルの、先頭の空白の数と Excel のインデント設定の大きい方）。
   インデントで階層を表す WBS を読むために出す（文字列からは先頭の空白を除くため）
+- 非表示の行・列は読み取らず（列は詰める）、除いた数を hiddenRows・hiddenColumns に出す
 - 1 シート最大 2000 行（超えたら truncated: true）
 """
 import datetime
@@ -15,6 +17,7 @@ import json
 import sys
 
 from openpyxl import load_workbook
+from openpyxl.utils import column_index_from_string
 
 MAX_ROWS = 2000
 
@@ -40,6 +43,16 @@ def leading_ws(v):
     return len(v) - len(v.lstrip()) if isinstance(v, str) else 0
 
 
+def hidden_columns(ws):
+    cols = set()
+    for key, d in ws.column_dimensions.items():
+        if d.hidden:
+            lo = d.min or column_index_from_string(key)
+            hi = d.max or lo
+            cols.update(range(lo, hi + 1))
+    return cols
+
+
 def sheet_rows(ws):
     grid = [list(r) for r in ws.iter_rows(values_only=True)]
     for rng in ws.merged_cells.ranges:
@@ -47,19 +60,29 @@ def sheet_rows(ws):
         for r in range(rng.min_row - 1, min(rng.max_row, len(grid))):
             for c in range(rng.min_col - 1, min(rng.max_col, len(grid[r]))):
                 grid[r][c] = top
-    rows = [[cell_value(v) for v in row] for row in grid]
-    while rows and all(v is None for v in rows[-1]):
-        rows.pop()
-    indents = []
-    for r, row in enumerate(rows):
-        c = next((i for i, v in enumerate(row) if v is not None), None)
-        if c is None:
+    # 非表示の行・列を除く（結合セルの展開のあとで除く）。元の行・列の位置は、インデントの取得に使う
+    hidden_rows = {i for i, d in ws.row_dimensions.items() if d.hidden}
+    hidden_cols = hidden_columns(ws)
+    kept = []
+    for r, row in enumerate(grid, start=1):
+        if r in hidden_rows:
+            continue
+        kept.append((r, [(c, cell_value(v), v) for c, v in enumerate(row, start=1) if c not in hidden_cols]))
+    while kept and all(v is None for _, cells in kept[-1:] for _, v, _ in cells):
+        kept.pop()
+    rows, indents = [], []
+    for r, cells in kept:
+        values = [v for _, v, _ in cells]
+        rows.append(values)
+        first = next((k for k, v in enumerate(values) if v is not None), None)
+        if first is None:
             indents.append(0)
             continue
-        excel = int(getattr(ws.cell(row=r + 1, column=c + 1).alignment, "indent", 0) or 0)
-        indents.append(max(leading_ws(grid[r][c]), excel))
+        col, _, raw = cells[first]
+        excel = int(getattr(ws.cell(row=r, column=col).alignment, "indent", 0) or 0)
+        indents.append(max(leading_ws(raw), excel))
     truncated = len(rows) > MAX_ROWS
-    return rows[:MAX_ROWS], indents[:MAX_ROWS], truncated
+    return rows[:MAX_ROWS], indents[:MAX_ROWS], truncated, len([r for r in hidden_rows if r <= len(grid)]), len([c for c in hidden_cols if c <= max((len(r) for r in grid), default=0)])
 
 
 def main(path):
@@ -67,8 +90,8 @@ def main(path):
     wb = load_workbook(path, data_only=True)
     sheets = []
     for ws in wb.worksheets:
-        rows, indents, truncated = sheet_rows(ws)
-        sheets.append({"name": ws.title, "rows": rows, "indents": indents, "truncated": truncated, "hidden": ws.sheet_state != "visible"})
+        rows, indents, truncated, hidden_r, hidden_c = sheet_rows(ws)
+        sheets.append({"name": ws.title, "rows": rows, "indents": indents, "truncated": truncated, "hidden": ws.sheet_state != "visible", "hiddenRows": hidden_r, "hiddenColumns": hidden_c})
     json.dump({"sheets": sheets}, sys.stdout, ensure_ascii=False)
 
 

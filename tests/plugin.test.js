@@ -49,3 +49,14 @@ test("廃止したコマンド・エージェント・CLI が残っていない"
   }
   assert.equal(json("package.json").scripts.report, undefined);
 });
+
+test("説明文に、廃止したコマンド（今日の計画・daily-planner）が残っていない", () => {
+  const texts = [json(".claude-plugin/plugin.json").description, json(".claude-plugin/marketplace.json").metadata?.description, ...json(".claude-plugin/marketplace.json").plugins.map((p) => p.description)];
+  for (const t of texts) assert.doesNotMatch(String(t), /今日の計画|daily-planner/);
+});
+
+test("README に変更履歴があり、廃止したコマンドと CLI を書いている", () => {
+  const readme = readFileSync(new URL("README.md", root), "utf8");
+  assert.match(readme, /## 変更履歴/);
+  for (const w of ["daily-planner", "/pj-lens:report", "tools/rank.js", "tools/free.js", "tools/report.js"]) assert.ok(readme.includes(w), w);
+});

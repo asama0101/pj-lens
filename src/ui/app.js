@@ -85,6 +85,7 @@ function focusSelector(el) {
   if (d.mf && d.pid) return q("data-mf", d.mf) + q("data-pid", d.pid) + q("data-i", d.i);
   if (d.gadd) return q("data-gadd", d.gadd);
   if (d.waitparty) return q("data-waitparty", d.waitparty);
+  if (d.rp) return q("data-rp", d.rp);
   return null;
 }
 
@@ -179,6 +180,16 @@ async function openFile(choose) {
     S.openError = `開けません: ${e.message}`;
   }
   render();
+}
+
+/** 大項目で絞り込み中に追加したタスクは、その大項目に入れる(入れないと、追加した行がその場で見えなくなる) */
+function addTaskInView(d, pid, name, today) {
+  const had = new Set(d.tasks.map((t) => t.id));
+  let next = addTaskQuick(d, pid, name, today);
+  if (S.group !== "all" && d.tasks.some((t) => t.projectId === pid && t.group === S.group)) {
+    next = updateTask(next, next.tasks.find((t) => !had.has(t.id)).id, { group: S.group }, today);
+  }
+  return next;
 }
 
 /* ---------- 日程変更の確認(期限を変えたとき、後続への影響を見てから反映する) ---------- */
@@ -293,7 +304,7 @@ view.addEventListener("click", (e) => {
   const at = q("[data-addtask]");
   if (at) {
     const pid = at.dataset.addtask, before = S.data.tasks.map((t) => t.id);
-    if (apply((d) => addTaskQuick(d, pid, "新しいタスク", today))) {
+    if (apply((d) => addTaskInView(d, pid, "新しいタスク", today))) {
       const id = S.data.tasks.map((t) => t.id).find((x) => !before.includes(x));
       S.focusSel = `#f-${id}-t`; render(); toast(`${id} を追加しました`);
     }
@@ -645,7 +656,7 @@ view.addEventListener("keydown", (e) => {
     const name = e.target.value.trim(), pid = e.target.dataset.gadd;
     if (!name) { toast("タスク名を入力してください"); return; }
     const before = S.data.tasks.map((t) => t.id);
-    if (apply((d) => addTaskQuick(d, pid, name, clock().date))) {
+    if (apply((d) => addTaskInView(d, pid, name, clock().date))) {
       S.focusSel = `[data-gadd="${pid}"]`; render();
       toast(`${S.data.tasks.map((t) => t.id).find((x) => !before.includes(x))} を追加しました。バーをドラッグして日程を決めます`);
     }
