@@ -2,6 +2,7 @@
 import { addDays, diffDays } from "../../core/dates.js";
 import { ganttRows, ganttLayout, timeTicks, projectProgress, projectFlags, taskFlags } from "../../core/metrics.js";
 import { projectActualHours } from "../../core/sessions.js";
+import { groupSections } from "../../core/groups.js";
 import { esc, fmtMD, wdJa, STATUS_UI, flagPills } from "../common.js";
 
 export const GANTT_WINDOWS = [["m1", "1か月"], ["m3", "3か月"], ["m6", "6か月"], ["y1", "1年"], ["all", "全期間"]];
@@ -19,9 +20,10 @@ function tools(win, hideDone) {
  * @param opts.readonly  true なら編集用の部品・属性を出さない（レポート用）
  * @param opts.askDel    削除確認を出すタスク ID
  * @param opts.showActual false なら実績の線と凡例を出さない
+ * @param opts.group     "all" か大項目の名前(その大項目の行だけを出す)
  */
 export function renderGantt(data, projectIds, today, opts = {}) {
-  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true } = opts;
+  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, group = "all" } = opts;
   const ps = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
   if (!ps.length || !data.tasks.some((t) => projectIds.includes(t.projectId))) {
     return `<p class="muted">タスクがありません。${readonly ? "" : "リスト表示で追加してください。"}</p>`;
@@ -79,10 +81,12 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     const sumHandles = readonly ? "" : `<b class="gh l" data-gh="l"></b><b class="gh r" data-gh="r"></b>`;
     const sumRow = `<div class="g-row g-sumrow"><div class="g-label"><span class="id"></span><span class="muted">プロジェクト全体</span></div><div class="g-lane" ${laneStyle}><i class="gbar gsum"${sumAttr} style="left:${x(p.start)};width:${sumW}%;min-width:4px" title="${fmtMD(p.start)}〜${fmtMD(p.due)}${readonly ? "" : "(両端のドラッグで開始・期限を変更)"}"><u style="width:${pct}%"></u>${sumHandles}</i><span class="g-due mono" style="left:${x(p.due)}">${fmtMD(p.due)}</span></div></div>`;
 
-    const rows = g.rows.filter((r) => {
-      const t = data.tasks.find((o) => o.id === r.taskId);
-      return !(hideDone && t.status === "Done");
-    }).map((r) => {
+    const taskOf = (r) => data.tasks.find((o) => o.id === r.taskId);
+    const visibleRows = g.rows.filter((r) => {
+      const t = taskOf(r);
+      return !(hideDone && t.status === "Done") && (group === "all" || (t.group ?? "") === group);
+    });
+    const rowHtml = (r) => {
       const t = data.tasks.find((o) => o.id === r.taskId);
       const late = taskFlags(t, today, data.settings).includes("overdue");
       const ui = STATUS_UI[t.status] ?? STATUS_UI["To Do"];
@@ -106,7 +110,13 @@ export function renderGantt(data, projectIds, today, opts = {}) {
         lab = `<div class="g-label"><span class="id">${esc(t.id)}</span>${name}${del}<span class="g-pre">${hasPre ? "← " + esc(t.predecessors.join(", ")) : ""}</span></div>`;
       }
       return `<div class="g-row">${lab}<div class="g-lane" ${laneStyle}>${bar}${act}<span class="g-due mono" style="left:${x(r.end)}">${fmtMD(t.due)}</span></div></div>`;
-    }).join("");
+    };
+    // 大項目・中項目があるプロジェクトは、(大項目, 中項目) ごとに区切り行を入れて並べる
+    const grouped = visibleRows.some((r) => taskOf(r).group || taskOf(r).subgroup);
+    const rows = grouped
+      ? groupSections(visibleRows.map((r) => ({ ...taskOf(r), row: r }))).map((sec) =>
+        `<div class="g-row g-grp"><div class="g-label"><span class="g-grp-t"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""}</span></div><div class="g-lane" ${laneStyle}></div></div>${sec.tasks.map((x) => rowHtml(x.row)).join("")}`).join("")
+      : visibleRows.map(rowHtml).join("");
 
     const addRow = readonly ? "" : `<div class="g-row g-add"><div class="g-label"><input class="in" data-gadd="${esc(p.id)}" placeholder="＋ タスクを追加(名前を入力して Enter)" aria-label="${esc(p.name)} にタスクを追加"></div><div class="g-lane" ${laneStyle}></div></div>`;
     const headRow = `<div class="g-row g-head"><div class="g-label"></div><div class="g-lane g-axis ${dayScale ? "day" : ""}" ${laneStyle}>${dayScale ? "" : `<span class="todaytag" style="left:${x(today)}">今日</span>`}${axis}</div></div>`;

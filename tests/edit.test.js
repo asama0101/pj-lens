@@ -153,3 +153,10 @@ test("addProject / deleteProject", () => {
   assert.ok(!del.data.projects.some((x) => x.id === "C") && !del.data.tasks.some((t) => t.projectId === "C"));
   ok(del.data);
 });
+
+test("updateTask: group/subgroup は trim され、空は null", () => {
+  const d = { tasks: [{ id: "T1", projectId: "P", title: "x", due: "2026-10-20", status: "To Do", predecessors: [], waitingOn: null }], projects: [{ id: "P" }] };
+  const n = updateTask(d, "T1", { group: "  設計 ", subgroup: "   " }).tasks[0];
+  assert.deepEqual([n.group, n.subgroup], ["設計", null]);
+  assert.equal(updateTask(d, "T1", { group: null }).tasks[0].group, null);
+});

@@ -17,6 +17,7 @@ export const MODULES = [
   "src/core/rules.js",
   "src/core/schedule.js",
   "src/core/workload.js",
+  "src/core/groups.js",
   "src/ui/store.js",
   "src/ui/prefs.js",
   "src/ui/common.js",

@@ -244,3 +244,48 @@ test("renderProjects/renderSchedule: showPrio:false で『今日の優先』が�
   assert.ok(renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6" }).includes("今日の優先"));
   assert.ok(sched(d).includes("今日の優先"));
 });
+
+// ---- 大項目・中項目（Task 13） ----
+const noGroups = () => { const d = load(); for (const t of d.tasks) { delete t.group; delete t.subgroup; } return d; };
+
+test("リスト: 大項目・中項目の入力欄と、設定したラベル名の見出し", () => {
+  const d = load();
+  const html = renderProjects(d, TODAY, { filter: "A", view: "list" });
+  assert.ok(html.includes("<th>大項目</th><th>中項目</th>"));
+  assert.ok(html.includes('data-f="group" data-id="A1"') && html.includes('value="設計"'));
+  assert.ok(html.includes('data-f="subgroup" data-id="A3"') && html.includes('value="機器選定"'));
+  d.settings.labels = { group: "フェーズ", subgroup: "作業群" };
+  const h2 = renderProjects(d, TODAY, { filter: "A", view: "list" });
+  assert.ok(h2.includes("<th>フェーズ</th><th>作業群</th>"));
+});
+
+test("絞り込み: group を選ぶと該当しない行が消え、select が出る（group が無いデータでは select が出ない）", () => {
+  const d = load();
+  const g = renderProjects(d, TODAY, { filter: "A", view: "gantt", window: "m6", group: "調達" });
+  assert.ok(g.includes("data-groupfilter") && g.includes("<option value=\"調達\" selected>"));
+  assert.ok(g.includes('data-gt="A2"') && g.includes('data-gt="A3"') && !g.includes('data-gt="A5"'));
+  const l = renderProjects(d, TODAY, { filter: "A", view: "list", group: "構築" });
+  assert.ok(l.includes('data-row="A5"') && !l.includes('data-row="A2"'));
+  const all = renderProjects(d, TODAY, { filter: "A", view: "list", group: "all" });
+  assert.ok(all.includes('data-row="A2"') && all.includes('data-row="A5"'));
+  assert.ok(!renderProjects(noGroups(), TODAY, { filter: "A", view: "gantt", window: "m6" }).includes("data-groupfilter"));
+  assert.ok(renderProjects(d, TODAY, { filter: "A", view: "list", group: "存在しない" }).includes('data-row="A2"'), "存在しない group は絞り込まない");
+});
+
+test("renderGantt: g-grp の区切り行が group ごとに出る（readonly でも）。group が無いデータでは出ない", () => {
+  const d = load();
+  const html = gantt(d, ["A"]);
+  assert.equal(count(html, /class="g-row g-grp"/g), 4);
+  assert.ok(html.includes("調達") && html.includes("▸ 機器選定"));
+  assert.ok(html.indexOf("設計") < html.indexOf('data-gt="A1"') && html.indexOf('data-gt="A1"') < html.indexOf("調達"));
+  assert.equal(count(gantt(d, ["A"], { readonly: true }), /class="g-row g-grp"/g), 4);
+  assert.equal(count(gantt(noGroups(), ["A"]), /g-grp/g), 0);
+  assert.equal(count(gantt(d, ["B"]), /g-grp/g), 0, "group を持つタスクが無いプロジェクトには出ない");
+});
+
+test("利用者入力（group 名）はエスケープされる", () => {
+  const d = load(); d.tasks.find((t) => t.id === "A1").group = "<img src=x onerror=1>";
+  const html = renderProjects(d, TODAY, { filter: "A", view: "gantt", window: "m6" }) + renderProjects(d, TODAY, { filter: "A", view: "list" });
+  assert.ok(!html.includes("<img src=x"));
+  assert.ok(html.includes("&lt;img src=x"));
+});

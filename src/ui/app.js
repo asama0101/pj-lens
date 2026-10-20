@@ -10,7 +10,7 @@ const S = {
   filter: "all", pview: "gantt", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
-  prefs: loadPrefs(),
+  prefs: loadPrefs(), group: "all",
 };
 const $ = (id) => document.getElementById(id);
 const view = $("view");
@@ -39,7 +39,7 @@ function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
   if (S.screen === "project") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
+    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
   return renderSchedule(S.data, today, scheduleOpts());
 }
@@ -246,8 +246,8 @@ view.addEventListener("click", (e) => {
   const gw = q("[data-gwin]"); if (gw) { S.gwin = gw.dataset.gwin; S.resetScroll = true; render(); return; }
   if (q("[data-hidedone]")) { S.hideDone = !S.hideDone; render(); return; }
   if (q("[data-gotoday]")) { scrollToday(true); return; }
-  const f = q("[data-filter]"); if (f) { S.filter = f.dataset.filter; S.resetScroll = true; render(); return; }
-  const o = q("[data-open]"); if (o) { S.filter = o.dataset.open; S.pview = "list"; S.resetScroll = true; render(); return; }
+  const f = q("[data-filter]"); if (f) { S.filter = f.dataset.filter; S.group = "all"; S.resetScroll = true; render(); return; }
+  const o = q("[data-open]"); if (o) { S.filter = o.dataset.open; S.group = "all"; S.pview = "list"; S.resetScroll = true; render(); return; }
   const pv = q("[data-pview]"); if (pv) { S.pview = pv.dataset.pview; S.resetScroll = true; render(); return; }
   if (q("[data-addproject]")) {
     const before = S.data.projects.map((p) => p.id);
@@ -387,6 +387,7 @@ function onChange(el) {
     if (!apply((d) => updateMeeting(d, m.id, { [f]: v }), f === "skip" ? (v ? "参加しない会議にしました。空き時間として扱います" : "参加する会議に戻しました") : "会議を更新しました", { partial: true })) { el.value = old; }
     return;
   }
+  if (el.dataset.groupfilter !== undefined) { S.group = el.value; S.resetScroll = true; render(); return; }
   if (el.dataset.pf) {
     const k = el.dataset.pf, pid = el.dataset.pid;
     apply((d) => updateProject(d, pid, { [k]: el.value }), "プロジェクトを更新しました");

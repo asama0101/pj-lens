@@ -36,7 +36,7 @@ export function predecessorCandidates(data, taskId) {
 }
 
 /**
- * patch: title / status / due / start / importance / memo / predecessors / waitingOn
+ * patch: title / status / due / start / importance / memo / group / subgroup / predecessors / waitingOn
  * 状態を Done にすると doneAt に today、他へ戻すと null。Waiting は待ち先が必須で、外れると waitingOn は null。
  */
 export function updateTask(data, taskId, patch, today = nowLocal().date) {
@@ -60,6 +60,7 @@ export function updateTask(data, taskId, patch, today = nowLocal().date) {
       n.importance = patch.importance ?? null;
     }
     if ("memo" in patch) n.memo = String(patch.memo ?? "");
+    for (const k of ["group", "subgroup"]) if (k in patch) n[k] = String(patch[k] ?? "").trim() || null;
     if ("predecessors" in patch) {
       const ids = [...new Set(patch.predecessors)];
       for (const id of ids) {
