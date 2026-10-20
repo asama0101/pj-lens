@@ -11,6 +11,7 @@ const S = {
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
   prefs: loadPrefs(), group: "all", pendingReplan: null,
+  wperiod: "week", wdate: clock().date,
 };
 const $ = (id) => document.getElementById(id);
 const view = $("view");
@@ -41,6 +42,7 @@ function renderBody() {
   if (S.screen === "project") {
     return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
+  if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
   return renderSchedule(S.data, today, scheduleOpts());
 }
 
@@ -317,6 +319,11 @@ view.addEventListener("click", (e) => {
   if (q("[data-doneno]")) { S.pendingDone = null; render(); return; }
   const dk = q("[data-doneok]");
   if (dk) { const pd = S.pendingDone; S.pendingDone = null; setStatus(pd.id, pd.status, pd.future); return; }
+
+  /* 稼働画面 */
+  const wp = q("[data-wperiod]"); if (wp) { S.wperiod = wp.dataset.wperiod; render(); return; }
+  const wn = q("[data-wnav]"); if (wn) { S.wdate = shiftWorkloadDate(S.wperiod, S.wdate, +wn.dataset.wnav); render(); return; }
+  if (q("[data-wtoday]")) { S.wdate = today; render(); return; }
 
   /* スケジュール画面 */
   const sv = q("[data-sview]"); if (sv) { S.sview = sv.dataset.sview; render(); return; }

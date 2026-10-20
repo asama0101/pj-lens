@@ -21,7 +21,7 @@ export function projectHours(data, projectId) {
 
 /**
  * 期間内の稼働。rows は data.projects の順（0 時間でも出す）。unassigned はプロジェクト未設定（または存在しない）の会議。
- * unconfirmed は、期間内で過ぎたのに未確認の作業枠と会議の件数（now があるときだけ数える）
+ * unconfirmed は、期間内で過ぎたのに未確認の作業枠と会議の件数（now があるときだけ数える。内訳は unconfirmedTasks・unconfirmedMeetings）
  */
 export function workload(data, range, now) {
   const ids = new Set(data.projects.map((p) => p.id));
@@ -33,12 +33,12 @@ export function workload(data, range, now) {
     return { projectId: p.id, task, meeting, total: task + meeting };
   });
   const unassigned = sumBy(meetings.filter((m) => !ids.has(m.projectId)), hours);
-  let unconfirmed = 0;
+  let unconfirmedTasks = 0, unconfirmedMeetings = 0;
   if (now) {
-    unconfirmed += data.tasks.flatMap((t) => t.sessions ?? []).filter((s) => inRange(s.date, range) && sessionKind(s, now) === "unconfirmed").length;
-    unconfirmed += (data.events ?? []).filter((m) => inRange(m.date, range) && meetingKind(m, now) === "unconfirmed").length;
+    unconfirmedTasks = data.tasks.flatMap((t) => t.sessions ?? []).filter((s) => inRange(s.date, range) && sessionKind(s, now) === "unconfirmed").length;
+    unconfirmedMeetings = (data.events ?? []).filter((m) => inRange(m.date, range) && meetingKind(m, now) === "unconfirmed").length;
   }
-  return { rows, unassigned, total: sumBy(rows, (r) => r.total) + unassigned, unconfirmed };
+  return { rows, unassigned, total: sumBy(rows, (r) => r.total) + unassigned, unconfirmed: unconfirmedTasks + unconfirmedMeetings, unconfirmedTasks, unconfirmedMeetings };
 }
 
 /** 週（月曜〜日曜）または月（月初〜月末）の範囲 */

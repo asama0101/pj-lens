@@ -156,6 +156,14 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .in.sm{width:auto}
 .in.gi{width:7em}
 .tscroll{overflow-x:auto}
+.hrs{background:var(--accent-soft);color:var(--ink);border-radius:4px;padding:0 8px}
+.wl-tbl .num{text-align:right;white-space:nowrap}
+.wl-tbl tfoot td{font-weight:700;border-top:1px solid var(--line)}
+.wl-bar{display:flex;height:12px;min-width:2px}
+.wl-bar .t,.sw.wl-t{background:var(--ok)}
+.wl-bar .m,.sw.wl-m{background:var(--meeting-edge)}
+.wl-bar.un{opacity:.6}
+.wl .banner{margin-top:14px}
 .tbl.edit td[data-l="件名"] .in{min-width:13em}
 .tbl.edit td[data-l="状態"] select{min-width:7em}
 .tbl.edit td[data-l="待ち先"] .in{min-width:6em}

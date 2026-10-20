@@ -1,6 +1,7 @@
 // プロジェクト画面: 絞り込み × ガント／リスト、右に「今日の優先」
 import { projectProgress, projectFlags, taskFlags, taskStart } from "../../core/metrics.js";
-import { taskActual, projectActualHours } from "../../core/sessions.js";
+import { taskActual } from "../../core/sessions.js";
+import { projectHours } from "../../core/workload.js";
 import { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE } from "../../core/schema.js";
 import { esc, fmtMD, statusDotHtml, flagPills } from "../common.js";
 import { predecessorCandidates } from "../edit.js";
@@ -65,7 +66,7 @@ function renderList(data, p, today, opts) {
       <label>状態 <select class="in sm" data-pf="status" data-pid="${esc(p.id)}" aria-label="${esc(p.name)} の状態">${PROJECT_STATUS.map((o) => `<option ${o === p.status ? "selected" : ""}>${o}</option>`).join("")}</select></label>
       <label>開始 <input class="in sm" type="date" data-pf="start" data-pid="${esc(p.id)}" value="${esc(p.start)}" aria-label="${esc(p.name)} の開始日"></label>
       <label>期限 <input class="in sm" type="date" data-pf="due" data-pid="${esc(p.id)}" value="${esc(p.due)}" aria-label="${esc(p.name)} の期限"></label>
-      <span>進捗 <b class="mono">${prog.done}/${prog.total}</b> (${Math.round(prog.rate * 100)}%)</span><span>実績 <b class="mono">${projectActualHours(data, p.id).toFixed(1)}h</b></span></div></div><div>${flagPills(data, p.id, today, projectFlags(data, p.id, today))}</div></div>
+      <span>進捗 <b class="mono">${prog.done}/${prog.total}</b> (${Math.round(prog.rate * 100)}%)</span><span class="mono hrs">${(() => { const hh = projectHours(data, p.id); return `稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）`; })()}</span></div></div><div>${flagPills(data, p.id, today, projectFlags(data, p.id, today))}</div></div>
     <div class="tscroll"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>先行</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn" data-addtask="${esc(p.id)}">＋ タスクを追加</button><span class="note">変更はその場でファイルに保存されます。後続の日程をまとめて見直すときは、Claude Code の replan に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>

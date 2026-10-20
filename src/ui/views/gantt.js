@@ -1,7 +1,7 @@
 // ガントチャート（画面とレポートで共用）。位置と幅はすべて範囲全体に対する % で表し、画面幅に追従させる。
 import { addDays, diffDays } from "../../core/dates.js";
 import { ganttRows, ganttLayout, timeTicks, projectProgress, projectFlags, taskFlags } from "../../core/metrics.js";
-import { projectActualHours } from "../../core/sessions.js";
+import { projectHours } from "../../core/workload.js";
 import { groupSections } from "../../core/groups.js";
 import { esc, fmtMD, wdJa, STATUS_UI, flagPills } from "../common.js";
 
@@ -54,6 +54,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
   const sections = ps.map((p) => {
     const g = geo.get(p.id);
     const prog = projectProgress(data, p.id);
+    const hh = projectHours(data, p.id);
     const pct = Math.round(prog.rate * 100);
     const flags = projectFlags(data, p.id, today);
     const ms = g.milestones;
@@ -74,7 +75,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
       : "";
 
     const months = Math.max(1, Math.round(diffDays(p.due, p.start) / 30.4));
-    const head = `<div class="pg-head"><div>${readonly ? `<strong>${esc(p.name)}</strong>` : `<button class="proj-name" data-filter="${esc(p.id)}">${esc(p.name)}</button>`}<div class="proj-meta"><span>${esc(p.type)}</span><span>${esc(p.status)}</span><span class="mono">${fmtMD(p.start)}〜${fmtMD(p.due)}(${months}か月)</span><span class="mono">${prog.done}/${prog.total} Done (${pct}%)</span><span class="mono">実績 ${projectActualHours(data, p.id).toFixed(1)}h</span>${flagPills(data, p.id, today, flags)}</div></div>${readonly ? "" : `<button class="btn" data-open="${esc(p.id)}">編集する</button>`}</div>`;
+    const head = `<div class="pg-head"><div>${readonly ? `<strong>${esc(p.name)}</strong>` : `<button class="proj-name" data-filter="${esc(p.id)}">${esc(p.name)}</button>`}<div class="proj-meta"><span>${esc(p.type)}</span><span>${esc(p.status)}</span><span class="mono">${fmtMD(p.start)}〜${fmtMD(p.due)}(${months}か月)</span><span class="mono">${prog.done}/${prog.total} Done (${pct}%)</span><span class="mono hrs">稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）</span>${flagPills(data, p.id, today, flags)}</div></div>${readonly ? "" : `<button class="btn" data-open="${esc(p.id)}">編集する</button>`}</div>`;
 
     const sumW = Math.max(0, (diffDays(p.due, p.start) / total) * 100).toFixed(3);
     const sumAttr = readonly ? "" : ` data-gp="${esc(p.id)}"`;

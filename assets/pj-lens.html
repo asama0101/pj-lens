@@ -163,6 +163,14 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .in.sm{width:auto}
 .in.gi{width:7em}
 .tscroll{overflow-x:auto}
+.hrs{background:var(--accent-soft);color:var(--ink);border-radius:4px;padding:0 8px}
+.wl-tbl .num{text-align:right;white-space:nowrap}
+.wl-tbl tfoot td{font-weight:700;border-top:1px solid var(--line)}
+.wl-bar{display:flex;height:12px;min-width:2px}
+.wl-bar .t,.sw.wl-t{background:var(--ok)}
+.wl-bar .m,.sw.wl-m{background:var(--meeting-edge)}
+.wl-bar.un{opacity:.6}
+.wl .banner{margin-top:14px}
 .tbl.edit td[data-l="件名"] .in{min-width:13em}
 .tbl.edit td[data-l="状態"] select{min-width:7em}
 .tbl.edit td[data-l="待ち先"] .in{min-width:6em}
@@ -356,6 +364,7 @@ code{font-family:var(--f-mono);font-size:12px;background:var(--line-soft);paddin
     <nav role="tablist" aria-label="画面">
       <button role="tab" id="tab-project" aria-selected="true">プロジェクト</button>
       <button role="tab" id="tab-schedule" aria-selected="false">スケジュール</button>
+      <button role="tab" id="tab-workload" aria-selected="false">稼働</button>
     </nav>
     <div class="filebar" id="filebar"></div>
   </header>
@@ -1191,7 +1200,7 @@ function projectHours(data, projectId) {
 
 /**
  * 期間内の稼働。rows は data.projects の順（0 時間でも出す）。unassigned はプロジェクト未設定（または存在しない）の会議。
- * unconfirmed は、期間内で過ぎたのに未確認の作業枠と会議の件数（now があるときだけ数える）
+ * unconfirmed は、期間内で過ぎたのに未確認の作業枠と会議の件数（now があるときだけ数える。内訳は unconfirmedTasks・unconfirmedMeetings）
  */
 function workload(data, range, now) {
   const ids = new Set(data.projects.map((p) => p.id));
@@ -1203,12 +1212,12 @@ function workload(data, range, now) {
     return { projectId: p.id, task, meeting, total: task + meeting };
   });
   const unassigned = sumBy(meetings.filter((m) => !ids.has(m.projectId)), hours);
-  let unconfirmed = 0;
+  let unconfirmedTasks = 0, unconfirmedMeetings = 0;
   if (now) {
-    unconfirmed += data.tasks.flatMap((t) => t.sessions ?? []).filter((s) => inRange(s.date, range) && sessionKind(s, now) === "unconfirmed").length;
-    unconfirmed += (data.events ?? []).filter((m) => inRange(m.date, range) && meetingKind(m, now) === "unconfirmed").length;
+    unconfirmedTasks = data.tasks.flatMap((t) => t.sessions ?? []).filter((s) => inRange(s.date, range) && sessionKind(s, now) === "unconfirmed").length;
+    unconfirmedMeetings = (data.events ?? []).filter((m) => inRange(m.date, range) && meetingKind(m, now) === "unconfirmed").length;
   }
-  return { rows, unassigned, total: sumBy(rows, (r) => r.total) + unassigned, unconfirmed };
+  return { rows, unassigned, total: sumBy(rows, (r) => r.total) + unassigned, unconfirmed: unconfirmedTasks + unconfirmedMeetings, unconfirmedTasks, unconfirmedMeetings };
 }
 
 /** 週（月曜〜日曜）または月（月初〜月末）の範囲 */
@@ -1774,6 +1783,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
   const sections = ps.map((p) => {
     const g = geo.get(p.id);
     const prog = projectProgress(data, p.id);
+    const hh = projectHours(data, p.id);
     const pct = Math.round(prog.rate * 100);
     const flags = projectFlags(data, p.id, today);
     const ms = g.milestones;
@@ -1794,7 +1804,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
       : "";
 
     const months = Math.max(1, Math.round(diffDays(p.due, p.start) / 30.4));
-    const head = `<div class="pg-head"><div>${readonly ? `<strong>${esc(p.name)}</strong>` : `<button class="proj-name" data-filter="${esc(p.id)}">${esc(p.name)}</button>`}<div class="proj-meta"><span>${esc(p.type)}</span><span>${esc(p.status)}</span><span class="mono">${fmtMD(p.start)}〜${fmtMD(p.due)}(${months}か月)</span><span class="mono">${prog.done}/${prog.total} Done (${pct}%)</span><span class="mono">実績 ${projectActualHours(data, p.id).toFixed(1)}h</span>${flagPills(data, p.id, today, flags)}</div></div>${readonly ? "" : `<button class="btn" data-open="${esc(p.id)}">編集する</button>`}</div>`;
+    const head = `<div class="pg-head"><div>${readonly ? `<strong>${esc(p.name)}</strong>` : `<button class="proj-name" data-filter="${esc(p.id)}">${esc(p.name)}</button>`}<div class="proj-meta"><span>${esc(p.type)}</span><span>${esc(p.status)}</span><span class="mono">${fmtMD(p.start)}〜${fmtMD(p.due)}(${months}か月)</span><span class="mono">${prog.done}/${prog.total} Done (${pct}%)</span><span class="mono hrs">稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）</span>${flagPills(data, p.id, today, flags)}</div></div>${readonly ? "" : `<button class="btn" data-open="${esc(p.id)}">編集する</button>`}</div>`;
 
     const sumW = Math.max(0, (diffDays(p.due, p.start) / total) * 100).toFixed(3);
     const sumAttr = readonly ? "" : ` data-gp="${esc(p.id)}"`;
@@ -2055,9 +2065,70 @@ function renderReplanPanel(data, pending) {
 return { renderReplanPanel };
 })();
 
+/* src/ui/views/workload.js */
+const { renderWorkload, shiftWorkloadDate } = (() => {
+// 「稼働」画面: 期間（週・月）ごとに、プロジェクト別のタスク（実績の作業枠）と会議（確認済み・参加するもの）の時間を見せる。
+
+
+
+
+const h = (v) => `${v.toFixed(1)}h`;
+
+/**
+ * @param opts.period "week" | "month"
+ * @param opts.date   表示する日（その日を含む週・月）
+ * @param opts.now    {date, time} 未確認の件数を数えるための現在時刻
+ */
+function renderWorkload(data, today, opts = {}) {
+  const { period = "week", date = today, now } = opts;
+  const range = periodRange(period, date);
+  const w = workload(data, range, now);
+  const [y, m] = date.split("-").map(Number);
+  const title = period === "week" ? `${fmtMD(range.start)}〜${fmtMD(range.end)} の週` : `${y}年${m}月`;
+  const todayLabel = period === "week" ? "今週" : "今月";
+  const max = Math.max(0, ...w.rows.map((r) => r.total), w.unassigned);
+  const bar = (task, meeting) => {
+    const total = task + meeting;
+    const width = max ? (total / max) * 100 : 0;
+    const tp = total ? (task / total) * 100 : 0;
+    return `<div class="wl-bar" style="width:${width.toFixed(1)}%"><i class="t" style="width:${tp.toFixed(1)}%"></i><i class="m" style="width:${(100 - tp).toFixed(1)}%"></i></div>`;
+  };
+  const rows = w.rows.map((r) => `<tr><td>${esc(data.projects.find((p) => p.id === r.projectId)?.name ?? r.projectId)}</td><td class="num mono">${h(r.task)}</td><td class="num mono">${h(r.meeting)}</td><td class="num mono"><b>${h(r.total)}</b></td><td>${bar(r.task, r.meeting)}</td></tr>`).join("");
+  const un = w.unassigned > 0
+    ? `<tr class="muted"><td>プロジェクト未設定の会議</td><td class="num mono">—</td><td class="num mono">${h(w.unassigned)}</td><td class="num mono"><b>${h(w.unassigned)}</b></td><td><div class="wl-bar un" style="width:${(max ? (w.unassigned / max) * 100 : 0).toFixed(1)}%"><i class="m" style="width:100%"></i></div></td></tr>`
+    : "";
+  const sumTask = w.rows.reduce((a, r) => a + r.task, 0);
+  const sumMtg = w.rows.reduce((a, r) => a + r.meeting, 0) + w.unassigned;
+  const note = w.unconfirmed > 0
+    ? `<div class="banner">未確認 ${w.unconfirmed}件（作業枠 ${w.unconfirmedTasks}・会議 ${w.unconfirmedMeetings}）は、まだ含まれていません。スケジュール画面で「実績にする」と確認すると加わります。</div>`
+    : "";
+  const none = data.projects.length ? "" : `<p class="muted">プロジェクトがありません。プロジェクト画面から追加してください。</p>`;
+  return `<section class="panel wl" aria-label="稼働">
+    <div class="toolbar"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn" data-wnav="-1" aria-label="前へ">←</button><button class="btn" data-wnav="1" aria-label="次へ">→</button><button class="btn" data-wtoday>${todayLabel}</button><strong style="margin-left:6px">${title}</strong></div>
+      <div class="seg" role="group" aria-label="期間"><button data-wperiod="week" aria-pressed="${period === "week"}">週</button><button data-wperiod="month" aria-pressed="${period === "month"}">月</button></div></div>
+    <div class="legend"><span><i class="sw wl-t"></i>タスク（実績の作業枠）</span><span><i class="sw wl-m"></i>会議（確認済み・参加するもの）</span></div>
+    ${none}
+    <div class="tscroll"><table class="tbl wl-tbl"><thead><tr><th>プロジェクト</th><th class="num">タスク</th><th class="num">会議</th><th class="num">合計</th><th>内訳</th></tr></thead><tbody>${rows}${un}</tbody>
+      <tfoot><tr><td>合計</td><td class="num mono">${h(sumTask)}</td><td class="num mono">${h(sumMtg)}</td><td class="num mono">${h(w.total)}</td><td></td></tr></tfoot></table></div>
+    ${note}
+  </section>`;
+}
+
+/** 期間を 1 つ前後へ動かした日（週は 7 日、月は 1 か月） */
+function shiftWorkloadDate(period, date, dir) {
+  if (period === "week") return addDays(date, 7 * dir);
+  const [y, m] = date.split("-").map(Number);
+  const t = y * 12 + (m - 1) + dir;
+  return `${String(Math.floor(t / 12)).padStart(4, "0")}-${String((t % 12) + 1).padStart(2, "0")}-01`;
+}
+
+return { renderWorkload, shiftWorkloadDate };
+})();
+
 /* src/ui/views/project.js */
 const { renderProjects } = (() => {
 // プロジェクト画面: 絞り込み × ガント／リスト、右に「今日の優先」
+
 
 
 
@@ -2124,7 +2195,7 @@ function renderList(data, p, today, opts) {
       <label>状態 <select class="in sm" data-pf="status" data-pid="${esc(p.id)}" aria-label="${esc(p.name)} の状態">${PROJECT_STATUS.map((o) => `<option ${o === p.status ? "selected" : ""}>${o}</option>`).join("")}</select></label>
       <label>開始 <input class="in sm" type="date" data-pf="start" data-pid="${esc(p.id)}" value="${esc(p.start)}" aria-label="${esc(p.name)} の開始日"></label>
       <label>期限 <input class="in sm" type="date" data-pf="due" data-pid="${esc(p.id)}" value="${esc(p.due)}" aria-label="${esc(p.name)} の期限"></label>
-      <span>進捗 <b class="mono">${prog.done}/${prog.total}</b> (${Math.round(prog.rate * 100)}%)</span><span>実績 <b class="mono">${projectActualHours(data, p.id).toFixed(1)}h</b></span></div></div><div>${flagPills(data, p.id, today, projectFlags(data, p.id, today))}</div></div>
+      <span>進捗 <b class="mono">${prog.done}/${prog.total}</b> (${Math.round(prog.rate * 100)}%)</span><span class="mono hrs">${(() => { const hh = projectHours(data, p.id); return `稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）`; })()}</span></div></div><div>${flagPills(data, p.id, today, projectFlags(data, p.id, today))}</div></div>
     <div class="tscroll"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>先行</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn" data-addtask="${esc(p.id)}">＋ タスクを追加</button><span class="note">変更はその場でファイルに保存されます。後続の日程をまとめて見直すときは、Claude Code の replan に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>
@@ -2284,6 +2355,7 @@ const S = {
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
   prefs: loadPrefs(), group: "all", pendingReplan: null,
+  wperiod: "week", wdate: clock().date,
 };
 const $ = (id) => document.getElementById(id);
 const view = $("view");
@@ -2314,6 +2386,7 @@ function renderBody() {
   if (S.screen === "project") {
     return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
+  if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
   return renderSchedule(S.data, today, scheduleOpts());
 }
 
@@ -2590,6 +2663,11 @@ view.addEventListener("click", (e) => {
   if (q("[data-doneno]")) { S.pendingDone = null; render(); return; }
   const dk = q("[data-doneok]");
   if (dk) { const pd = S.pendingDone; S.pendingDone = null; setStatus(pd.id, pd.status, pd.future); return; }
+
+  /* 稼働画面 */
+  const wp = q("[data-wperiod]"); if (wp) { S.wperiod = wp.dataset.wperiod; render(); return; }
+  const wn = q("[data-wnav]"); if (wn) { S.wdate = shiftWorkloadDate(S.wperiod, S.wdate, +wn.dataset.wnav); render(); return; }
+  if (q("[data-wtoday]")) { S.wdate = today; render(); return; }
 
   /* スケジュール画面 */
   const sv = q("[data-sview]"); if (sv) { S.sview = sv.dataset.sview; render(); return; }
