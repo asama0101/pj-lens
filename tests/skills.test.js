@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const read = (name) => readFileSync(new URL(`../skills/${name}/SKILL.md`, import.meta.url), "utf8");
 const front = (text) => /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
-const NAMES = ["init", "replan", "daily-planner", "intake", "report"];
+const NAMES = ["init", "replan", "intake"];
 
 for (const name of NAMES) {
   test(`コマンド ${name}: frontmatter と、リポジトリ直下を前提にしたパスがないこと`, () => {
@@ -25,14 +25,7 @@ test("init: 副作用があるので自動起動しない。init.js を呼び、
   assert.ok(text.includes(".pj-lens/data.json") && text.includes("pj-lens.html"));
 });
 
-test("report: report.js を .pj-lens/data.json と .pj-lens/report で呼ぶ", () => {
-  const text = read("report");
-  assert.ok(text.includes('node "${CLAUDE_PLUGIN_ROOT}/tools/report.js"'));
-  assert.ok(text.includes('".pj-lens/data.json"') && text.includes('".pj-lens/report"'));
-  assert.ok(text.includes("$ARGUMENTS"));
-});
-
-for (const name of ["replan", "daily-planner", "intake"]) {
+for (const name of ["replan", "intake"]) {
   test(`${name}: 同名のエージェントに依頼を渡す`, () => {
     const text = read(name);
     assert.ok(text.includes(`pj-lens:${name}`));
@@ -40,7 +33,7 @@ for (const name of ["replan", "daily-planner", "intake"]) {
   });
 }
 
-for (const [name, script] of [["init", "init.js"], ["report", "report.js"]]) {
+for (const [name, script] of [["init", "init.js"]]) {
   test(`${name}: そのスクリプトだけを、確認なしで実行できるよう事前承認する`, () => {
     const fm = front(read(name));
     const line = /^allowed-tools: (.+)$/m.exec(fm)?.[1] ?? "";

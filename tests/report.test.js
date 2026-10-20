@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildReport } from "../tools/report.js";
+import { buildReport as build } from "../src/ui/views/report.js";
+
+const buildReport = (d, t) => build(d, t, "");
 
 const load = () => JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
 const TODAY = "2026-10-20";
@@ -49,9 +51,7 @@ test("利用者入力はエスケープされる", () => {
 });
 
 test("画面用: views/report.js の buildReport は渡された css を使い、Node の API に依存しない", async () => {
-  const { buildReport: build } = await import("../src/ui/views/report.js");
   const html = build(load(), TODAY, "/*CSS-MARK*/");
   assert.ok(html.includes("/*CSS-MARK*/"));
   assert.ok(html.includes("全体一覧") && html.includes("今週の予定"));
-  assert.equal(html, buildReport(load(), TODAY).replace(/<style>[\s\S]*?<\/style>/, () => html.match(/<style>[\s\S]*?<\/style>/)[0]));
 });

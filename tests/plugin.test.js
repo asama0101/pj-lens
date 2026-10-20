@@ -35,9 +35,16 @@ test("配布に必要なファイルが git に入っている（.gitignore で�
   if (r.status !== 0) return t.skip("git で調べられません");
   const tracked = new Set(r.stdout.split(/\r?\n/));
   const need = [
-    ".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "assets/pj-lens.html", "data/sample.json", "tools/init.js", "tools/report.js",
-    ...["init", "replan", "daily-planner", "intake", "report"].map((n) => `skills/${n}/SKILL.md`),
-    ...["replan", "daily-planner", "intake"].map((n) => `agents/${n}.md`),
+    ".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "assets/pj-lens.html", "data/sample.json", "tools/init.js",
+    ...["init", "replan", "intake"].map((n) => `skills/${n}/SKILL.md`),
+    ...["replan", "intake"].map((n) => `agents/${n}.md`),
   ];
   assert.deepEqual(need.filter((p) => !tracked.has(p)), []);
+});
+
+test("廃止したコマンド・エージェント・CLI が残っていない", () => {
+  for (const p of ["skills/daily-planner", "skills/report", "agents/daily-planner.md", "tools/free.js", "tools/rank.js", "tools/report.js"]) {
+    assert.equal(existsSync(new URL(p, root)), false, p);
+  }
+  assert.equal(json("package.json").scripts.report, undefined);
 });

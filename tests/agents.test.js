@@ -5,18 +5,13 @@ import { readFileSync, existsSync } from "node:fs";
 const root = new URL("../", import.meta.url);
 const read = (p) => readFileSync(new URL(p, root), "utf8");
 
-for (const name of ["replan", "daily-planner", "intake"]) {
+for (const name of ["replan", "intake"]) {
   test(`サブエージェント ${name}: frontmatter と共通ルール`, () => {
     const text = read(`agents/${name}.md`);
     const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
     assert.match(fm, new RegExp(`^name: ${name}$`, "m"));
     assert.match(fm, /^description: .+/m);
-    if (name === "daily-planner") {
-      // 予定表 MCP のツールを使うため、tools で絞らず全ツールを引き継ぐ(絞ると MCP が呼べない)
-      assert.doesNotMatch(fm, /^tools:/m);
-    } else {
-      assert.match(fm, /^tools: .+/m);
-    }
+    assert.match(fm, /^tools: .+/m);
     assert.ok(text.includes("${CLAUDE_PLUGIN_ROOT}/tools/validate.js"));
     assert.ok(text.includes("承認"));
     assert.ok(text.includes(".pj-lens/data.json"));
@@ -26,10 +21,8 @@ for (const name of ["replan", "daily-planner", "intake"]) {
   });
 }
 
-test("replan は impact、daily-planner は free と rank を使う", () => {
+test("replan は impact を使う", () => {
   assert.ok(read("agents/replan.md").includes("${CLAUDE_PLUGIN_ROOT}/tools/impact.js"));
-  const d = read("agents/daily-planner.md");
-  assert.ok(d.includes("${CLAUDE_PLUGIN_ROOT}/tools/free.js") && d.includes("${CLAUDE_PLUGIN_ROOT}/tools/rank.js"));
 });
 
 test("MCP を同梱しない（.mcp.json がない）", () => {

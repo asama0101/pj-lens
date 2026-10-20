@@ -114,11 +114,11 @@ test(".git のないサブフォルダ: .gitignore を作らず、skipped と理
   assert.match(g.note, /\.git/);
 });
 
-test("空のひな形に対して validate・rank・free が落ちない", () => {
+test("空のひな形に対して validate が落ちない", () => {
   const cwd = proj(), pluginRoot = plugin();
   init({ cwd, pluginRoot });
   const data = join(cwd, ".pj-lens/data.json");
-  for (const args of [["validate.js", data], ["rank.js", data, "2026-10-20"], ["free.js", data, "2026-10-20"]]) {
+  for (const args of [["validate.js", data]]) {
     const r = spawnSync(process.execPath, [join(REPO, "tools", args[0]), ...args.slice(1)], { encoding: "utf8" });
     assert.equal(r.status, 0, `${args[0]}: ${r.stderr}${r.stdout}`);
   }
