@@ -154,6 +154,11 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .seg button[aria-pressed=true]{background:var(--accent-soft);color:var(--accent);font-weight:700}
 .in{font:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:4px 8px;width:100%;min-width:0}
 .in.sm{width:auto}
+.in.gi{width:7em}
+.tscroll{overflow-x:auto}
+.tbl.edit td[data-l="件名"] .in{min-width:13em}
+.tbl.edit td[data-l="状態"] select{min-width:7em}
+.tbl.edit td[data-l="待ち先"] .in{min-width:6em}
 .in:disabled{background:transparent;border-color:transparent;color:var(--muted)}
 .tbl.edit{min-width:860px}
 .tbl.edit td{vertical-align:top}
@@ -215,7 +220,7 @@ label{font-size:13px}
   .tbl.edit td{display:block;padding:0;border:0}
   .tbl.edit td::before{content:attr(data-l);display:block;font-size:11px;color:var(--muted)}
   .tbl.edit td[data-l=""]::before,.tbl.edit td[data-l="ID"]::before{display:none}
-  .tbl.edit td:nth-child(2),.tbl.edit td:nth-child(9){grid-column:1/-1}
+  .tbl.edit td:nth-child(4),.tbl.edit td:nth-child(11){grid-column:1/-1}
 }
 
 .g-lane .gbar{top:6px;height:14px}
@@ -314,6 +319,17 @@ tr.hl td{transition:background .3s}
 .fsep{width:1px;align-self:stretch;background:var(--line)}
 .chip-btn.pref[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:400}
 .cols.one{grid-template-columns:minmax(0,1fr)}
+.replan{border:2px solid var(--accent);display:flex;flex-direction:column;gap:12px;margin-bottom:16px}
+.rp-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px}
+.rp-head h2{font-size:15px;margin:0}
+.replan .over td{background:var(--bad-soft)}
+.replan .over .nd{color:var(--bad)}
+.rp-warn{background:var(--bad-soft);color:var(--bad);border-radius:6px;padding:8px 12px;font-size:13px}
+.rp-ctl{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end}
+.rp-ctl label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted)}
+.rp-ctl label.chk{flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-size:13px}
+.rp-act{display:flex;flex-wrap:wrap;gap:8px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
 .g-row.g-grp{background:var(--line-soft);min-height:26px;align-items:center}
 .g-row.g-grp .g-label{background:var(--line-soft)}
 .g-grp-t{grid-column:1/-1;font-size:12px;padding-left:6px}

@@ -161,6 +161,11 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .seg button[aria-pressed=true]{background:var(--accent-soft);color:var(--accent);font-weight:700}
 .in{font:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:4px 8px;width:100%;min-width:0}
 .in.sm{width:auto}
+.in.gi{width:7em}
+.tscroll{overflow-x:auto}
+.tbl.edit td[data-l="件名"] .in{min-width:13em}
+.tbl.edit td[data-l="状態"] select{min-width:7em}
+.tbl.edit td[data-l="待ち先"] .in{min-width:6em}
 .in:disabled{background:transparent;border-color:transparent;color:var(--muted)}
 .tbl.edit{min-width:860px}
 .tbl.edit td{vertical-align:top}
@@ -222,7 +227,7 @@ label{font-size:13px}
   .tbl.edit td{display:block;padding:0;border:0}
   .tbl.edit td::before{content:attr(data-l);display:block;font-size:11px;color:var(--muted)}
   .tbl.edit td[data-l=""]::before,.tbl.edit td[data-l="ID"]::before{display:none}
-  .tbl.edit td:nth-child(2),.tbl.edit td:nth-child(9){grid-column:1/-1}
+  .tbl.edit td:nth-child(4),.tbl.edit td:nth-child(11){grid-column:1/-1}
 }
 
 .g-lane .gbar{top:6px;height:14px}
@@ -321,6 +326,17 @@ tr.hl td{transition:background .3s}
 .fsep{width:1px;align-self:stretch;background:var(--line)}
 .chip-btn.pref[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:400}
 .cols.one{grid-template-columns:minmax(0,1fr)}
+.replan{border:2px solid var(--accent);display:flex;flex-direction:column;gap:12px;margin-bottom:16px}
+.rp-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px}
+.rp-head h2{font-size:15px;margin:0}
+.replan .over td{background:var(--bad-soft)}
+.replan .over .nd{color:var(--bad)}
+.rp-warn{background:var(--bad-soft);color:var(--bad);border-radius:6px;padding:8px 12px;font-size:13px}
+.rp-ctl{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end}
+.rp-ctl label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted)}
+.rp-ctl label.chk{flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-size:13px}
+.rp-act{display:flex;flex-wrap:wrap;gap:8px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
 .g-row.g-grp{background:var(--line-soft);min-height:26px;align-items:center}
 .g-row.g-grp .g-label{background:var(--line-soft)}
 .g-grp-t{grid-column:1/-1;font-size:12px;padding-left:6px}
@@ -1997,9 +2013,52 @@ function renderSchedule(data, today, opts) {
 return { snapStart, weekStartOf, calendarGeometry, renderCalendar, renderSchedule };
 })();
 
+/* src/ui/views/replan.js */
+const { renderReplanPanel } = (() => {
+// 日程変更の確認パネル（期限を変えたとき、後続への影響を見せて、反映のしかたを選んでもらう）
+
+
+
+/**
+ * @param pending {taskId, delta, impact, compress, cause, reason}  impact は computeImpact の結果
+ * 保存はまだされていない状態の確認で、ボタンは data-replan="apply|only|cancel"、入力は data-rp="cause|reason|compress"
+ */
+function renderReplanPanel(data, pending) {
+  const { taskId, delta, impact, compress = false, cause = "その他", reason = "" } = pending;
+  const projectOf = (t) => data.projects.find((p) => p.id === t?.projectId);
+  const self = impact.changes.find((c) => c.taskId === taskId) ?? impact.changes[0];
+  const rows = impact.changes.map((c) => {
+    const t = data.tasks.find((x) => x.id === c.taskId);
+    const over = projectOf(t) && c.newDue > projectOf(t).due;
+    return `<tr class="${over ? "over" : ""}"><td class="id">${esc(c.taskId)}</td><td>${esc(t?.title ?? "")}</td><td class="mono">${fmtMD(c.oldDue)}</td><td class="mono nd"><b>${fmtMD(c.newDue)}</b></td><td>${esc(c.reason)}</td></tr>`;
+  }).join("");
+  const warns = impact.projectDueExceeded.map((x) => {
+    const p = data.projects.find((o) => o.id === x.projectId);
+    return `<div class="rp-warn"><b>プロジェクト期限を超えます。</b> ${esc(p?.name ?? x.projectId)}の期限 <span class="mono">${fmtMD(x.due)}</span> に対し、最後のタスクは <span class="mono">${fmtMD(x.latestTaskDue)}</span> です。期限の見直しや、先行の短縮を検討してください。</div>`;
+  }).join("");
+  const early = delta < 0
+    ? `<label class="chk"><input type="checkbox" data-rp="compress"${compress ? " checked" : ""}>後続も詰める（前倒しした日数だけ、後続も前倒しする）</label>`
+    : "";
+  return `<section class="panel replan" role="group" aria-label="日程変更の確認">
+    <div class="rp-head"><h2>${esc(taskId)} の期限を <span class="mono">${fmtMD(self.oldDue)}</span> → <span class="mono">${fmtMD(self.newDue)}</span> に変更します <span class="muted">（${delta > 0 ? "+" : ""}${delta}日）</span></h2><span class="note">保存はまだされていません。確認して選んでください。</span></div>
+    <table class="tbl"><thead><tr><th>ID</th><th>件名</th><th>旧期限</th><th>新期限</th><th>理由</th></tr></thead><tbody>${rows}</tbody></table>
+    ${warns}
+    <div class="rp-ctl">
+      <label>原因<select class="in" data-rp="cause" aria-label="原因">${CAUSES.map((c) => `<option${c === cause ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
+      <label style="flex:1 1 280px">理由<input class="in" data-rp="reason" value="${esc(reason)}" placeholder="例: ベンダーの工事日程が変更になった" aria-label="理由"></label>
+      ${early}
+    </div>
+    <div class="rp-act"><button class="btn primary" data-replan="apply">後続も反映して履歴に残す</button><button class="btn" data-replan="only">このタスクだけ変える</button><button class="btn" data-replan="cancel">やめる</button></div>
+  </section>`;
+}
+
+return { renderReplanPanel };
+})();
+
 /* src/ui/views/project.js */
 const { renderProjects } = (() => {
 // プロジェクト画面: 絞り込み × ガント／リスト、右に「今日の優先」
+
 
 
 
@@ -2031,8 +2090,8 @@ function renderList(data, p, today, opts) {
       : `<button class="btn" data-del="${esc(t.id)}" aria-label="${esc(t.id)} を削除">削除</button>`;
     const late = taskFlags(t, today, data.settings).includes("overdue");
     return `<tr data-row="${esc(t.id)}"><td class="id" data-l="ID">${esc(t.id)}</td>
-      <td data-l="${esc(labels.group)}"><input class="in sm" data-f="group" data-id="${esc(t.id)}" value="${esc(t.group ?? "")}" aria-label="${esc(t.id)} の${esc(labels.group)}"></td>
-      <td data-l="${esc(labels.subgroup)}"><input class="in sm" data-f="subgroup" data-id="${esc(t.id)}" value="${esc(t.subgroup ?? "")}" aria-label="${esc(t.id)} の${esc(labels.subgroup)}"></td>
+      <td data-l="${esc(labels.group)}"><input class="in gi" data-f="group" data-id="${esc(t.id)}" value="${esc(t.group ?? "")}" aria-label="${esc(t.id)} の${esc(labels.group)}"></td>
+      <td data-l="${esc(labels.subgroup)}"><input class="in gi" data-f="subgroup" data-id="${esc(t.id)}" value="${esc(t.subgroup ?? "")}" aria-label="${esc(t.id)} の${esc(labels.subgroup)}"></td>
       <td data-l="件名"><input class="in" id="f-${esc(t.id)}-t" data-f="title" data-id="${esc(t.id)}" value="${esc(t.title)}" aria-label="${esc(t.id)} の件名"></td>
       <td data-l="状態">${opts.pendingWait === t.id
         ? `<div class="ask" style="max-width:none">待ち先を入力<input class="in" data-waitparty="${esc(t.id)}" placeholder="ベンダー・部署名" aria-label="${esc(t.id)} の待ち先"><div style="display:flex;gap:6px;margin-top:4px"><button class="btn" data-waitok="${esc(t.id)}">Waiting にする</button><button class="btn" data-waitno>やめる</button></div></div>`
@@ -2066,7 +2125,7 @@ function renderList(data, p, today, opts) {
       <label>開始 <input class="in sm" type="date" data-pf="start" data-pid="${esc(p.id)}" value="${esc(p.start)}" aria-label="${esc(p.name)} の開始日"></label>
       <label>期限 <input class="in sm" type="date" data-pf="due" data-pid="${esc(p.id)}" value="${esc(p.due)}" aria-label="${esc(p.name)} の期限"></label>
       <span>進捗 <b class="mono">${prog.done}/${prog.total}</b> (${Math.round(prog.rate * 100)}%)</span><span>実績 <b class="mono">${projectActualHours(data, p.id).toFixed(1)}h</b></span></div></div><div>${flagPills(data, p.id, today, projectFlags(data, p.id, today))}</div></div>
-    <table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>先行</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="tscroll"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>先行</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn" data-addtask="${esc(p.id)}">＋ タスクを追加</button><span class="note">変更はその場でファイルに保存されます。後続の日程をまとめて見直すときは、Claude Code の replan に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>
     <div class="mslist">${ms}<div><button class="btn" data-msadd="${esc(p.id)}">＋ マイルストーンを追加</button> <span class="note">ガントに◆で表示されます。</span></div></div>
@@ -2078,6 +2137,7 @@ function renderList(data, p, today, opts) {
  * @param opts.filter  "all" か projectId
  * @param opts.view    "gantt" | "list"
  * @param opts.window  ガントの表示期間
+ * @param opts.pendingReplan 日程変更の確認待ち(あれば確認パネルを出す)
  * @param opts.group   "all" か大項目の名前(その大項目のタスクだけを出す)
  * @param opts.showPrio / opts.showActual  今日の優先・ガントの実績を出すか(既定は出す)
  */
@@ -2102,6 +2162,7 @@ function renderProjects(data, today, opts = {}) {
     : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, group })).join("")}</div>`;
   return `<div class="toolbar"><div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="プロジェクトで絞り込み">${chips}${gsel}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${addBtn}<div class="seg" role="group" aria-label="表示"><button data-pview="gantt" aria-pressed="${view === "gantt"}">ガント</button><button data-pview="list" aria-pressed="${view === "list"}">リスト</button></div></div></div>
+    ${opts.pendingReplan ? renderReplanPanel(data, opts.pendingReplan) : ""}
     <div class="cols${showPrio ? "" : " one"}">${body}${showPrio ? renderPrio(data, today, { sched: false }) : ""}</div>`;
 }
 
@@ -2222,7 +2283,7 @@ const S = {
   filter: "all", pview: "gantt", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
-  prefs: loadPrefs(), group: "all",
+  prefs: loadPrefs(), group: "all", pendingReplan: null,
 };
 const $ = (id) => document.getElementById(id);
 const view = $("view");
@@ -2251,7 +2312,7 @@ function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
   if (S.screen === "project") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
+    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
   return renderSchedule(S.data, today, scheduleOpts());
 }
@@ -2376,6 +2437,7 @@ function loaded(data) {
     if (!Array.isArray(data?.[k])) throw new Error(`データの形が違います（${k} がありません）`);
   }
   S.data = data;
+  S.pendingReplan = null;
   S.openError = "";
   const { errors, warnings } = validate(data, clock());
   banner(errors.length ? `データに問題があります: ${errors.slice(0, 3).join(" / ")}` : warnings.length ? `注意: ${warnings.slice(0, 2).join(" / ")}` : "");
@@ -2388,6 +2450,33 @@ async function openFile(choose) {
     S.openError = `開けません: ${e.message}`;
   }
   render();
+}
+
+/* ---------- 日程変更の確認(期限を変えたとき、後続への影響を見てから反映する) ---------- */
+/** 期限の変更で後続が動く、プロジェクト期限を超える、または前倒しで詰められる後続があるときは、確認待ちにして true を返す。そうでなければ false(呼び出し側がそのまま反映する) */
+function dueChange(id, base, orig) {
+  const delta = diffDays(base.tasks.find((t) => t.id === id).due, orig.tasks.find((t) => t.id === id).due);
+  if (!delta) return false;
+  const impact = computeImpact(orig, id, delta);
+  // 前倒しは、詰められる後続があるときも確認する(既定は詰めない。パネルのチェックで選ぶ)
+  const canCompress = delta < 0 && computeImpact(orig, id, delta, { compress: true }).changes.length > 1;
+  if (!needsReplan(impact) && !canCompress) return false;
+  S.pendingReplan = { taskId: id, delta, impact, compress: false, cause: "その他", reason: "", base, orig };
+  S.focusSel = '[data-rp="reason"]';
+  render();
+  return true;
+}
+
+function replanAction(kind) {
+  const p = S.pendingReplan;
+  if (!p) return;
+  if (kind === "cancel") { S.pendingReplan = null; render(); return; }
+  if (kind === "only") { S.pendingReplan = null; apply(() => p.base, "このタスクだけ変更しました。後続の日程は変えていません"); return; }
+  const reason = view.querySelector('[data-rp="reason"]')?.value ?? p.reason;
+  const cause = view.querySelector('[data-rp="cause"]')?.value ?? p.cause;
+  if (!reason.trim()) { toast("理由を入力してください"); return; }
+  S.pendingReplan = null;
+  apply((d) => applyReplan(p.base, p.impact, { reason, cause, deltaDays: p.delta, at: clock().date }), `${p.impact.changes.length} 件の期限を変更し、日程変更の履歴に残しました`);
 }
 
 /* ---------- 選択と削除 ---------- */
@@ -2455,6 +2544,7 @@ view.addEventListener("click", (e) => {
 
   if (q("[data-openfile]")) { openFile(false); return; }
   /* プロジェクト画面 */
+  const rpl = q("[data-replan]"); if (rpl) { replanAction(rpl.dataset.replan); return; }
   const gw = q("[data-gwin]"); if (gw) { S.gwin = gw.dataset.gwin; S.resetScroll = true; render(); return; }
   if (q("[data-hidedone]")) { S.hideDone = !S.hideDone; render(); return; }
   if (q("[data-gotoday]")) { scrollToday(true); return; }
@@ -2604,6 +2694,19 @@ function onChange(el) {
     if (!apply((d) => updateMeeting(d, m.id, { [f]: v }), f === "skip" ? (v ? "参加しない会議にしました。空き時間として扱います" : "参加する会議に戻しました") : "会議を更新しました", { partial: true })) { el.value = old; }
     return;
   }
+  if (el.dataset.rp) {
+    const p = S.pendingReplan;
+    if (!p) return;
+    const k = el.dataset.rp;
+    if (k === "compress") {
+      p.reason = view.querySelector('[data-rp="reason"]')?.value ?? p.reason;
+      p.cause = view.querySelector('[data-rp="cause"]')?.value ?? p.cause;
+      p.compress = el.checked;
+      p.impact = computeImpact(p.orig, p.taskId, p.delta, { compress: p.compress });
+      render();
+    } else p[k] = el.value;
+    return;
+  }
   if (el.dataset.groupfilter !== undefined) { S.group = el.value; S.resetScroll = true; render(); return; }
   if (el.dataset.pf) {
     const k = el.dataset.pf, pid = el.dataset.pid;
@@ -2630,6 +2733,13 @@ function onChange(el) {
       return;
     }
     if (f === "party") { apply((d) => updateTask(d, id, { waitingOn: { party: el.value, since: t.waitingOn?.since ?? today } }, today), "変更を保存しました"); return; }
+    if (f === "due") {
+      let base;
+      try { base = updateTask(S.data, id, { due: el.value }, today); } catch (e) { toast(e.message); render(); return; }
+      if (dueChange(id, base, S.data)) return;
+      apply(() => base, "変更を保存しました");
+      return;
+    }
     apply((d) => updateTask(d, id, { [f]: f === "importance" ? el.value || null : el.value }, today), "変更を保存しました");
   }
 }
@@ -2779,6 +2889,7 @@ view.addEventListener("mousedown", (e) => {
       msg = `マイルストーン「${p.milestones[mIdx].name}」を ${fmtMD(addDays(s0, ne))} に変更しました`;
     }
     if (result.error) { toast(result.error); render(); return; }
+    if (kind === "t" && dueChange(t.id, result.data, S.data)) return;
     apply(() => result.data, `${msg}${result.warning ? `。${result.warning}` : ""}`);
   };
   document.addEventListener("mousemove", move);

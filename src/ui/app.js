@@ -10,7 +10,7 @@ const S = {
   filter: "all", pview: "gantt", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
-  prefs: loadPrefs(), group: "all",
+  prefs: loadPrefs(), group: "all", pendingReplan: null,
 };
 const $ = (id) => document.getElementById(id);
 const view = $("view");
@@ -39,7 +39,7 @@ function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
   if (S.screen === "project") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
+    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
   return renderSchedule(S.data, today, scheduleOpts());
 }
@@ -164,6 +164,7 @@ function loaded(data) {
     if (!Array.isArray(data?.[k])) throw new Error(`データの形が違います（${k} がありません）`);
   }
   S.data = data;
+  S.pendingReplan = null;
   S.openError = "";
   const { errors, warnings } = validate(data, clock());
   banner(errors.length ? `データに問題があります: ${errors.slice(0, 3).join(" / ")}` : warnings.length ? `注意: ${warnings.slice(0, 2).join(" / ")}` : "");
@@ -176,6 +177,33 @@ async function openFile(choose) {
     S.openError = `開けません: ${e.message}`;
   }
   render();
+}
+
+/* ---------- 日程変更の確認(期限を変えたとき、後続への影響を見てから反映する) ---------- */
+/** 期限の変更で後続が動く、プロジェクト期限を超える、または前倒しで詰められる後続があるときは、確認待ちにして true を返す。そうでなければ false(呼び出し側がそのまま反映する) */
+function dueChange(id, base, orig) {
+  const delta = diffDays(base.tasks.find((t) => t.id === id).due, orig.tasks.find((t) => t.id === id).due);
+  if (!delta) return false;
+  const impact = computeImpact(orig, id, delta);
+  // 前倒しは、詰められる後続があるときも確認する(既定は詰めない。パネルのチェックで選ぶ)
+  const canCompress = delta < 0 && computeImpact(orig, id, delta, { compress: true }).changes.length > 1;
+  if (!needsReplan(impact) && !canCompress) return false;
+  S.pendingReplan = { taskId: id, delta, impact, compress: false, cause: "その他", reason: "", base, orig };
+  S.focusSel = '[data-rp="reason"]';
+  render();
+  return true;
+}
+
+function replanAction(kind) {
+  const p = S.pendingReplan;
+  if (!p) return;
+  if (kind === "cancel") { S.pendingReplan = null; render(); return; }
+  if (kind === "only") { S.pendingReplan = null; apply(() => p.base, "このタスクだけ変更しました。後続の日程は変えていません"); return; }
+  const reason = view.querySelector('[data-rp="reason"]')?.value ?? p.reason;
+  const cause = view.querySelector('[data-rp="cause"]')?.value ?? p.cause;
+  if (!reason.trim()) { toast("理由を入力してください"); return; }
+  S.pendingReplan = null;
+  apply((d) => applyReplan(p.base, p.impact, { reason, cause, deltaDays: p.delta, at: clock().date }), `${p.impact.changes.length} 件の期限を変更し、日程変更の履歴に残しました`);
 }
 
 /* ---------- 選択と削除 ---------- */
@@ -243,6 +271,7 @@ view.addEventListener("click", (e) => {
 
   if (q("[data-openfile]")) { openFile(false); return; }
   /* プロジェクト画面 */
+  const rpl = q("[data-replan]"); if (rpl) { replanAction(rpl.dataset.replan); return; }
   const gw = q("[data-gwin]"); if (gw) { S.gwin = gw.dataset.gwin; S.resetScroll = true; render(); return; }
   if (q("[data-hidedone]")) { S.hideDone = !S.hideDone; render(); return; }
   if (q("[data-gotoday]")) { scrollToday(true); return; }
@@ -392,6 +421,19 @@ function onChange(el) {
     if (!apply((d) => updateMeeting(d, m.id, { [f]: v }), f === "skip" ? (v ? "参加しない会議にしました。空き時間として扱います" : "参加する会議に戻しました") : "会議を更新しました", { partial: true })) { el.value = old; }
     return;
   }
+  if (el.dataset.rp) {
+    const p = S.pendingReplan;
+    if (!p) return;
+    const k = el.dataset.rp;
+    if (k === "compress") {
+      p.reason = view.querySelector('[data-rp="reason"]')?.value ?? p.reason;
+      p.cause = view.querySelector('[data-rp="cause"]')?.value ?? p.cause;
+      p.compress = el.checked;
+      p.impact = computeImpact(p.orig, p.taskId, p.delta, { compress: p.compress });
+      render();
+    } else p[k] = el.value;
+    return;
+  }
   if (el.dataset.groupfilter !== undefined) { S.group = el.value; S.resetScroll = true; render(); return; }
   if (el.dataset.pf) {
     const k = el.dataset.pf, pid = el.dataset.pid;
@@ -418,6 +460,13 @@ function onChange(el) {
       return;
     }
     if (f === "party") { apply((d) => updateTask(d, id, { waitingOn: { party: el.value, since: t.waitingOn?.since ?? today } }, today), "変更を保存しました"); return; }
+    if (f === "due") {
+      let base;
+      try { base = updateTask(S.data, id, { due: el.value }, today); } catch (e) { toast(e.message); render(); return; }
+      if (dueChange(id, base, S.data)) return;
+      apply(() => base, "変更を保存しました");
+      return;
+    }
     apply((d) => updateTask(d, id, { [f]: f === "importance" ? el.value || null : el.value }, today), "変更を保存しました");
   }
 }
@@ -567,6 +616,7 @@ view.addEventListener("mousedown", (e) => {
       msg = `マイルストーン「${p.milestones[mIdx].name}」を ${fmtMD(addDays(s0, ne))} に変更しました`;
     }
     if (result.error) { toast(result.error); render(); return; }
+    if (kind === "t" && dueChange(t.id, result.data, S.data)) return;
     apply(() => result.data, `${msg}${result.warning ? `。${result.warning}` : ""}`);
   };
   document.addEventListener("mousemove", move);
