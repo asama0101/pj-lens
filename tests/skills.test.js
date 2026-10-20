@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const read = (name) => readFileSync(new URL(`../skills/${name}/SKILL.md`, import.meta.url), "utf8");
 const front = (text) => /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
-const NAMES = ["init", "replan", "intake"];
+const NAMES = ["init", "replan", "intake", "mcp"];
 
 for (const name of NAMES) {
   test(`コマンド ${name}: frontmatter と、リポジトリ直下を前提にしたパスがないこと`, () => {
@@ -49,4 +49,20 @@ test("エージェントとコマンドの本文に、リポジトリ直下の s
     const text = readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
     assert.doesNotMatch(text, /(^|[`\s(])src\//m, `${f} に src/ の直接参照があります（\${CLAUDE_PLUGIN_ROOT} から組み立てる）`);
   }
+});
+
+test("intake: 取り込みの種類を引数のヒントに出す", () => {
+  const hint = /^argument-hint: (.+)$/m.exec(front(read("intake")))?.[1] ?? "";
+  for (const w of ["wbs", "mail", "calendar", "rules"]) assert.ok(hint.includes(w), w);
+});
+
+test("mcp: 副作用があるので自動起動しない。mcpconf.js だけを事前承認し、保存先は ${CLAUDE_PLUGIN_DATA} を引数で渡す", () => {
+  const text = read("mcp");
+  const fm = front(text);
+  assert.match(fm, /^disable-model-invocation: true$/m);
+  const line = /^allowed-tools: (.+)$/m.exec(fm)?.[1] ?? "";
+  assert.ok(line.includes('Bash(node "${CLAUDE_PLUGIN_ROOT}/tools/mcpconf.js"'), line);
+  assert.doesNotMatch(line, /Bash\(node \*\)/);
+  assert.ok(text.includes('"${CLAUDE_PLUGIN_DATA}"'));
+  for (const w of ["show", "set", "試し", "サーバー名", "ツール名"]) assert.ok(text.includes(w), w);
 });
