@@ -11,14 +11,16 @@ export function matchProject(text, rules) {
   return null;
 }
 
-/** 手動以外の会議に、規則でプロジェクトを付け直す（当たらなければ外す）。存在しないプロジェクトの規則は無視する */
+/** 手動以外の会議に、規則でプロジェクトを付け直す（当たらなければ、規則で付けた分だけ外す）。存在しないプロジェクトの規則は無視する */
 export function assignMeetingProjects(data) {
   const ids = new Set((data.projects ?? []).map((p) => p.id));
   const rules = (data.settings?.projectRules ?? []).filter((r) => ids.has(r.projectId));
   const events = (data.events ?? []).map((e) => {
-    if (e.projectBy === "manual") return e;
+    // 手動、または projectBy の無い projectId（手で書かれたもの）は変えない
+    if (e.projectBy === "manual" || (e.projectBy === undefined && e.projectId)) return e;
     const m = matchProject(e.title, rules);
-    if (m) return { ...e, projectId: m, projectBy: "rule" };
+    if (m) return e.projectId === m && e.projectBy === "rule" ? e : { ...e, projectId: m, projectBy: "rule" };
+    if (e.projectBy === undefined) return e;
     const { projectBy, ...rest } = e;
     void projectBy;
     return { ...rest, projectId: null };

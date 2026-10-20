@@ -48,3 +48,10 @@ test("setProjectRule/removeProjectRule: 追加・置き換え・削除ができ�
   assert.throws(() => setProjectRule(d, " ", "A"));
   assert.throws(() => setProjectRule(d, "x", "ZZ"));
 });
+
+test("assignMeetingProjects: projectBy の無い projectId（手で書かれたもの）は変えず、関係のない会議は同じオブジェクトのまま", () => {
+  const d = data([ev("m1", "部内会議", { projectId: "B" }), ev("m2", "部内会議")], R);
+  const a = assignMeetingProjects(d);
+  assert.equal(a.events[0].projectId, "B");
+  assert.equal(a.events[1], d.events[1]);
+});
