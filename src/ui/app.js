@@ -133,7 +133,7 @@ function setReportState(patch) {
   render();
 }
 
-/** 設定パネルで選んだ対象・期間の進捗レポートを、規約のファイル名の HTML として保存する。保存ダイアログで名前と場所を選ばせる(使えないブラウザではダウンロード) */
+/** 設定パネルで選んだ対象・期間の進捗レポートを、規約のファイル名の HTML としてダウンロードする(保存先はブラウザのダウンロード先のフォルダ) */
 async function makeReport() {
   const day = clock().date;
   const t = reportTarget(S.data, S.reportPanel, day);
@@ -141,10 +141,9 @@ async function makeReport() {
   const css = document.querySelector("head style")?.textContent ?? "";
   const html = buildReport(S.data, day, css, { projectIds: t.ids, period: t.period, title: t.name, now: clock() });
   const r = await saveHtmlFile(`${t.name}.html`, html);
-  if (r.cancelled) return;
   S.reportPanel = null;
   render();
-  toast(r.how === "picker" ? `レポートを保存しました（${r.name}）` : `レポートをダウンロードしました（${r.name}）。保存先は、ブラウザのダウンロード先のフォルダです`);
+  toast(`レポートをダウンロードしました（${r.name}）。保存先は、ブラウザのダウンロード先のフォルダです`);
 }
 
 let saveChain = Promise.resolve();
