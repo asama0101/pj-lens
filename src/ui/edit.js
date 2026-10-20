@@ -235,5 +235,18 @@ export function addProject(data, { name, type = "その他" }, today = nowLocal(
 export function deleteProject(data, projectId) {
   if (!data.projects.some((p) => p.id === projectId)) throw new Error(`プロジェクト ${projectId} がありません`);
   const taskCount = data.tasks.filter((t) => t.projectId === projectId).length;
-  return { data: { ...data, projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
+  // そのプロジェクトを指す会議のひも付け・規則・WBS の対応も消す(ID が再利用されても、別のプロジェクトへ付け替わらないように)
+  const events = (data.events ?? []).map((e) => {
+    if (e.projectId !== projectId) return e;
+    const { projectBy, ...rest } = e;
+    void projectBy;
+    return { ...rest, projectId: null };
+  });
+  let settings = data.settings;
+  if (settings) {
+    settings = { ...settings };
+    if (settings.projectRules) settings.projectRules = settings.projectRules.filter((r) => r.projectId !== projectId);
+    if (settings.wbsMappings) settings.wbsMappings = Object.fromEntries(Object.entries(settings.wbsMappings).filter(([k]) => k !== projectId));
+  }
+  return { data: { ...data, settings, events, projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
 }

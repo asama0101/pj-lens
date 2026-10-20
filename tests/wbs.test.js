@@ -116,3 +116,21 @@ test("setWbsMapping/getWbsMapping: 保存して読み戻せる。title の列が
   assert.throws(() => setWbsMapping(d, "ZZ", { title: "x" }));
   assert.deepEqual(validate(b).errors, []);
 });
+
+// ---- 最終レビューの修正 ----
+test("plan/apply: 既存の行で期限・状態のセルが空（\"\" や null）でも、更新案に出さず、apply も失敗しない", () => {
+  const d = run(empty(), rows());
+  const blank = rows().map((r) => ({ ...r, due: "", status: null, start: null }));
+  const p = planWbsImport(d, "A", blank);
+  assert.equal(p.update.length, 0);
+  assert.equal(p.same.length, 3);
+  assert.deepEqual(applyWbsImport(d, "A", p, { today: TODAY }), d);
+});
+
+test("plan: predecessorKeys が null でも落ちず、『指定なし』として扱う", () => {
+  const d = run(empty(), rows());
+  const r = rows(); r[1].predecessorKeys = null;
+  const p = planWbsImport(d, "A", r);
+  assert.equal(p.update.length, 0);
+  assert.doesNotThrow(() => planWbsImport(empty(), "A", [{ title: "X", due: "2026-11-01", predecessorKeys: null }]));
+});

@@ -11,7 +11,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const CANDIDATES = [["py", "-3"], ["python"], ["python3"]];
 
 /** シェルを経由せず、引数は配列のまま渡す */
-const realRun = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+// maxBuffer: 横に長い WBS の JSON は 1MB を超えうる(既定のままだと途中で切れる)
+export const realRun = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8", maxBuffer: 512 * 1024 * 1024, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
 
 /** 使える Python 3 の起動コマンド（配列）。無ければ null。run(cmd, args) は {status, stdout, stderr} を返す */
 export function pickPython(run = realRun) {
@@ -51,6 +52,7 @@ function main() {
   const env = ensureEnv(resolve(dir), { python });
   if (!env.ok) { console.error(env.message); process.exit(3); }
   const r = realRun(env.python, [join(HERE, "xlsx_dump.py"), resolve(file)]);
+  if (r.error) { console.error(`読み取りに失敗しました: ${r.error.message}`); process.exit(1); }
   process.stdout.write(r.stdout ?? "");
   if (r.status !== 0) { console.error(r.stderr); process.exit(1); }
 }

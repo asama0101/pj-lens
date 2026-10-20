@@ -123,3 +123,19 @@ test("tools/impact.js --compress が結果を変える", () => {
     assert.equal(run("--compress").changes.length, 3);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// ---- 最終レビューの修正: 確認パネルを出している間の別の編集を消さない ----
+import { commitReplan } from "../src/core/impact.js";
+
+test("commitReplan: 確認中に別の編集が入っても、最新のデータに対して計算し、その編集を消さない", () => {
+  const first = { ...chain(), changeLog: [] };
+  const edit = (d) => ({ ...d, tasks: d.tasks.map((t) => (t.id === "T1" ? { ...t, due: "2026-10-22" } : t)) });
+  // 確認パネルを出した後に、別のタスクのメモが変わった
+  const latest = { ...first, tasks: first.tasks.map((t) => (t.id === "T3" ? { ...t, memo: "あとから入れたメモ" } : t)) };
+  const n = commitReplan(latest, edit, "T1", 12, { reason: "遅れ", cause: "ベンダー", at: "2026-10-20" });
+  assert.equal(n.tasks.find((t) => t.id === "T3").memo, "あとから入れたメモ");
+  assert.deepEqual(n.tasks.map((t) => t.due), ["2026-10-22", "2026-10-22", "2026-10-22"]);
+  assert.equal(n.changeLog.length, 1);
+  assert.deepEqual(n.changeLog[0].taskIds, ["T1", "T2", "T3"]);
+  assert.throws(() => commitReplan(latest, edit, "T1", 12, { reason: "", cause: "ベンダー", at: "2026-10-20" }), /理由/);
+});

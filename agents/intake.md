@@ -43,12 +43,14 @@ description: 文章（メール・議事録・メモ）、Excel の WBS、メー
 ## mail（アウトソース先の進捗報告メールを取り込む）
 依頼の例: `mail`、`mail [A社] 今週分`、`mail 10/1から`
 1. **MCP の指定を確認する。** `${CLAUDE_PLUGIN_DATA}/pj-lens-mcp.json` を Read で読む。ファイルが無い、または `mail` の指定が無いときは、**`/pj-lens:mcp` で指定するよう案内して止まる。** ツールを探して推測で使わない。
-2. **対象を決める。** キーワードは依頼にあればそれ、なければ `settings.projectRules` の `keyword`（いずれかを件名に含む）。期間は依頼にあればそれ、なければ `node "${CLAUDE_PLUGIN_ROOT}/tools/intake.js" processed ".pj-lens/data.json"` の `lastMailDate` の翌日から今日まで（`null` なら14日前から今日まで）。規則のプロジェクトが分かれば、報告先のタスクはそのプロジェクトの中から探す。
+2. **対象を決める。** キーワードは依頼にあればそれ、なければ `settings.projectRules` の `keyword`（いずれかを件名に含む）。期間は依頼にあればそれ、なければ `node "${CLAUDE_PLUGIN_ROOT}/tools/intake.js" processed ".pj-lens/data.json"` の `lastMailDate` の**前回処理した日から**（その日を含む）今日まで（`null` なら14日前から今日まで）。同じ日に後から届いたメールを取りこぼさないよう当日を含め、処理済みのメールは `messageIds` で除く。規則のプロジェクトが分かれば、報告先のタスクはそのプロジェクトの中から探す。
 3. **メールを取得する。** 指定の `searchTool` で件名にキーワードを含むメールを検索し、`readTool` で本文を読む。`processed` の `messageIds` に含まれるメールは除く。
 4. **本文を読んで `items.json` を作る**（`[{messageId, taskId, summary, due, status, doneAt, cause}]`）。本文は定型ではない。
    - どのタスクの報告かを、プロジェクトのタスク（ID・件名）と照合して決める。
    - 予定（期限の変更 → `due`）と実績（着手 → `In Progress`、完了 → `Done` と `doneAt`）を読み取る。`summary` は反映内容の要点を1行で（本文の全文を書かない）。原因 `cause` は、社内部署からの報告なら `社内`、それ以外は `ベンダー`。
+   - **1通に複数のタスクの報告があるときは、タスクごとに1件ずつ**（同じ `messageId`、違う `taskId`）入れる。同じメールの同じタスクは1件だけ。
    - 反映する内容がないメールは `taskId: null` で入れる（処理済みにするだけ）。
+   - 無い項目は書かない（`null` で書いても「指定なし」として扱われる）。
    - **確信が低いもの（どのタスクか決められない、日付が読み取れない）は `items` に入れず、「判断できない」一覧として別に見せる。** 入れないので、次回も取得される。
    - `messageId` は MCP が返す ID をそのまま使う。`items.json` は OS の一時フォルダに書く。
 5. 期限の前倒しがあるときは、後続も詰めるか利用者に聞き、詰めるなら `--compress` を付ける。

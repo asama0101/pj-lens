@@ -183,14 +183,14 @@ async function openFile(choose) {
 
 /* ---------- 日程変更の確認(期限を変えたとき、後続への影響を見てから反映する) ---------- */
 /** 期限の変更で後続が動く、プロジェクト期限を超える、または前倒しで詰められる後続があるときは、確認待ちにして true を返す。そうでなければ false(呼び出し側がそのまま反映する) */
-function dueChange(id, base, orig) {
+function dueChange(id, base, orig, edit) {
   const delta = diffDays(base.tasks.find((t) => t.id === id).due, orig.tasks.find((t) => t.id === id).due);
   if (!delta) return false;
   const impact = computeImpact(orig, id, delta);
   // 前倒しは、詰められる後続があるときも確認する(既定は詰めない。パネルのチェックで選ぶ)
   const canCompress = delta < 0 && computeImpact(orig, id, delta, { compress: true }).changes.length > 1;
   if (!needsReplan(impact) && !canCompress) return false;
-  S.pendingReplan = { taskId: id, delta, impact, compress: false, cause: "その他", reason: "", base, orig };
+  S.pendingReplan = { taskId: id, delta, impact, compress: false, cause: "その他", reason: "", edit, base, orig };
   S.focusSel = '[data-rp="reason"]';
   render();
   return true;
@@ -200,12 +200,12 @@ function replanAction(kind) {
   const p = S.pendingReplan;
   if (!p) return;
   if (kind === "cancel") { S.pendingReplan = null; render(); return; }
-  if (kind === "only") { S.pendingReplan = null; apply(() => p.base, "このタスクだけ変更しました。後続の日程は変えていません"); return; }
+  if (kind === "only") { S.pendingReplan = null; apply((d) => p.edit(d), "このタスクだけ変更しました。後続の日程は変えていません"); return; }
   const reason = view.querySelector('[data-rp="reason"]')?.value ?? p.reason;
   const cause = view.querySelector('[data-rp="cause"]')?.value ?? p.cause;
   if (!reason.trim()) { toast("理由を入力してください"); return; }
   S.pendingReplan = null;
-  apply((d) => applyReplan(p.base, p.impact, { reason, cause, deltaDays: p.delta, at: clock().date }), `${p.impact.changes.length} 件の期限を変更し、日程変更の履歴に残しました`);
+  apply((d) => commitReplan(d, p.edit, p.taskId, p.delta, { compress: p.compress, reason, cause, at: clock().date }), `${p.impact.changes.length} 件の期限を変更し、日程変更の履歴に残しました`);
 }
 
 /* ---------- 選択と削除 ---------- */
@@ -470,7 +470,7 @@ function onChange(el) {
     if (f === "due") {
       let base;
       try { base = updateTask(S.data, id, { due: el.value }, today); } catch (e) { toast(e.message); render(); return; }
-      if (dueChange(id, base, S.data)) return;
+      if (dueChange(id, base, S.data, (d) => updateTask(d, id, { due: el.value }, today))) return;
       apply(() => base, "変更を保存しました");
       return;
     }
@@ -610,10 +610,12 @@ view.addEventListener("mousedown", (e) => {
     if (mode === "l") ns = Math.min(s + dd, en);
     else if (mode === "r") ne = kind === "m" ? en + dd : Math.max(en + dd, s);
     else { ns = s + dd; ne = en + dd; }
-    let result, msg;
+    let result, msg, dragEdit;
     if (kind === "t") {
       const m = mode === "l" ? "start" : mode === "r" ? "due" : "both";
-      result = moveTaskDates(S.data, t.id, m, m === "start" ? ns - s : m === "due" ? ne - en : dd);
+      const amt = m === "start" ? ns - s : m === "due" ? ne - en : dd;
+      result = moveTaskDates(S.data, t.id, m, amt);
+      dragEdit = (d) => { const r = moveTaskDates(d, t.id, m, amt); if (r.error) throw new Error(r.error); return r.data; };
       msg = `${t.id}: ${fmtMD(addDays(s0, ns))}〜${fmtMD(addDays(s0, ne))}`;
     } else if (kind === "p") {
       result = moveProjectDates(S.data, p.id, mode === "l" ? "start" : "due", mode === "l" ? ns - s : ne - en);
@@ -623,7 +625,7 @@ view.addEventListener("mousedown", (e) => {
       msg = `マイルストーン「${p.milestones[mIdx].name}」を ${fmtMD(addDays(s0, ne))} に変更しました`;
     }
     if (result.error) { toast(result.error); render(); return; }
-    if (kind === "t" && dueChange(t.id, result.data, S.data)) return;
+    if (kind === "t" && dueChange(t.id, result.data, S.data, dragEdit)) return;
     apply(() => result.data, `${msg}${result.warning ? `。${result.warning}` : ""}`);
   };
   document.addEventListener("mousemove", move);

@@ -160,3 +160,18 @@ test("updateTask: group/subgroup は trim され、空は null", () => {
   assert.deepEqual([n.group, n.subgroup], ["設計", null]);
   assert.equal(updateTask(d, "T1", { group: null }).tasks[0].group, null);
 });
+
+test("deleteProject: そのプロジェクトを指す会議のひも付け・規則・WBS の対応も掃除する（ID を再利用しても付け替わらない）", () => {
+  const d = {
+    settings: { projectRules: [{ keyword: "x", projectId: "A" }, { keyword: "y", projectId: "B" }], wbsMappings: { A: { title: "t" }, B: { title: "t" } } },
+    projects: [{ id: "A" }, { id: "B" }], tasks: [],
+    events: [{ id: "m1", projectId: "A", projectBy: "rule" }, { id: "m2", projectId: "A", projectBy: "manual" }, { id: "m3", projectId: "B", projectBy: "manual" }, { id: "m4" }],
+    changeLog: [],
+  };
+  const n = deleteProject(d, "A").data;
+  assert.deepEqual(n.events.map((e) => [e.projectId ?? null, e.projectBy ?? null]), [[null, null], [null, null], ["B", "manual"], [null, null]]);
+  assert.deepEqual(n.settings.projectRules, [{ keyword: "y", projectId: "B" }]);
+  assert.deepEqual(Object.keys(n.settings.wbsMappings), ["B"]);
+  assert.equal(d.events[0].projectId, "A", "元のデータは変わらない");
+  assert.equal(deleteProject({ ...d, settings: undefined }, "A").data.settings, undefined, "settings が無くても落ちない");
+});

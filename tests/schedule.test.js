@@ -178,3 +178,25 @@ test("syncMcpEvents: 取得後も confirmed と projectId/projectBy が保たれ
   const m = r.events[0];
   assert.deepEqual([m.title, m.confirmed, m.projectId, m.projectBy], ["改題", true, "A", "manual"]);
 });
+
+// ---- 最終レビューの修正: 規則は、会議を追加・件名を変えたときにも当たる ----
+test("addMeeting: 件名が規則に当たれば、プロジェクトが自動で付く（rule）。手動指定は優先", () => {
+  const d = base([]); d.projects = [{ id: "A" }, { id: "B" }];
+  d.settings.projectRules = [{ keyword: "ベンダーX", projectId: "A" }];
+  const m = addMeeting(d, { date: "2026-10-20", start: "10:00", end: "11:00", title: "ベンダーX 定例" }).data.events[0];
+  assert.deepEqual([m.projectId, m.projectBy], ["A", "rule"]);
+  const man = addMeeting(d, { date: "2026-10-20", start: "10:00", end: "11:00", title: "ベンダーX 定例", projectId: "B" }).data.events[0];
+  assert.deepEqual([man.projectId, man.projectBy], ["B", "manual"]);
+});
+
+test("updateMeeting: 件名を変えると、規則で付けたプロジェクトが付け直される（手動は変わらない）", () => {
+  const d = base([ev("09:00", "10:00", { id: "m1", title: "ベンダーX 打合せ" }), ev("10:00", "11:00", { id: "m2", title: "ベンダーX 別件", projectId: "B", projectBy: "manual" })]);
+  d.projects = [{ id: "A" }, { id: "B" }];
+  d.settings.projectRules = [{ keyword: "ベンダーX", projectId: "A" }];
+  const a = updateMeeting(d, "m1", { title: "ベンダーX 打合せ" }); // 規則がまだ付いていない会議に、更新のたびに適用される
+  assert.deepEqual([a.events[0].projectId, a.events[0].projectBy], ["A", "rule"]);
+  const b = updateMeeting(a, "m1", { title: "社内レビュー" });
+  assert.equal(b.events[0].projectId ?? null, null);
+  const c = updateMeeting(a, "m2", { title: "社内レビュー" });
+  assert.deepEqual([c.events[1].projectId, c.events[1].projectBy], ["B", "manual"]);
+});

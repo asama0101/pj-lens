@@ -92,7 +92,7 @@ export function addMeeting(data, m) {
     e.projectId = m.projectId;
     e.projectBy = "manual";
   }
-  return { data: { ...data, events: [...data.events, e] }, id };
+  return { data: assignMeetingProjects({ ...data, events: [...data.events, e] }), id };
 }
 
 export function updateMeeting(data, id, patch) {
@@ -115,7 +115,7 @@ export function updateMeeting(data, id, patch) {
     }
   }
   const out = { ...data, events: data.events.map((e) => (e.id === id ? next : e)) };
-  return auto ? assignMeetingProjects(out) : out;
+  return assignMeetingProjects(out); // 件名が変わったときも、規則で付けたものを付け直す(手動は変わらない)
 }
 
 const meetingPast = (m, now) => m.date < now.date || (m.date === now.date && m.end <= now.time);

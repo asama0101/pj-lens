@@ -45,3 +45,10 @@ test("intake: WBS・メール・予定表・規則の4つの手順と、承認�
   ]) assert.ok(t.includes(w), w);
   assert.doesNotMatch(t, /\.mcp\.json/);
 });
+
+test("intake(mail): 期間の既定は『前回処理した日から』（その日を含む）。処理済みは messageId で除く", () => {
+  const t = read("agents/intake.md");
+  assert.ok(t.includes("前回処理した日から"));
+  assert.ok(!t.includes("の翌日から"));
+  assert.ok(t.includes("1通に複数のタスク"));
+});

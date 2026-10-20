@@ -98,3 +98,26 @@ test("apply: 検証エラーになるデータには例外で、データは返�
   const d = mk(); d.tasks.push({ ...T("T9", "2026-10-30"), status: "Bogus" });
   assert.throws(() => applyMailImport(d, plan(d, [{ messageId: "m1", taskId: "T1", summary: "x", due: "2026-10-15" }]), { today: TODAY }));
 });
+
+// ---- 最終レビューの修正 ----
+test("plan: 1通のメールに複数のタスクの報告があっても、タスクが違えば全部反映できる。同じ (メール, タスク) の重複だけ弾く", () => {
+  const d = mk(); d.tasks.push(T("T4", "2026-11-01"));
+  const items = [
+    { messageId: "x2", taskId: "T1", summary: "T1 延期", due: "2026-10-15" },
+    { messageId: "x2", taskId: "T4", summary: "T4 完了", status: "Done" },
+    { messageId: "x2", taskId: "T4", summary: "T4 重複", status: "Cancelled" },
+  ];
+  const p = plan(d, items);
+  assert.deepEqual(p.changes.map((c) => c.taskId), ["T1", "T4"]);
+  assert.deepEqual(p.rejected.map((r) => r.messageId), ["x2"]);
+  const n = applyMailImport(d, p, { today: TODAY });
+  assert.equal(n.tasks.find((t) => t.id === "T4").status, "Done");
+  assert.deepEqual(processedMessageIds(n), ["x2"]);
+});
+
+test("plan: キーが null（無い）でも、undefined と同じく『指定なし』として扱い、弾かない", () => {
+  const p = plan(mk(), [{ messageId: "n1", taskId: "T1", summary: "着手", due: null, status: "Done", doneAt: null, cause: null }]);
+  assert.deepEqual(p.rejected, []);
+  assert.deepEqual(p.changes[0].set, { status: "Done" });
+  assert.equal(p.changes[0].cause, "ベンダー");
+});

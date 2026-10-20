@@ -38,20 +38,23 @@ export function planMailImport(data, items, { today, compress = false } = {}) {
   const done = new Set(processedMessageIds(data));
   const byId = new Map(data.tasks.map((t) => [t.id, t]));
   const plan = { compress, changes: [], noop: [], skipped: [], rejected: [] };
-  const seenMsg = new Set();
+  const seen = new Set(); // (メール, タスク) の組。1通のメールに複数のタスクの報告があってよい
   const seenTask = new Set();
-  for (const item of items) {
+  for (const raw of items) {
+    // null は「指定なし」。undefined と同じに扱う(taskId の null は「反映なし」の意味なので残す)
+    const item = Object.fromEntries(Object.entries(raw).filter(([k, v]) => v != null || k === "taskId"));
     const { messageId, taskId } = item;
     const summary = String(item.summary ?? "").trim();
+    const key = `${messageId}\u0000${taskId ?? ""}`;
     if (done.has(messageId)) { plan.skipped.push({ messageId, reason: "処理済み" }); continue; }
-    if (seenMsg.has(messageId)) { plan.rejected.push({ messageId, reason: "同じ messageId が重複しています" }); continue; }
-    if (taskId == null) { seenMsg.add(messageId); plan.noop.push({ messageId, summary }); continue; }
+    if (seen.has(key)) { plan.rejected.push({ messageId, reason: "同じメール・同じタスクの報告が重複しています" }); continue; }
+    if (taskId == null) { seen.add(key); plan.noop.push({ messageId, summary }); continue; }
     const task = byId.get(taskId);
     if (!task) { plan.rejected.push({ messageId, reason: `タスク ${taskId} がありません` }); continue; }
     const bad = problem(item, task);
     if (bad) { plan.rejected.push({ messageId, reason: bad }); continue; }
     if (seenTask.has(taskId)) { plan.rejected.push({ messageId, reason: `同じタスク ${taskId} の報告が複数あります（1通ずつ処理してください）` }); continue; }
-    seenMsg.add(messageId);
+    seen.add(key);
     seenTask.add(taskId);
 
     const set = {};

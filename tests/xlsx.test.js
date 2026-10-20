@@ -79,3 +79,11 @@ test("統合: fixtures/wbs-merged.xlsx を読むと結合セルが展開され�
   assert.deepEqual(out.sheets[1].indents, [0, 0, 2, 4, 4, 0, 2], "インデントで階層を表す行は、先頭の空白の数を indents で返す");
   assert.deepEqual(out.sheets[1].rows[2], ["要件", null], "文字列は空白を除いて返す");
 });
+
+import { realRun } from "../tools/xlsx.js";
+
+test("realRun: 1MB を超える標準出力でも切れずに受け取れる（横に長い WBS の JSON を想定）", () => {
+  const r = realRun(process.execPath, ["-e", "process.stdout.write('x'.repeat(5 * 1024 * 1024))"]);
+  assert.equal(r.status, 0, String(r.error));
+  assert.equal(r.stdout.length, 5 * 1024 * 1024);
+});

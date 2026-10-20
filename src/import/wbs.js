@@ -26,6 +26,8 @@ function rowProblem(r) {
 }
 
 const value = (f, v) => (f === "memo" ? s(v) : nz(v));
+/** 行に値が指定されているか。null・未指定は「指定なし」。期限と状態の空欄は、消せない項目なので「指定なし」 */
+const given = (r, f) => r[f] !== undefined && r[f] !== null && !((f === "due" || f === "status") && s(r[f]) === "");
 
 /** 行と既存タスクの照合。追加・更新・変更なし・WBS に無い既存・弾いた行・警告を返す。data は変えない */
 export function planWbsImport(data, projectId, rows) {
@@ -48,7 +50,7 @@ export function planWbsImport(data, projectId, rows) {
 
   for (const { r, key, index } of valid) {
     let predKeys;
-    if (r.predecessorKeys !== undefined) {
+    if (r.predecessorKeys != null) {
       predKeys = [];
       for (const k of r.predecessorKeys.map(s).filter(Boolean)) {
         if (existing.has(k) || seen.has(k)) predKeys.push(k);
@@ -56,7 +58,7 @@ export function planWbsImport(data, projectId, rows) {
       }
     }
     const row = { title: s(r.title) };
-    for (const f of FIELDS) if (r[f] !== undefined) row[f] = value(f, r[f]);
+    for (const f of FIELDS) if (given(r, f)) row[f] = value(f, r[f]);
     if (predKeys) row.predecessorKeys = predKeys;
 
     const cur = existing.get(key);

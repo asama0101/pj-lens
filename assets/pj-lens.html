@@ -849,7 +849,7 @@ return { sessionKind, addSession, moveSession, resizeSession, confirmSession, re
 })();
 
 /* src/core/impact.js */
-const { computeImpact, needsReplan, applyReplan } = (() => {
+const { computeImpact, needsReplan, applyReplan, commitReplan } = (() => {
 // タスクの期限が動いたときの影響範囲。後続は「最小限だけ」動かす（先行の新しい期限を超えないようにする）。
 
 
@@ -948,7 +948,17 @@ function applyReplan(data, impact, { reason, cause, deltaDays, at, extra = {} })
   };
 }
 
-return { computeImpact, needsReplan, applyReplan };
+/**
+ * 確認のあとの反映。利用者の編集(edit: data → data)を、いまの最新のデータに対してやり直し、後続の影響もいまのデータで計算し直す。
+ * 確認パネルを出している間に入った別の編集を消さないため、パネルを出した時点のスナップショットは使わない
+ */
+function commitReplan(data, edit, taskId, deltaDays, { compress = false, reason, cause, at, extra }) {
+  const base = edit(data);
+  const impact = computeImpact(data, taskId, deltaDays, { compress });
+  return applyReplan(base, impact, { reason, cause, deltaDays, at, extra });
+}
+
+return { computeImpact, needsReplan, applyReplan, commitReplan };
 })();
 
 /* src/core/rules.js */
@@ -1102,7 +1112,7 @@ function addMeeting(data, m) {
     e.projectId = m.projectId;
     e.projectBy = "manual";
   }
-  return { data: { ...data, events: [...data.events, e] }, id };
+  return { data: assignMeetingProjects({ ...data, events: [...data.events, e] }), id };
 }
 
 function updateMeeting(data, id, patch) {
@@ -1125,7 +1135,7 @@ function updateMeeting(data, id, patch) {
     }
   }
   const out = { ...data, events: data.events.map((e) => (e.id === id ? next : e)) };
-  return auto ? assignMeetingProjects(out) : out;
+  return assignMeetingProjects(out); // 件名が変わったときも、規則で付けたものを付け直す(手動は変わらない)
 }
 
 const meetingPast = (m, now) => m.date < now.date || (m.date === now.date && m.end <= now.time);
@@ -1687,7 +1697,20 @@ function addProject(data, { name, type = "その他" }, today = nowLocal().date)
 function deleteProject(data, projectId) {
   if (!data.projects.some((p) => p.id === projectId)) throw new Error(`プロジェクト ${projectId} がありません`);
   const taskCount = data.tasks.filter((t) => t.projectId === projectId).length;
-  return { data: { ...data, projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
+  // そのプロジェクトを指す会議のひも付け・規則・WBS の対応も消す(ID が再利用されても、別のプロジェクトへ付け替わらないように)
+  const events = (data.events ?? []).map((e) => {
+    if (e.projectId !== projectId) return e;
+    const { projectBy, ...rest } = e;
+    void projectBy;
+    return { ...rest, projectId: null };
+  });
+  let settings = data.settings;
+  if (settings) {
+    settings = { ...settings };
+    if (settings.projectRules) settings.projectRules = settings.projectRules.filter((r) => r.projectId !== projectId);
+    if (settings.wbsMappings) settings.wbsMappings = Object.fromEntries(Object.entries(settings.wbsMappings).filter(([k]) => k !== projectId));
+  }
+  return { data: { ...data, settings, events, projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
 }
 
 return { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, addProject, deleteProject };
@@ -2527,14 +2550,14 @@ async function openFile(choose) {
 
 /* ---------- 日程変更の確認(期限を変えたとき、後続への影響を見てから反映する) ---------- */
 /** 期限の変更で後続が動く、プロジェクト期限を超える、または前倒しで詰められる後続があるときは、確認待ちにして true を返す。そうでなければ false(呼び出し側がそのまま反映する) */
-function dueChange(id, base, orig) {
+function dueChange(id, base, orig, edit) {
   const delta = diffDays(base.tasks.find((t) => t.id === id).due, orig.tasks.find((t) => t.id === id).due);
   if (!delta) return false;
   const impact = computeImpact(orig, id, delta);
   // 前倒しは、詰められる後続があるときも確認する(既定は詰めない。パネルのチェックで選ぶ)
   const canCompress = delta < 0 && computeImpact(orig, id, delta, { compress: true }).changes.length > 1;
   if (!needsReplan(impact) && !canCompress) return false;
-  S.pendingReplan = { taskId: id, delta, impact, compress: false, cause: "その他", reason: "", base, orig };
+  S.pendingReplan = { taskId: id, delta, impact, compress: false, cause: "その他", reason: "", edit, base, orig };
   S.focusSel = '[data-rp="reason"]';
   render();
   return true;
@@ -2544,12 +2567,12 @@ function replanAction(kind) {
   const p = S.pendingReplan;
   if (!p) return;
   if (kind === "cancel") { S.pendingReplan = null; render(); return; }
-  if (kind === "only") { S.pendingReplan = null; apply(() => p.base, "このタスクだけ変更しました。後続の日程は変えていません"); return; }
+  if (kind === "only") { S.pendingReplan = null; apply((d) => p.edit(d), "このタスクだけ変更しました。後続の日程は変えていません"); return; }
   const reason = view.querySelector('[data-rp="reason"]')?.value ?? p.reason;
   const cause = view.querySelector('[data-rp="cause"]')?.value ?? p.cause;
   if (!reason.trim()) { toast("理由を入力してください"); return; }
   S.pendingReplan = null;
-  apply((d) => applyReplan(p.base, p.impact, { reason, cause, deltaDays: p.delta, at: clock().date }), `${p.impact.changes.length} 件の期限を変更し、日程変更の履歴に残しました`);
+  apply((d) => commitReplan(d, p.edit, p.taskId, p.delta, { compress: p.compress, reason, cause, at: clock().date }), `${p.impact.changes.length} 件の期限を変更し、日程変更の履歴に残しました`);
 }
 
 /* ---------- 選択と削除 ---------- */
@@ -2814,7 +2837,7 @@ function onChange(el) {
     if (f === "due") {
       let base;
       try { base = updateTask(S.data, id, { due: el.value }, today); } catch (e) { toast(e.message); render(); return; }
-      if (dueChange(id, base, S.data)) return;
+      if (dueChange(id, base, S.data, (d) => updateTask(d, id, { due: el.value }, today))) return;
       apply(() => base, "変更を保存しました");
       return;
     }
@@ -2954,10 +2977,12 @@ view.addEventListener("mousedown", (e) => {
     if (mode === "l") ns = Math.min(s + dd, en);
     else if (mode === "r") ne = kind === "m" ? en + dd : Math.max(en + dd, s);
     else { ns = s + dd; ne = en + dd; }
-    let result, msg;
+    let result, msg, dragEdit;
     if (kind === "t") {
       const m = mode === "l" ? "start" : mode === "r" ? "due" : "both";
-      result = moveTaskDates(S.data, t.id, m, m === "start" ? ns - s : m === "due" ? ne - en : dd);
+      const amt = m === "start" ? ns - s : m === "due" ? ne - en : dd;
+      result = moveTaskDates(S.data, t.id, m, amt);
+      dragEdit = (d) => { const r = moveTaskDates(d, t.id, m, amt); if (r.error) throw new Error(r.error); return r.data; };
       msg = `${t.id}: ${fmtMD(addDays(s0, ns))}〜${fmtMD(addDays(s0, ne))}`;
     } else if (kind === "p") {
       result = moveProjectDates(S.data, p.id, mode === "l" ? "start" : "due", mode === "l" ? ns - s : ne - en);
@@ -2967,7 +2992,7 @@ view.addEventListener("mousedown", (e) => {
       msg = `マイルストーン「${p.milestones[mIdx].name}」を ${fmtMD(addDays(s0, ne))} に変更しました`;
     }
     if (result.error) { toast(result.error); render(); return; }
-    if (kind === "t" && dueChange(t.id, result.data, S.data)) return;
+    if (kind === "t" && dueChange(t.id, result.data, S.data, dragEdit)) return;
     apply(() => result.data, `${msg}${result.warning ? `。${result.warning}` : ""}`);
   };
   document.addEventListener("mousemove", move);

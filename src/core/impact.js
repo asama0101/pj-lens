@@ -95,3 +95,13 @@ export function applyReplan(data, impact, { reason, cause, deltaDays, at, extra 
     changeLog: [...(data.changeLog ?? []), { at, taskIds: impact.changes.map((c) => c.taskId), reason: String(reason).trim(), cause, deltaDays, ...extra }],
   };
 }
+
+/**
+ * 確認のあとの反映。利用者の編集(edit: data → data)を、いまの最新のデータに対してやり直し、後続の影響もいまのデータで計算し直す。
+ * 確認パネルを出している間に入った別の編集を消さないため、パネルを出した時点のスナップショットは使わない
+ */
+export function commitReplan(data, edit, taskId, deltaDays, { compress = false, reason, cause, at, extra }) {
+  const base = edit(data);
+  const impact = computeImpact(data, taskId, deltaDays, { compress });
+  return applyReplan(base, impact, { reason, cause, deltaDays, at, extra });
+}
