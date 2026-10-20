@@ -124,7 +124,6 @@ Claude Code を開いたフォルダ（`pj-lens.html` があるフォルダ）�
 画面上部の2つのボタンで出力できます（内容は同じです）。
 
 - **レポート(HTML)**: `report-YYYY-MM-DD.html` を保存します。そのままメールや共有フォルダで渡せます。
-- **レポート(PDF)**: レポートを別のタブで開き、印刷画面を出します。送信先で「PDF として保存」を選びます。ポップアップがブロックされたときは許可してください。
 
 内容は、全体一覧、プロジェクト別の詳細、今週の予定です。会議の件名は載せず、時間枠だけです。件名も載せるときは、`data.json` の `settings.reportShowMeetingTitles` を `true` にします。
 
@@ -212,7 +211,8 @@ npm run build   # assets/pj-lens.html（プラグインに同梱する完成版�
 
 ### 0.1.0
 
-- 廃止: `/pj-lens:daily-planner`（画面の「今日の優先」で足りるため）、`/pj-lens:report` と CLI `tools/report.js`（画面のレポートボタンで足りるため）、CLI `tools/rank.js`・`tools/free.js`。`npm run report` も廃止しました。画面のレポート(HTML／PDF)ボタンと「今日の優先」は残っています。
+- 廃止: `/pj-lens:daily-planner`（画面の「今日の優先」で足りるため）、`/pj-lens:report` と CLI `tools/report.js`（画面のレポートボタンで足りるため）、CLI `tools/rank.js`・`tools/free.js`。`npm run report` も廃止しました。画面のレポート(HTML)ボタンと「今日の優先」は残っています。
+- 廃止: レポート(PDF)を廃止しました（PDF 生成ライブラリを入れない方針のため）。PDF が要るときは、保存した HTML をブラウザで開いて印刷画面から「PDF として保存」を選びます。
 - 追加: 取り込み（`/pj-lens:intake` の `wbs`・`mail`・`calendar`・`rules`）、MCP の指定（`/pj-lens:mcp`）、日程変更の確認パネルと前倒しの詰め、大項目・中項目、会議のプロジェクトと実績の確認、「稼働」画面、表示スイッチ。
 - データ形式: 追加した項目はすべて任意で、従来の `data.json` はそのまま読めます。
 - 予定表の会議の同期は、`daily-planner` から `intake calendar` に移りました。
