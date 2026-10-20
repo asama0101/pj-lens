@@ -41,3 +41,13 @@ test("設定パネル: プロジェクトを1つも選ばないと生成でき�
   assert.ok(!h.includes("<b>回線</b>") && h.includes("&lt;b&gt;回線"));
   assert.match(h, /role="alert"[^>]*>保存できません/);
 });
+
+import { renderReportPreview } from "../src/ui/views/reportpanel.js";
+
+test("renderReportPreview: 日付を打っている途中でも入力欄を作り直さずに更新できる、ファイル名／理由だけの部分", () => {
+  const ok = renderReportPreview(data(), st({ kind: "custom", start: "2026-10-01", end: "2026-10-15" }), TODAY);
+  assert.ok(ok.includes("pj-lens_report_all_20261001--20261015_20261021.html") && !ok.includes("<input"));
+  const bad = renderReportPreview(data(), st({ kind: "custom", start: "", end: "" }), TODAY);
+  assert.ok(bad.includes("形式が不正") && !bad.includes(".html"));
+  assert.ok(renderReportPanel(data(), st(), TODAY).includes('class="rpt-pre"'));
+});

@@ -139,7 +139,7 @@ async function makeReport() {
   const t = reportTarget(S.data, S.reportPanel, day);
   if (t.problem) { S.reportPanel = { ...S.reportPanel, error: t.problem }; render(); return; }
   const css = document.querySelector("head style")?.textContent ?? "";
-  const html = buildReport(S.data, day, css, { projectIds: t.ids, period: t.period, title: t.name });
+  const html = buildReport(S.data, day, css, { projectIds: t.ids, period: t.period, title: t.name, now: clock() });
   const r = await saveHtmlFile(`${t.name}.html`, html);
   if (r.cancelled) return;
   S.reportPanel = null;
@@ -288,7 +288,7 @@ view.addEventListener("click", (e) => {
   if (q("[data-rptgo]")) { makeReport(); return; }
   let cleared = false;
   // 欄外のクリックで、枠・会議の選択と追加中の下書きを外す
-  if ((S.selSess || S.selMtg || S.mtgDraft) && !q("[data-dragsess],[data-mtg],[data-delsel],.mtgform,[data-mtgadd],[data-confirm],[data-confirmmtg],[data-confirmall]")) { clearSel(); cleared = true; }
+  if ((S.selSess || S.selMtg || S.mtgDraft) && !q("[data-dragsess],[data-mtg],[data-delsel],.mtgform,[data-mtgadd],[data-confirm],[data-confirmmtg],[data-confirmall],.rptpanel")) { clearSel(); cleared = true; }
   const { date: today, time } = clock();
   const now = clock();
 
@@ -432,7 +432,16 @@ function onReportChange(el) {
     if (patch.kind === "custom" && !S.reportPanel.start) { const w = reportPeriod("thisWeek", today); patch.start = w.start; patch.end = w.end; }
     return setReportState(patch);
   }
-  if (el.dataset.rptd) return setReportState({ [el.dataset.rptd]: el.value });
+  if (el.dataset.rptd) {
+    // 日付を打っている途中で入力欄を作り直さない（打ちかけが消える）。ファイル名の見本と保存ボタンだけ更新する
+    S.reportPanel = { ...S.reportPanel, [el.dataset.rptd]: el.value, error: "" };
+    const { error, ...keep } = S.reportPanel;
+    saveReportPrefs(keep);
+    const pre = view.querySelector(".rpt-pre");
+    if (pre) pre.innerHTML = renderReportPreview(S.data, S.reportPanel, today);
+    const go = view.querySelector("[data-rptgo]");
+    if (go) go.disabled = !!reportTarget(S.data, S.reportPanel, today).problem;
+  }
 }
 
 function onChange(el) {

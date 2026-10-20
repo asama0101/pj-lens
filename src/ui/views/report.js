@@ -64,12 +64,16 @@ function detail(data, p, today, period, row) {
     ${log ? `<table><thead><tr><th>日付</th><th>対象</th><th>動いた日数</th><th>原因</th><th>理由</th></tr></thead><tbody>${log}</tbody></table>` : `<p class="muted" style="margin:0;font-size:12px">期間内の変更履歴はありません。</p>`}</section>`;
 }
 
-function actuals(data, projects, rows) {
+function actuals(data, projects, rows, unassigned) {
   const name = (id) => esc(projects.find((p) => p.id === id)?.name ?? id);
-  const sum = (f) => rows.reduce((a, r) => a + f(r), 0);
+  // プロジェクト未設定の会議は、表の中では 1 行として扱う（合計に入れるため）
+  const um = unassigned && (unassigned.meetingHours > 0 || unassigned.unconfirmedMeetings > 0)
+    ? [{ label: "プロジェクト未設定の会議", taskHours: 0, taskCount: 0, meetingHours: unassigned.meetingHours, total: unassigned.meetingHours, unconfirmedTasks: 0, unconfirmedMeetings: unassigned.unconfirmedMeetings }] : [];
+  const tableRows = [...rows, ...um];
+  const sum = (f) => tableRows.reduce((a, r) => a + f(r), 0);
   const unc = (r) => (r.unconfirmedTasks || r.unconfirmedMeetings ? `${r.unconfirmedTasks + r.unconfirmedMeetings}件（作業枠 ${r.unconfirmedTasks}・会議 ${r.unconfirmedMeetings}）` : "—");
-  const trs = rows.map((r) => `<tr>${cell(`<strong>${name(r.projectId)}</strong>`)}${cell(`<span class="mono">${hm(r.taskHours)}・${r.taskCount}回</span>`)}${cell(`<span class="mono">${hm(r.meetingHours)}</span>`)}${cell(`<span class="mono">${hm(r.total)}</span>`)}${cell(unc(r))}</tr>`).join("");
-  const total = rows.length > 1 ? `<tr><td><strong>合計</strong></td>${cell(`<span class="mono">${hm(sum((r) => r.taskHours))}・${sum((r) => r.taskCount)}回</span>`)}${cell(`<span class="mono">${hm(sum((r) => r.meetingHours))}</span>`)}${cell(`<span class="mono">${hm(sum((r) => r.total))}</span>`)}${cell("")}</tr>` : "";
+  const trs = tableRows.map((r) => `<tr>${cell(`<strong>${r.label ? esc(r.label) : name(r.projectId)}</strong>`)}${cell(`<span class="mono">${hm(r.taskHours)}・${r.taskCount}回</span>`)}${cell(`<span class="mono">${hm(r.meetingHours)}</span>`)}${cell(`<span class="mono">${hm(r.total)}</span>`)}${cell(unc(r))}</tr>`).join("");
+  const total = tableRows.length > 1 ? `<tr><td><strong>合計</strong></td>${cell(`<span class="mono">${hm(sum((r) => r.taskHours))}・${sum((r) => r.taskCount)}回</span>`)}${cell(`<span class="mono">${hm(sum((r) => r.meetingHours))}</span>`)}${cell(`<span class="mono">${hm(sum((r) => r.total))}</span>`)}${cell("")}</tr>` : "";
   const each = rows.map((r) => {
     const tasks = r.tasks.length ? `<table><thead><tr><th>ID</th><th>件名</th><th>作業時間</th><th>回数</th></tr></thead><tbody>${r.tasks.map((t) => `<tr>${cell(`<span class="mono">${esc(t.id)}</span>`)}${cell(esc(t.title))}${cell(`<span class="mono">${hm(t.hours)}</span>`)}${cell(`<span class="mono">${t.count}回</span>`)}</tr>`).join("")}</tbody></table>` : `<p class="muted" style="margin:0;font-size:12px">期間内に作業した実績はありません。</p>`;
     const done = r.done.length ? `<ul style="margin:4px 0 0;padding-left:18px;font-size:12px">${r.done.map((t) => `<li><span class="mono">${esc(t.id)}</span> ${esc(t.title)} <span class="muted mono">${fmtMD(t.doneAt)}</span></li>`).join("")}</ul>` : `<p class="muted" style="margin:0;font-size:12px">なし</p>`;
@@ -79,9 +83,8 @@ function actuals(data, projects, rows) {
 }
 
 /** 期間のうち今日以降の予定（日別）。selected は選んだプロジェクトの ID の集合。全プロジェクトを選んだときだけ、プロジェクト未設定の会議も載せる */
-function plan(data, from, to, selected, all, today) {
+function plan(data, from, to, selected, all, today, now) {
   const showTitles = data.settings?.reportShowMeetingTitles === true;
-  const now = { date: today, time: "00:00" };
   const known = new Set(data.projects.map((p) => p.id));
   const mine = (m) => selected.has(m.projectId) || (all && !known.has(m.projectId));
   const days = [];
@@ -102,22 +105,23 @@ function plan(data, from, to, selected, all, today) {
 
 /**
  * 自己完結の HTML を作る。css はダッシュボードのスタイル。会議の件名は settings.reportShowMeetingTitles が true のときだけ載せる。
- * opts: { projectIds（既定は全部）, period（reportPeriod の結果。既定は今週）, title（<title>。既定は「プロジェクト進捗レポート 日付」） }
+ * opts: { projectIds（既定は全部）, period（reportPeriod の結果。既定は今週）, title（<title>。既定は「プロジェクト進捗レポート 日付」）, now（{date, time}。未確認の判定に使う。既定は今日の 00:00 =今日の分は過去にしない）}
  */
 export function buildReport(data, today, css, opts = {}) {
   const period = opts.period ?? reportPeriod("thisWeek", today);
   const ids = new Set(opts.projectIds ?? data.projects.map((p) => p.id));
   const projects = data.projects.filter((p) => ids.has(p.id));
   const asOf = period.end < today ? period.end : today;
-  const { rows } = periodReport(data, projects.map((p) => p.id), period, { date: today, time: "00:00" });
-  const title = opts.title ?? `プロジェクト進捗レポート ${today}`;
+  const now = opts.now ?? { date: today, time: "00:00" };
   const allSelected = projects.length === data.projects.length;
+  const { rows, unassigned } = periodReport(data, projects.map((p) => p.id), period, now, { includeUnassigned: allSelected });
+  const title = opts.title ?? `プロジェクト進捗レポート ${today}`;
   const scope = allSelected ? "全プロジェクト" : projects.map((p) => esc(p.name)).join("、");
   const from = period.start > today ? period.start : today;
-  const planBody = period.end >= today && projects.length ? plan(data, from, period.end, new Set(projects.map((p) => p.id)), allSelected, today) : "";
+  const planBody = period.end >= today && projects.length ? plan(data, from, period.end, new Set(projects.map((p) => p.id)), allSelected, today, now) : "";
   const empty = (n, h) => `<h2 class="sec">${n}. ${h}</h2><p class="muted">プロジェクトがありません。</p>`;
   const body = projects.length
-    ? `<h2 class="sec">1. 全体一覧</h2>${overview(data, projects, today, asOf, rows)}<h2 class="sec">2. プロジェクト別の詳細</h2>${projects.map((p) => detail(data, p, today, period, rows.find((r) => r.projectId === p.id))).join("")}<h2 class="sec">3. ${esc(period.label)}の実績</h2>${actuals(data, projects, rows)}${planBody ? `<h2 class="sec">4. ${esc(period.label)}の予定</h2>${planBody}` : ""}`
+    ? `<h2 class="sec">1. 全体一覧</h2>${overview(data, projects, today, asOf, rows)}<h2 class="sec">2. プロジェクト別の詳細</h2>${projects.map((p) => detail(data, p, today, period, rows.find((r) => r.projectId === p.id))).join("")}<h2 class="sec">3. ${esc(period.label)}の実績</h2>${actuals(data, projects, rows, unassigned)}${planBody ? `<h2 class="sec">4. ${esc(period.label)}の予定</h2>${planBody}` : ""}`
     : `${empty(1, "全体一覧")}${empty(2, "プロジェクト別の詳細")}`;
   return `<!doctype html>
 <html lang="ja" data-theme="light">

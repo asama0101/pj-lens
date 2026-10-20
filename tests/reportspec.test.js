@@ -92,3 +92,18 @@ test("progressAsOf: doneAt が無い Done は、完了済みとして数える",
   const d = data(); d.tasks[0].doneAt = null;
   assert.deepEqual(prog(progressAsOf(d, "A", "2026-10-13")), [1, 3]);
 });
+
+// ---- レビュー指摘: プロジェクト未設定の会議 ----
+test("periodReport: includeUnassigned のとき、プロジェクト未設定（または存在しない）会議の確認済み時間と未確認件数を unassigned に集める", () => {
+  const d = data();
+  d.events.push(
+    { id: "E4", title: "未設定", date: "2026-10-14", start: "10:00", end: "11:30", projectId: null, confirmed: true },
+    { id: "E5", title: "存在しない", date: "2026-10-15", start: "10:00", end: "11:00", projectId: "ZZ", confirmed: true },
+    { id: "E6", title: "未確認", date: "2026-10-15", start: "13:00", end: "14:00", confirmed: false },
+    { id: "E7", title: "外", date: "2026-10-25", start: "13:00", end: "14:00", confirmed: true },
+  );
+  const on = periodReport(d, ["A", "B"], LAST, NOW, { includeUnassigned: true });
+  assert.deepEqual(on.unassigned, { meetingHours: 2.5, unconfirmedMeetings: 1 });
+  assert.equal(periodReport(d, ["A", "B"], LAST, NOW).unassigned, null, "指定しなければ集めない");
+  assert.equal(periodReport(d, ["A"], LAST, NOW).rows[0].meetingHours, 1, "プロジェクトの行には混ぜない");
+});

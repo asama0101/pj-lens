@@ -15,7 +15,7 @@ test("3 セクション（全体一覧・プロジェクト別詳細・今週の
   for (const h of ["全体一覧", "プロジェクト別の詳細", "今週の予定"]) assert.ok(html.includes(h), h);
   for (const p of load().projects) assert.ok(html.includes(p.name), p.name);
   assert.ok(html.includes("1.5h"), "期間(今週)内の実績時間");
-  assert.ok(!html.includes("3.5h"), "期間外(先週)の実績は含めない");
+  assert.ok(!html.includes("稼働 3.5h"), "期間外(先週)の実績を含む累計の稼働を出さない");
   assert.ok(buildReport(load(), TODAY, { period: reportPeriod("custom", TODAY, { start: "2026-10-01", end: "2026-10-31" }) }).includes("ベンダーX の納期回答が遅れたため"), "期間内の日程変更の履歴");
   assert.ok(!html.includes("ベンダーX の納期回答が遅れたため"), "期間外の履歴は出さない");
   assert.ok(html.includes("29%"), "進捗率");
@@ -118,4 +118,23 @@ test("タイトルはファイル名の規約と同じ(印刷・保存で同じ�
 
 test("プロジェクト 0 件を選んでも例外を出さない", () => {
   assert.ok(buildReport(load(), TODAY, { projectIds: [] }).includes("プロジェクトがありません"));
+});
+
+// ---- レビュー指摘 ----
+test("全プロジェクトを選んだときだけ、プロジェクト未設定の確認済み会議を、実績の会議時間・合計に入れる", () => {
+  const d = load(); // m1 は未設定・確認済み(10/20 09:30〜10:30 = 1h)
+  const sec = (html) => html.slice(html.indexOf("の実績</h2>"), html.indexOf("の予定</h2>") > 0 ? html.indexOf("の予定</h2>") : undefined);
+  const all = sec(buildReport(d, TODAY));
+  assert.ok(all.includes("プロジェクト未設定の会議"));
+  assert.ok(all.includes("3.5h"), "合計 = 作業 2.5h + 未設定の会議 1.0h");
+  const some = sec(buildReport(d, TODAY, { projectIds: ["A"] }));
+  assert.ok(!some.includes("プロジェクト未設定の会議"));
+});
+
+test("未確認の件数は、渡した現在時刻で判定する（今日の過ぎた予定の枠も数える）", () => {
+  const d = load();
+  d.tasks.find((t) => t.id === "A5").sessions.push({ id: "S9", date: TODAY, start: "09:00", end: "10:00", kind: "planned" });
+  const unc = (opts) => { const h = buildReport(d, TODAY, { projectIds: ["A"], ...opts }); const m = h.match(/(\d+)件（作業枠 (\d+)・会議 (\d+)）/); return m ? m.slice(1).map(Number) : null; };
+  assert.deepEqual(unc({ now: { date: TODAY, time: "15:00" } })?.slice(0, 2), [2, 1], "S9 が未確認(会議 m2 も過ぎている)");
+  assert.equal(unc({ now: { date: TODAY, time: "08:00" } })?.[1] ?? 0, 0, "朝なら S9 はまだ予定");
 });

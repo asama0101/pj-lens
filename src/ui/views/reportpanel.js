@@ -18,6 +18,12 @@ export function reportTarget(data, st, today) {
   return { ids, period, name, problem };
 }
 
+/** ファイル名の見本（作れないときは理由）。日付を打っている途中は、入力欄を作り直さずに、この部分だけ差し替える */
+export function renderReportPreview(data, st, today) {
+  const t = reportTarget(data, st, today);
+  return t.problem ? `<p class="note err" data-rptmsg>${esc(t.problem)}</p>` : `<p class="rpt-name">ファイル名: <code>${esc(t.name)}.html</code></p>`;
+}
+
 export function renderReportPanel(data, st, today) {
   const t = reportTarget(data, st, today);
   const sel = new Set(t.ids);
@@ -36,7 +42,7 @@ export function renderReportPanel(data, st, today) {
       <label class="chk"><input type="checkbox" data-rptall${t.ids.length === data.projects.length ? " checked" : ""}>全て</label>${projects}
     </fieldset>
     <fieldset class="rpt-set"><legend>期間</legend>${kinds}${custom}</fieldset>
-    ${t.problem ? `<p class="note err" data-rptmsg>${esc(t.problem)}</p>` : `<p class="rpt-name">ファイル名: <code>${esc(t.name)}.html</code></p>`}
+    <div class="rpt-pre">${renderReportPreview(data, st, today)}</div>
     ${st.error ? `<p class="note err" role="alert">${esc(st.error)}</p>` : ""}
     <div class="rp-act"><button class="btn primary" data-rptgo${t.problem ? " disabled" : ""}>HTML で保存</button><button class="btn" data-rptclose>閉じる</button></div>
   </section>`;

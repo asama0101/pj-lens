@@ -1313,10 +1313,11 @@ const hours = (x) => (toMin(x.end) - toMin(x.start)) / 60;
 const inRange = (d, r) => d >= r.start && d <= r.end;
 
 /**
- * 期間内の実績。プロジェクトごと（projectIds の順）に、作業時間・回数・会議時間（確認済みで参加するもの）、
+ * 期間内の実績。includeUnassigned のときは、プロジェクト未設定（または存在しない）会議の確認済み時間と未確認件数も unassigned に集める（全プロジェクトを選んだときのため）。
+ * プロジェクトごと（projectIds の順）に、作業時間・回数・会議時間（確認済みで参加するもの）、
  * 期間内に作業したタスク、期間内に完了したタスク、期間内で過ぎたのに未確認の作業枠と会議の件数
  */
-function periodReport(data, projectIds, range, now) {
+function periodReport(data, projectIds, range, now, { includeUnassigned = false } = {}) {
   const rows = projectIds.map((projectId) => {
     const tasks = data.tasks.filter((t) => t.projectId === projectId);
     const worked = tasks.map((t) => {
@@ -1334,7 +1335,13 @@ function periodReport(data, projectIds, range, now) {
       unconfirmedMeetings: meetings.filter((m) => meetingKind(m, now) === "unconfirmed").length,
     };
   });
-  return { rows };
+  let unassigned = null;
+  if (includeUnassigned) {
+    const known = new Set(data.projects.map((p) => p.id));
+    const free = (data.events ?? []).filter((m) => !known.has(m.projectId) && inRange(m.date, range));
+    unassigned = { meetingHours: free.filter((m) => m.confirmed === true && !m.skip).reduce((a, m) => a + hours(m), 0), unconfirmedMeetings: free.filter((m) => meetingKind(m, now) === "unconfirmed").length };
+  }
+  return { rows, unassigned };
 }
 
 /** 指定日時点の進捗。完了 = Done で完了日が asOf 以前（完了日が無い Done は完了済み）。総数は Cancelled を除く。完了日以外の履歴は無いので近似 */
@@ -2244,7 +2251,7 @@ return { renderReplanPanel };
 })();
 
 /* src/ui/views/reportpanel.js */
-const { reportTarget, renderReportPanel } = (() => {
+const { reportTarget, renderReportPreview, renderReportPanel } = (() => {
 // レポート作成の設定パネル（対象のプロジェクトと期間を選ぶ）。保存はまだで、ボタンは data-rptgo（保存）・data-rptclose（閉じる）
 
 
@@ -2265,6 +2272,12 @@ function reportTarget(data, st, today) {
   return { ids, period, name, problem };
 }
 
+/** ファイル名の見本（作れないときは理由）。日付を打っている途中は、入力欄を作り直さずに、この部分だけ差し替える */
+function renderReportPreview(data, st, today) {
+  const t = reportTarget(data, st, today);
+  return t.problem ? `<p class="note err" data-rptmsg>${esc(t.problem)}</p>` : `<p class="rpt-name">ファイル名: <code>${esc(t.name)}.html</code></p>`;
+}
+
 function renderReportPanel(data, st, today) {
   const t = reportTarget(data, st, today);
   const sel = new Set(t.ids);
@@ -2283,13 +2296,13 @@ function renderReportPanel(data, st, today) {
       <label class="chk"><input type="checkbox" data-rptall${t.ids.length === data.projects.length ? " checked" : ""}>全て</label>${projects}
     </fieldset>
     <fieldset class="rpt-set"><legend>期間</legend>${kinds}${custom}</fieldset>
-    ${t.problem ? `<p class="note err" data-rptmsg>${esc(t.problem)}</p>` : `<p class="rpt-name">ファイル名: <code>${esc(t.name)}.html</code></p>`}
+    <div class="rpt-pre">${renderReportPreview(data, st, today)}</div>
     ${st.error ? `<p class="note err" role="alert">${esc(st.error)}</p>` : ""}
     <div class="rp-act"><button class="btn primary" data-rptgo${t.problem ? " disabled" : ""}>HTML で保存</button><button class="btn" data-rptclose>閉じる</button></div>
   </section>`;
 }
 
-return { reportTarget, renderReportPanel };
+return { reportTarget, renderReportPreview, renderReportPanel };
 })();
 
 /* src/ui/views/workload.js */
@@ -2535,12 +2548,16 @@ function detail(data, p, today, period, row) {
     ${log ? `<table><thead><tr><th>日付</th><th>対象</th><th>動いた日数</th><th>原因</th><th>理由</th></tr></thead><tbody>${log}</tbody></table>` : `<p class="muted" style="margin:0;font-size:12px">期間内の変更履歴はありません。</p>`}</section>`;
 }
 
-function actuals(data, projects, rows) {
+function actuals(data, projects, rows, unassigned) {
   const name = (id) => esc(projects.find((p) => p.id === id)?.name ?? id);
-  const sum = (f) => rows.reduce((a, r) => a + f(r), 0);
+  // プロジェクト未設定の会議は、表の中では 1 行として扱う（合計に入れるため）
+  const um = unassigned && (unassigned.meetingHours > 0 || unassigned.unconfirmedMeetings > 0)
+    ? [{ label: "プロジェクト未設定の会議", taskHours: 0, taskCount: 0, meetingHours: unassigned.meetingHours, total: unassigned.meetingHours, unconfirmedTasks: 0, unconfirmedMeetings: unassigned.unconfirmedMeetings }] : [];
+  const tableRows = [...rows, ...um];
+  const sum = (f) => tableRows.reduce((a, r) => a + f(r), 0);
   const unc = (r) => (r.unconfirmedTasks || r.unconfirmedMeetings ? `${r.unconfirmedTasks + r.unconfirmedMeetings}件（作業枠 ${r.unconfirmedTasks}・会議 ${r.unconfirmedMeetings}）` : "—");
-  const trs = rows.map((r) => `<tr>${cell(`<strong>${name(r.projectId)}</strong>`)}${cell(`<span class="mono">${hm(r.taskHours)}・${r.taskCount}回</span>`)}${cell(`<span class="mono">${hm(r.meetingHours)}</span>`)}${cell(`<span class="mono">${hm(r.total)}</span>`)}${cell(unc(r))}</tr>`).join("");
-  const total = rows.length > 1 ? `<tr><td><strong>合計</strong></td>${cell(`<span class="mono">${hm(sum((r) => r.taskHours))}・${sum((r) => r.taskCount)}回</span>`)}${cell(`<span class="mono">${hm(sum((r) => r.meetingHours))}</span>`)}${cell(`<span class="mono">${hm(sum((r) => r.total))}</span>`)}${cell("")}</tr>` : "";
+  const trs = tableRows.map((r) => `<tr>${cell(`<strong>${r.label ? esc(r.label) : name(r.projectId)}</strong>`)}${cell(`<span class="mono">${hm(r.taskHours)}・${r.taskCount}回</span>`)}${cell(`<span class="mono">${hm(r.meetingHours)}</span>`)}${cell(`<span class="mono">${hm(r.total)}</span>`)}${cell(unc(r))}</tr>`).join("");
+  const total = tableRows.length > 1 ? `<tr><td><strong>合計</strong></td>${cell(`<span class="mono">${hm(sum((r) => r.taskHours))}・${sum((r) => r.taskCount)}回</span>`)}${cell(`<span class="mono">${hm(sum((r) => r.meetingHours))}</span>`)}${cell(`<span class="mono">${hm(sum((r) => r.total))}</span>`)}${cell("")}</tr>` : "";
   const each = rows.map((r) => {
     const tasks = r.tasks.length ? `<table><thead><tr><th>ID</th><th>件名</th><th>作業時間</th><th>回数</th></tr></thead><tbody>${r.tasks.map((t) => `<tr>${cell(`<span class="mono">${esc(t.id)}</span>`)}${cell(esc(t.title))}${cell(`<span class="mono">${hm(t.hours)}</span>`)}${cell(`<span class="mono">${t.count}回</span>`)}</tr>`).join("")}</tbody></table>` : `<p class="muted" style="margin:0;font-size:12px">期間内に作業した実績はありません。</p>`;
     const done = r.done.length ? `<ul style="margin:4px 0 0;padding-left:18px;font-size:12px">${r.done.map((t) => `<li><span class="mono">${esc(t.id)}</span> ${esc(t.title)} <span class="muted mono">${fmtMD(t.doneAt)}</span></li>`).join("")}</ul>` : `<p class="muted" style="margin:0;font-size:12px">なし</p>`;
@@ -2550,9 +2567,8 @@ function actuals(data, projects, rows) {
 }
 
 /** 期間のうち今日以降の予定（日別）。selected は選んだプロジェクトの ID の集合。全プロジェクトを選んだときだけ、プロジェクト未設定の会議も載せる */
-function plan(data, from, to, selected, all, today) {
+function plan(data, from, to, selected, all, today, now) {
   const showTitles = data.settings?.reportShowMeetingTitles === true;
-  const now = { date: today, time: "00:00" };
   const known = new Set(data.projects.map((p) => p.id));
   const mine = (m) => selected.has(m.projectId) || (all && !known.has(m.projectId));
   const days = [];
@@ -2573,22 +2589,23 @@ function plan(data, from, to, selected, all, today) {
 
 /**
  * 自己完結の HTML を作る。css はダッシュボードのスタイル。会議の件名は settings.reportShowMeetingTitles が true のときだけ載せる。
- * opts: { projectIds（既定は全部）, period（reportPeriod の結果。既定は今週）, title（<title>。既定は「プロジェクト進捗レポート 日付」） }
+ * opts: { projectIds（既定は全部）, period（reportPeriod の結果。既定は今週）, title（<title>。既定は「プロジェクト進捗レポート 日付」）, now（{date, time}。未確認の判定に使う。既定は今日の 00:00 =今日の分は過去にしない）}
  */
 function buildReport(data, today, css, opts = {}) {
   const period = opts.period ?? reportPeriod("thisWeek", today);
   const ids = new Set(opts.projectIds ?? data.projects.map((p) => p.id));
   const projects = data.projects.filter((p) => ids.has(p.id));
   const asOf = period.end < today ? period.end : today;
-  const { rows } = periodReport(data, projects.map((p) => p.id), period, { date: today, time: "00:00" });
-  const title = opts.title ?? `プロジェクト進捗レポート ${today}`;
+  const now = opts.now ?? { date: today, time: "00:00" };
   const allSelected = projects.length === data.projects.length;
+  const { rows, unassigned } = periodReport(data, projects.map((p) => p.id), period, now, { includeUnassigned: allSelected });
+  const title = opts.title ?? `プロジェクト進捗レポート ${today}`;
   const scope = allSelected ? "全プロジェクト" : projects.map((p) => esc(p.name)).join("、");
   const from = period.start > today ? period.start : today;
-  const planBody = period.end >= today && projects.length ? plan(data, from, period.end, new Set(projects.map((p) => p.id)), allSelected, today) : "";
+  const planBody = period.end >= today && projects.length ? plan(data, from, period.end, new Set(projects.map((p) => p.id)), allSelected, today, now) : "";
   const empty = (n, h) => `<h2 class="sec">${n}. ${h}</h2><p class="muted">プロジェクトがありません。</p>`;
   const body = projects.length
-    ? `<h2 class="sec">1. 全体一覧</h2>${overview(data, projects, today, asOf, rows)}<h2 class="sec">2. プロジェクト別の詳細</h2>${projects.map((p) => detail(data, p, today, period, rows.find((r) => r.projectId === p.id))).join("")}<h2 class="sec">3. ${esc(period.label)}の実績</h2>${actuals(data, projects, rows)}${planBody ? `<h2 class="sec">4. ${esc(period.label)}の予定</h2>${planBody}` : ""}`
+    ? `<h2 class="sec">1. 全体一覧</h2>${overview(data, projects, today, asOf, rows)}<h2 class="sec">2. プロジェクト別の詳細</h2>${projects.map((p) => detail(data, p, today, period, rows.find((r) => r.projectId === p.id))).join("")}<h2 class="sec">3. ${esc(period.label)}の実績</h2>${actuals(data, projects, rows, unassigned)}${planBody ? `<h2 class="sec">4. ${esc(period.label)}の予定</h2>${planBody}` : ""}`
     : `${empty(1, "全体一覧")}${empty(2, "プロジェクト別の詳細")}`;
   return `<!doctype html>
 <html lang="ja" data-theme="light">
@@ -2744,7 +2761,7 @@ async function makeReport() {
   const t = reportTarget(S.data, S.reportPanel, day);
   if (t.problem) { S.reportPanel = { ...S.reportPanel, error: t.problem }; render(); return; }
   const css = document.querySelector("head style")?.textContent ?? "";
-  const html = buildReport(S.data, day, css, { projectIds: t.ids, period: t.period, title: t.name });
+  const html = buildReport(S.data, day, css, { projectIds: t.ids, period: t.period, title: t.name, now: clock() });
   const r = await saveHtmlFile(`${t.name}.html`, html);
   if (r.cancelled) return;
   S.reportPanel = null;
@@ -2893,7 +2910,7 @@ view.addEventListener("click", (e) => {
   if (q("[data-rptgo]")) { makeReport(); return; }
   let cleared = false;
   // 欄外のクリックで、枠・会議の選択と追加中の下書きを外す
-  if ((S.selSess || S.selMtg || S.mtgDraft) && !q("[data-dragsess],[data-mtg],[data-delsel],.mtgform,[data-mtgadd],[data-confirm],[data-confirmmtg],[data-confirmall]")) { clearSel(); cleared = true; }
+  if ((S.selSess || S.selMtg || S.mtgDraft) && !q("[data-dragsess],[data-mtg],[data-delsel],.mtgform,[data-mtgadd],[data-confirm],[data-confirmmtg],[data-confirmall],.rptpanel")) { clearSel(); cleared = true; }
   const { date: today, time } = clock();
   const now = clock();
 
@@ -3037,7 +3054,16 @@ function onReportChange(el) {
     if (patch.kind === "custom" && !S.reportPanel.start) { const w = reportPeriod("thisWeek", today); patch.start = w.start; patch.end = w.end; }
     return setReportState(patch);
   }
-  if (el.dataset.rptd) return setReportState({ [el.dataset.rptd]: el.value });
+  if (el.dataset.rptd) {
+    // 日付を打っている途中で入力欄を作り直さない（打ちかけが消える）。ファイル名の見本と保存ボタンだけ更新する
+    S.reportPanel = { ...S.reportPanel, [el.dataset.rptd]: el.value, error: "" };
+    const { error, ...keep } = S.reportPanel;
+    saveReportPrefs(keep);
+    const pre = view.querySelector(".rpt-pre");
+    if (pre) pre.innerHTML = renderReportPreview(S.data, S.reportPanel, today);
+    const go = view.querySelector("[data-rptgo]");
+    if (go) go.disabled = !!reportTarget(S.data, S.reportPanel, today).problem;
+  }
 }
 
 function onChange(el) {

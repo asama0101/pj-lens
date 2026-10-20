@@ -54,10 +54,11 @@ const hours = (x) => (toMin(x.end) - toMin(x.start)) / 60;
 const inRange = (d, r) => d >= r.start && d <= r.end;
 
 /**
- * 期間内の実績。プロジェクトごと（projectIds の順）に、作業時間・回数・会議時間（確認済みで参加するもの）、
+ * 期間内の実績。includeUnassigned のときは、プロジェクト未設定（または存在しない）会議の確認済み時間と未確認件数も unassigned に集める（全プロジェクトを選んだときのため）。
+ * プロジェクトごと（projectIds の順）に、作業時間・回数・会議時間（確認済みで参加するもの）、
  * 期間内に作業したタスク、期間内に完了したタスク、期間内で過ぎたのに未確認の作業枠と会議の件数
  */
-export function periodReport(data, projectIds, range, now) {
+export function periodReport(data, projectIds, range, now, { includeUnassigned = false } = {}) {
   const rows = projectIds.map((projectId) => {
     const tasks = data.tasks.filter((t) => t.projectId === projectId);
     const worked = tasks.map((t) => {
@@ -75,7 +76,13 @@ export function periodReport(data, projectIds, range, now) {
       unconfirmedMeetings: meetings.filter((m) => meetingKind(m, now) === "unconfirmed").length,
     };
   });
-  return { rows };
+  let unassigned = null;
+  if (includeUnassigned) {
+    const known = new Set(data.projects.map((p) => p.id));
+    const free = (data.events ?? []).filter((m) => !known.has(m.projectId) && inRange(m.date, range));
+    unassigned = { meetingHours: free.filter((m) => m.confirmed === true && !m.skip).reduce((a, m) => a + hours(m), 0), unconfirmedMeetings: free.filter((m) => meetingKind(m, now) === "unconfirmed").length };
+  }
+  return { rows, unassigned };
 }
 
 /** 指定日時点の進捗。完了 = Done で完了日が asOf 以前（完了日が無い Done は完了済み）。総数は Cancelled を除く。完了日以外の履歴は無いので近似 */
