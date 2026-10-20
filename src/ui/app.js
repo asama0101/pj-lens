@@ -133,22 +133,18 @@ function setReportState(patch) {
   render();
 }
 
-/** 設定パネルで選んだ対象・期間の進捗レポートを、規約のファイル名の HTML として保存する */
-function makeReport() {
+/** 設定パネルで選んだ対象・期間の進捗レポートを、規約のファイル名の HTML として保存する。保存ダイアログで名前と場所を選ばせる(使えないブラウザではダウンロード) */
+async function makeReport() {
   const day = clock().date;
   const t = reportTarget(S.data, S.reportPanel, day);
   if (t.problem) { S.reportPanel = { ...S.reportPanel, error: t.problem }; render(); return; }
   const css = document.querySelector("head style")?.textContent ?? "";
   const html = buildReport(S.data, day, css, { projectIds: t.ids, period: t.period, title: t.name });
-  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${t.name}.html`;
-  a.click();
+  const r = await saveHtmlFile(`${t.name}.html`, html);
+  if (r.cancelled) return;
   S.reportPanel = null;
   render();
-  toast(`レポートを保存しました（${t.name}.html）`);
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  toast(r.how === "picker" ? `レポートを保存しました（${r.name}）` : `レポートをダウンロードしました（${r.name}）。保存先は、ブラウザのダウンロード先のフォルダです`);
 }
 
 let saveChain = Promise.resolve();

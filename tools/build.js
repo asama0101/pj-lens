@@ -21,6 +21,7 @@ export const MODULES = [
   "src/core/groups.js",
   "src/ui/store.js",
   "src/ui/prefs.js",
+  "src/ui/savefile.js",
   "src/ui/common.js",
   "src/ui/edit.js",
   "src/ui/views/prio.js",
