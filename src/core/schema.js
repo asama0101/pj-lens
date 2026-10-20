@@ -120,6 +120,19 @@ export function validate(data, now = nowLocal()) {
     if (!isDate(e.date) || !isTime(e.start) || !isTime(e.end)) err(`会議 ${e.id}: 日付または時刻の形式が不正です`);
     else if (toMin(e.end) <= toMin(e.start)) err(`会議 ${e.id}: 終了が開始以前です`);
     if (!["mcp", "manual"].includes(e.source)) err(`会議 ${e.id}: 不明な source "${e.source}"`);
+    if (e.projectId != null && !projectIds.has(e.projectId)) err(`会議 ${e.id}: 不明な projectId "${e.projectId}"`);
+    if (e.projectBy != null && !["rule", "manual"].includes(e.projectBy)) err(`会議 ${e.id}: 不明な projectBy "${e.projectBy}"`);
+    if (e.confirmed != null && typeof e.confirmed !== "boolean") err(`会議 ${e.id}: confirmed が真偽値ではありません`);
+  }
+
+  const st = data.settings ?? {};
+  (st.projectRules ?? []).forEach((r, i) => {
+    if (!String(r?.keyword ?? "").trim()) err(`settings.projectRules[${i}]: keyword が空です`);
+    if (!projectIds.has(r?.projectId)) err(`settings.projectRules[${i}]: 不明な projectId "${r?.projectId}"`);
+  });
+  for (const [pid, m] of Object.entries(st.wbsMappings ?? {})) {
+    if (!projectIds.has(pid)) err(`settings.wbsMappings: 不明なプロジェクト "${pid}"`);
+    if (!m || typeof m !== "object" || Object.values(m).some((x) => typeof x !== "string")) err(`settings.wbsMappings.${pid}: 値は文字列のオブジェクトにしてください`);
   }
 
   for (const c of data.changeLog) {
@@ -127,6 +140,8 @@ export function validate(data, now = nowLocal()) {
     for (const id of c.taskIds ?? []) if (!taskIds.has(id)) warn(`changeLog: 存在しないタスク ${id}`);
     if (!Number.isInteger(c.deltaDays)) err("changeLog: deltaDays が整数ではありません");
     if (c.cause != null && !CAUSES.includes(c.cause)) err(`changeLog: 不明な原因 "${c.cause}"`);
+    if (c.source != null && !["wbs", "mail", "calendar"].includes(c.source)) err(`changeLog: 不明な source "${c.source}"`);
+    if (c.messageIds != null && (!Array.isArray(c.messageIds) || c.messageIds.some((x) => typeof x !== "string"))) err("changeLog: messageIds は文字列の配列にしてください");
   }
 
   return { errors, warnings };

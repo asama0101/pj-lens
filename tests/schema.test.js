@@ -68,7 +68,7 @@ test("警告: Waiting で待ち先なし／先行ありで start／終了済み�
 });
 
 test("空データは有効", () => {
-  const d = { version: 1, settings: load().settings, projects: [], tasks: [], events: [], changeLog: [] };
+  const d = { version: 1, settings: { ...load().settings, projectRules: [] }, projects: [], tasks: [], events: [], changeLog: [] };
   assert.deepEqual(v(d).errors, []);
 });
 
@@ -82,4 +82,66 @@ test("waitingOn.since が無い・不正ならエラー、deltaDays が整数で
   assert.ok(hit(v(a).errors, "A3"));
   const b = load(); b.changeLog[0].deltaDays = "<b>";
   assert.ok(hit(v(b).errors, "deltaDays"));
+});
+
+// ---- 追加した項目（大項目・中項目、会議のひも付けと確認、設定、取り込みの記録） ----
+test("会議の projectId が存在しないプロジェクトなら error", () => {
+  const d = load(); d.events[0].projectId = "ZZ";
+  assert.ok(hit(v(d).errors, "projectId"));
+  const ok = load(); ok.events[0].projectId = "A"; ok.events[0].projectBy = "rule";
+  assert.deepEqual(v(ok).errors, []);
+});
+
+test("projectBy が rule/manual 以外なら error", () => {
+  const d = load(); d.events[0].projectBy = "auto";
+  assert.ok(hit(v(d).errors, "projectBy"));
+});
+
+test("confirmed が真偽値でなければ error", () => {
+  const d = load(); d.events[0].confirmed = "yes";
+  assert.ok(hit(v(d).errors, "confirmed"));
+  const ok = load(); ok.events[0].confirmed = true;
+  assert.deepEqual(v(ok).errors, []);
+});
+
+test("projectRules の keyword が空、または projectId が存在しないなら error", () => {
+  const a = load(); a.settings.projectRules = [{ keyword: "", projectId: "A" }];
+  assert.ok(hit(v(a).errors, "projectRules"));
+  const b = load(); b.settings.projectRules = [{ keyword: "x", projectId: "ZZ" }];
+  assert.ok(hit(v(b).errors, "projectRules"));
+});
+
+test("wbsMappings のキーが存在しないプロジェクト、値が文字列でないなら error", () => {
+  const a = load(); a.settings.wbsMappings = { ZZ: { title: "B" } };
+  assert.ok(hit(v(a).errors, "wbsMappings"));
+  const b = load(); b.settings.wbsMappings = { A: { title: 3 } };
+  assert.ok(hit(v(b).errors, "wbsMappings"));
+  const ok = load(); ok.settings.wbsMappings = { A: { title: "件名", due: "期限" } };
+  assert.deepEqual(v(ok).errors, []);
+});
+
+test("changeLog の source が wbs/mail/calendar 以外なら error、messageIds が文字列配列でなければ error", () => {
+  const a = load(); a.changeLog.push({ at: "2026-10-20", taskIds: [], reason: "x", cause: null, deltaDays: 0, source: "fax" });
+  assert.ok(hit(v(a).errors, "source"));
+  const b = load(); b.changeLog.push({ at: "2026-10-20", taskIds: [], reason: "x", cause: null, deltaDays: 0, source: "mail", messageIds: [1] });
+  assert.ok(hit(v(b).errors, "messageIds"));
+  const ok = load(); ok.changeLog.push({ at: "2026-10-20", taskIds: [], reason: "x", cause: null, deltaDays: 0, source: "mail", messageIds: ["m-1"] });
+  assert.deepEqual(v(ok).errors, []);
+});
+
+test("新しい項目が無い従来のデータも error にならない", () => {
+  const d = load();
+  for (const t of d.tasks) { delete t.group; delete t.subgroup; delete t.wbsKey; }
+  for (const e of d.events) { delete e.projectId; delete e.projectBy; delete e.confirmed; }
+  delete d.settings.projectRules; delete d.settings.labels; delete d.settings.wbsMappings;
+  assert.deepEqual(v(d).errors, []);
+});
+
+test("サンプルは新しい項目を使っている（大項目・会議のひも付け・規則）", () => {
+  const d = load();
+  assert.ok(d.tasks.some((t) => t.group && t.subgroup));
+  assert.ok(d.events.some((e) => e.projectId && e.projectBy === "rule"));
+  assert.ok(d.events.some((e) => e.confirmed === true));
+  assert.deepEqual(d.settings.projectRules, [{ keyword: "ベンダーX", projectId: "A" }]);
+  assert.equal(d.settings.labels.group, "大項目");
 });

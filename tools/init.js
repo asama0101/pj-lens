@@ -13,7 +13,7 @@ const IGNORE = ".pj-lens/";
 
 const SKELETON = {
   version: 1,
-  settings: { workday: { start: "09:00", end: "18:00" }, waitingLongDays: 7, reportShowMeetingTitles: false },
+  settings: { workday: { start: "09:00", end: "18:00" }, waitingLongDays: 7, reportShowMeetingTitles: false, projectRules: [], labels: { group: "大項目", subgroup: "中項目" } },
   projects: [], tasks: [], events: [], changeLog: [],
 };
 

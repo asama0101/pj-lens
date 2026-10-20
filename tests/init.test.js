@@ -145,3 +145,11 @@ test("UTF-16 の .gitignore は壊さずに、変更しないで知らせる", (
   assert.equal(g.status, "skipped");
   assert.match(g.note, /UTF-8/);
 });
+
+test("空のひな形: projectRules が空で、見出しの既定が入る", () => {
+  const cwd = proj(), pluginRoot = plugin();
+  init({ cwd, pluginRoot });
+  const d = JSON.parse(readFileSync(join(cwd, ".pj-lens/data.json"), "utf8"));
+  assert.deepEqual(d.settings.projectRules, []);
+  assert.deepEqual(d.settings.labels, { group: "大項目", subgroup: "中項目" });
+});
