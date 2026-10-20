@@ -27,3 +27,23 @@ test("savePrefs→loadPrefs で往復でき、setItem が例外を投げても�
   assert.deepEqual(loadPrefs(s), { showPrio: false, showActual: false });
   assert.doesNotThrow(() => savePrefs({ showPrio: true, showActual: true }, boom));
 });
+
+// ---- レポートの選択(期間・プロジェクト)の保存 ----
+import { DEFAULT_REPORT_PREFS, loadReportPrefs, saveReportPrefs } from "../src/ui/prefs.js";
+
+test("loadReportPrefs: 保存が無い・壊れている・不正な値のときは既定（今週・全プロジェクト）", () => {
+  assert.deepEqual(DEFAULT_REPORT_PREFS, { kind: "thisWeek", start: "", end: "", projectIds: null });
+  assert.deepEqual(loadReportPrefs(fake()), DEFAULT_REPORT_PREFS);
+  assert.deepEqual(loadReportPrefs(fake({ "pj-lens.report": "{oops" })), DEFAULT_REPORT_PREFS);
+  assert.deepEqual(loadReportPrefs(boom), DEFAULT_REPORT_PREFS);
+  const bad = fake({ "pj-lens.report": JSON.stringify({ kind: "nothing", start: 3, end: null, projectIds: "A" }) });
+  assert.deepEqual(loadReportPrefs(bad), DEFAULT_REPORT_PREFS);
+});
+
+test("saveReportPrefs→loadReportPrefs で往復でき、保存できなくても落ちない", () => {
+  const s = fake();
+  const v = { kind: "custom", start: "2026-10-01", end: "2026-10-15", projectIds: ["A", "B"] };
+  saveReportPrefs(v, s);
+  assert.deepEqual(loadReportPrefs(s), v);
+  assert.doesNotThrow(() => saveReportPrefs(v, boom));
+});

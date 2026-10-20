@@ -7,8 +7,9 @@ import { renderGantt } from "../src/ui/views/gantt.js";
 import { renderSchedule, snapStart } from "../src/ui/views/schedule.js";
 import { taskActual } from "../src/core/sessions.js";
 import { buildReport } from "../src/ui/views/report.js";
+import { reportPeriod } from "../src/core/reportspec.js";
 
-const buildReportHtml = (d) => buildReport(d, "2026-10-20", "");
+const buildReportHtml = (d) => buildReport(d, "2026-10-20", "", { period: reportPeriod("custom", "2026-10-20", { start: "2026-10-01", end: "2026-10-31" }) });
 
 const load = () => JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
 const TODAY = "2026-10-20";

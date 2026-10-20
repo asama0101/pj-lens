@@ -24,3 +24,22 @@ export function loadPrefs(storage = browserStorage()) {
 export function savePrefs(prefs, storage = browserStorage()) {
   try { storage?.setItem(KEY, JSON.stringify(prefs)); } catch { /* 保存できない環境 */ }
 }
+
+// レポートの選択（期間・プロジェクト）。次に開いたとき同じ選択から始められるように覚える。
+const REPORT_KEY = "pj-lens.report";
+const REPORT_KINDS = ["thisWeek", "lastWeek", "lastAndThis", "thisMonth", "lastMonth", "custom"];
+export const DEFAULT_REPORT_PREFS = { kind: "thisWeek", start: "", end: "", projectIds: null };
+
+/** 保存されたレポートの選択。形が違う値は既定にする。projectIds が null は「全プロジェクト」 */
+export function loadReportPrefs(storage = browserStorage()) {
+  try {
+    const v = JSON.parse(storage?.getItem(REPORT_KEY) ?? "null");
+    if (!v || !REPORT_KINDS.includes(v.kind) || typeof v.start !== "string" || typeof v.end !== "string") return { ...DEFAULT_REPORT_PREFS };
+    const ids = Array.isArray(v.projectIds) && v.projectIds.every((x) => typeof x === "string") ? v.projectIds : null;
+    return { kind: v.kind, start: v.start, end: v.end, projectIds: ids };
+  } catch { return { ...DEFAULT_REPORT_PREFS }; }
+}
+
+export function saveReportPrefs(prefs, storage = browserStorage()) {
+  try { storage?.setItem(REPORT_KEY, JSON.stringify({ kind: prefs.kind, start: prefs.start, end: prefs.end, projectIds: prefs.projectIds })); } catch { /* 保存できない環境 */ }
+}

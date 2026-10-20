@@ -12,6 +12,7 @@ const S = {
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
   prefs: loadPrefs(), group: "all", pendingReplan: null,
   wperiod: "week", wdate: clock().date,
+  reportPanel: null,
 };
 const $ = (id) => document.getElementById(id);
 const view = $("view");
@@ -50,12 +51,12 @@ function render() {
   const c = clock();
   $("todaylabel").textContent = `${c.date.replace(/-/g, "/")}(${wdJa(c.date)})`;
   document.querySelectorAll("nav [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.id === "tab-" + S.screen)));
-  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="prio" aria-pressed="${S.prefs.showPrio}" title="画面右の「今日の優先」を出したり隠したりします">今日の優先</button><button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="進捗レポートを HTML ファイルとして保存します">レポート(HTML)</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
+  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="prio" aria-pressed="${S.prefs.showPrio}" title="画面右の「今日の優先」を出したり隠したりします">今日の優先</button><button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
   const prev = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollLeft);
   const keepFocus = focusSelector(document.activeElement);
-  view.innerHTML = renderBody();
+  view.innerHTML = (S.data && S.reportPanel ? renderReportPanel(S.data, S.reportPanel, c.date) : "") + renderBody();
   if (keepFocus && !S.focusSel) { try { view.querySelector(keepFocus)?.focus(); } catch { /* 無視 */ } }
   const bars = [...view.querySelectorAll(".gscroll")];
   if (S.resetScroll || !prev.length || prev.length !== bars.length) scrollToday(false);
@@ -86,6 +87,10 @@ function focusSelector(el) {
   if (d.gadd) return q("data-gadd", d.gadd);
   if (d.waitparty) return q("data-waitparty", d.waitparty);
   if (d.rp) return q("data-rp", d.rp);
+  if (d.rptp) return q("data-rptp", d.rptp);
+  if (d.rptk) return q("data-rptk", d.rptk);
+  if (d.rptd) return q("data-rptd", d.rptd);
+  if (d.rptall !== undefined) return "[data-rptall]";
   return null;
 }
 
@@ -120,17 +125,29 @@ function downloadJson() {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-/** 進捗レポートを HTML ファイルとして保存する */
+/** レポート設定パネルの選択を変えて描き直す。選択はブラウザに覚える */
+function setReportState(patch) {
+  S.reportPanel = { ...S.reportPanel, ...patch, error: "" };
+  const { error, ...keep } = S.reportPanel;
+  saveReportPrefs(keep);
+  render();
+}
+
+/** 設定パネルで選んだ対象・期間の進捗レポートを、規約のファイル名の HTML として保存する */
 function makeReport() {
   const day = clock().date;
+  const t = reportTarget(S.data, S.reportPanel, day);
+  if (t.problem) { S.reportPanel = { ...S.reportPanel, error: t.problem }; render(); return; }
   const css = document.querySelector("head style")?.textContent ?? "";
-  const html = buildReport(S.data, day, css);
+  const html = buildReport(S.data, day, css, { projectIds: t.ids, period: t.period, title: t.name });
   const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `report-${day}.html`;
+  a.download = `${t.name}.html`;
   a.click();
-  toast("レポートを保存しました");
+  S.reportPanel = null;
+  render();
+  toast(`レポートを保存しました（${t.name}.html）`);
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
@@ -251,7 +268,7 @@ $("filebar").addEventListener("click", async (e) => {
   if (e.target.closest("[data-openfile]")) openFile(true);
   if (e.target.closest("[data-download]")) downloadJson();
   const rb = e.target.closest("[data-report]");
-  if (rb) makeReport();
+  if (rb) { S.reportPanel = S.reportPanel ? null : { ...loadReportPrefs(), error: "" }; render(); view.scrollIntoView?.({ block: "start" }); }
 });
 $("banner").addEventListener("click", async (e) => {
   if (e.target.closest("[data-download]")) downloadJson();
@@ -271,6 +288,8 @@ document.addEventListener("click", (e) => {
 
 view.addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
+  if (q("[data-rptclose]")) { S.reportPanel = null; render(); return; }
+  if (q("[data-rptgo]")) { makeReport(); return; }
   let cleared = false;
   // 欄外のクリックで、枠・会議の選択と追加中の下書きを外す
   if ((S.selSess || S.selMtg || S.mtgDraft) && !q("[data-dragsess],[data-mtg],[data-delsel],.mtgform,[data-mtgadd],[data-confirm],[data-confirmmtg],[data-confirmall]")) { clearSel(); cleared = true; }
@@ -403,8 +422,26 @@ function submitWait(id) {
 /* ---------- 入力の変更 ---------- */
 // 入力欄から次の欄へ移るとき、フォーカスの移動が終わってから描き直す(先に描き直すと移動先が消える)
 view.addEventListener("change", (e) => { const el = e.target; setTimeout(() => onChange(el), 0); });
+function onReportChange(el) {
+  const { date: today } = clock();
+  const all = S.data.projects.map((p) => p.id);
+  const cur = reportTarget(S.data, S.reportPanel, today).ids;
+  if (el.matches("[data-rptall]")) return setReportState({ projectIds: el.checked ? null : [] });
+  if (el.dataset.rptp) {
+    const next = el.checked ? [...cur, el.dataset.rptp] : cur.filter((id) => id !== el.dataset.rptp);
+    return setReportState({ projectIds: next.length === all.length ? null : next });
+  }
+  if (el.dataset.rptk) {
+    const patch = { kind: el.dataset.rptk };
+    if (patch.kind === "custom" && !S.reportPanel.start) { const w = reportPeriod("thisWeek", today); patch.start = w.start; patch.end = w.end; }
+    return setReportState(patch);
+  }
+  if (el.dataset.rptd) return setReportState({ [el.dataset.rptd]: el.value });
+}
+
 function onChange(el) {
   const { date: today } = clock();
+  if (S.reportPanel && el.matches?.("[data-rptall],[data-rptp],[data-rptk],[data-rptd]")) { onReportChange(el); return; }
   if (el.dataset.fileinput !== undefined || el.matches?.("[data-fileinput]")) {
     const file = el.files?.[0];
     if (!file) return;

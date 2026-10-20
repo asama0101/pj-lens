@@ -75,7 +75,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
       : "";
 
     const months = Math.max(1, Math.round(diffDays(p.due, p.start) / 30.4));
-    const head = `<div class="pg-head"><div>${readonly ? `<strong>${esc(p.name)}</strong>` : `<button class="proj-name" data-filter="${esc(p.id)}">${esc(p.name)}</button>`}<div class="proj-meta"><span>${esc(p.type)}</span><span>${esc(p.status)}</span><span class="mono">${fmtMD(p.start)}〜${fmtMD(p.due)}(${months}か月)</span><span class="mono">${prog.done}/${prog.total} Done (${pct}%)</span><span class="mono hrs">稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）</span>${flagPills(data, p.id, today, flags)}</div></div>${readonly ? "" : `<button class="btn" data-open="${esc(p.id)}">編集する</button>`}</div>`;
+    const head = `<div class="pg-head"><div>${readonly ? `<strong>${esc(p.name)}</strong>` : `<button class="proj-name" data-filter="${esc(p.id)}">${esc(p.name)}</button>`}<div class="proj-meta"><span>${esc(p.type)}</span><span>${esc(p.status)}</span><span class="mono">${fmtMD(p.start)}〜${fmtMD(p.due)}(${months}か月)</span>${readonly ? "" : `<span class="mono">${prog.done}/${prog.total} Done (${pct}%)</span><span class="mono hrs">稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）</span>`}${flagPills(data, p.id, today, flags)}</div></div>${readonly ? "" : `<button class="btn" data-open="${esc(p.id)}">編集する</button>`}</div>`;
 
     const sumW = Math.max(0, (diffDays(p.due, p.start) / total) * 100).toFixed(3);
     const sumAttr = readonly ? "" : ` data-gp="${esc(p.id)}"`;
