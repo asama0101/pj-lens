@@ -1,5 +1,6 @@
 // 空き時間・優先順位・会議の操作（純関数、不変更新）
 import { toMin, toHHMM, diffDays, isDate, isTime } from "./dates.js";
+import { assignMeetingProjects } from "./rules.js";
 
 const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 const closed = (t) => t.status === "Done" || t.status === "Cancelled";
@@ -85,20 +86,54 @@ function assertTimes(m) {
 export function addMeeting(data, m) {
   assertTimes(m);
   const id = nextMeetingId(data.events);
-  const e = { id, date: m.date, start: m.start, end: m.end, title: (m.title ?? "").trim() || "会議", source: "manual", skip: !!m.skip, externalId: null };
+  const e = { id, date: m.date, start: m.start, end: m.end, title: (m.title ?? "").trim() || "会議", source: "manual", skip: !!m.skip, externalId: null, confirmed: false, projectId: null };
+  if (m.projectId) {
+    if (!(data.projects ?? []).some((p) => p.id === m.projectId)) throw new Error(`プロジェクト ${m.projectId} がありません`);
+    e.projectId = m.projectId;
+    e.projectBy = "manual";
+  }
   return { data: { ...data, events: [...data.events, e] }, id };
 }
 
 export function updateMeeting(data, id, patch) {
   const cur = data.events.find((e) => e.id === id);
   if (!cur) throw new Error(`会議 ${id} がありません`);
-  const allowed = cur.source === "manual" ? ["title", "date", "start", "end", "skip"] : ["skip"];
+  const common = ["skip", "projectId", "confirmed"];
+  const allowed = cur.source === "manual" ? ["title", "date", "start", "end", ...common] : common;
   for (const k of Object.keys(patch)) {
     if (!allowed.includes(k) && patch[k] !== cur[k]) throw new Error(`この会議は ${k} を変更できません（予定表から取得した会議は「参加しない」のみ）`);
   }
-  const next = { ...cur, ...Object.fromEntries(Object.entries(patch).filter(([k]) => allowed.includes(k))) };
+  const next = { ...cur, ...Object.fromEntries(Object.entries(patch).filter(([k]) => allowed.includes(k) && k !== "projectId")) };
   if (cur.source === "manual") { assertTimes(next); next.title = (next.title ?? "").trim() || "会議"; }
-  return { ...data, events: data.events.map((e) => (e.id === id ? next : e)) };
+  let auto = false;
+  if ("projectId" in patch) {
+    if (patch.projectId === "" || patch.projectId == null) { delete next.projectBy; next.projectId = null; auto = true; }
+    else {
+      if (!(data.projects ?? []).some((p) => p.id === patch.projectId)) throw new Error(`プロジェクト ${patch.projectId} がありません`);
+      next.projectId = patch.projectId;
+      next.projectBy = "manual";
+    }
+  }
+  const out = { ...data, events: data.events.map((e) => (e.id === id ? next : e)) };
+  return auto ? assignMeetingProjects(out) : out;
+}
+
+const meetingPast = (m, now) => m.date < now.date || (m.date === now.date && m.end <= now.time);
+
+/** 会議の状態: 参加しない=skipped / 確認済み=actual / 過ぎて未確認=unconfirmed / それ以外=planned */
+export function meetingKind(m, now) {
+  if (m.skip) return "skipped";
+  if (m.confirmed === true) return "actual";
+  return meetingPast(m, now) ? "unconfirmed" : "planned";
+}
+
+/** 過ぎた会議を実績として確認する。未来の会議と、参加しない会議は確認できない */
+export function confirmMeeting(data, id, now) {
+  const cur = data.events.find((e) => e.id === id);
+  if (!cur) throw new Error(`会議 ${id} がありません`);
+  if (cur.skip) throw new Error("参加しない会議は実績にできません");
+  if (!meetingPast(cur, now)) throw new Error("未来の会議は実績にできません");
+  return { ...data, events: data.events.map((e) => (e.id === id ? { ...e, confirmed: true } : e)) };
 }
 
 export function deleteMeeting(data, id) {
