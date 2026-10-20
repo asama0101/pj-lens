@@ -54,3 +54,72 @@ test("プロジェクト期限を超えたら projectDueExceeded に入る", () 
 test("存在しない taskId は例外", () => {
   assert.throws(() => computeImpact(chain(), "ZZ", 1));
 });
+
+// ---- 前倒しの詰め・適用（Task 5） ----
+import { applyReplan, needsReplan } from "../src/core/impact.js";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+test("compress なしの前倒しは、対象だけ動き後続は動かない（従来どおり）", () => {
+  const r = computeImpact(chain(), "T1", -3);
+  assert.deepEqual(r.changes.map((c) => [c.taskId, c.newDue]), [["T1", "2026-10-07"]]);
+});
+
+test("compress: 前倒しで後続が同じ日数まで詰まる。ただし先行の新しい期限より前にはならない", () => {
+  const c = byId(computeImpact(chain(), "T1", -3, { compress: true }));
+  assert.deepEqual([c.T2.oldDue, c.T2.newDue, c.T2.reason], ["2026-10-12", "2026-10-09", "先行 T1 の前倒し"]);
+  assert.equal(c.T3.newDue, "2026-10-17", "2段目にも波及");
+  const d = mk([["T1", "2026-10-10"], ["X", "2026-10-20"], ["T2", "2026-10-21", ["T1", "X"]]]);
+  const e = byId(computeImpact(d, "T1", -5, { compress: true }));
+  assert.equal(e.T2.newDue, "2026-10-20", "別の先行 X の期限より前にはならない");
+});
+
+test("compress: Done の後続は動かない。後続が前倒しされても今より後ろにはならない", () => {
+  const d = mk([["T1", "2026-10-10"], ["T2", "2026-10-12", ["T1"], "Done"], ["T3", "2026-10-12", ["T1"]]]);
+  const r = computeImpact(d, "T1", -3, { compress: true });
+  assert.deepEqual(r.changes.map((c) => c.taskId).sort(), ["T1", "T3"]);
+  assert.ok(r.changes.every((c) => c.newDue < c.oldDue));
+});
+
+test("compress: deltaDays が正のときは従来の結果と一致する", () => {
+  assert.deepEqual(computeImpact(chain(), "T1", 5, { compress: true }), computeImpact(chain(), "T1", 5));
+});
+
+test("applyReplan: due が更新され、changeLog に1件増える。原データは変わらない", () => {
+  const d = { ...chain(), changeLog: [] };
+  const before = JSON.stringify(d);
+  const impact = computeImpact(d, "T1", 5);
+  const n = applyReplan(d, impact, { reason: "ベンダー都合", cause: "ベンダー", deltaDays: 5, at: "2026-10-20" });
+  assert.equal(n.tasks.find((t) => t.id === "T2").due, "2026-10-15");
+  assert.deepEqual(n.changeLog, [{ at: "2026-10-20", taskIds: ["T1", "T2"], reason: "ベンダー都合", cause: "ベンダー", deltaDays: 5 }]);
+  assert.equal(JSON.stringify(d), before);
+  const x = applyReplan(d, impact, { reason: "メール報告", cause: "ベンダー", deltaDays: 5, at: "2026-10-20", extra: { source: "mail", messageIds: ["m1"] } });
+  assert.deepEqual([x.changeLog[0].source, x.changeLog[0].messageIds], ["mail", ["m1"]]);
+});
+
+test("applyReplan: 理由が空、原因が不正なら例外", () => {
+  const d = { ...chain(), changeLog: [] };
+  const impact = computeImpact(d, "T1", 5);
+  assert.throws(() => applyReplan(d, impact, { reason: " ", cause: "ベンダー", deltaDays: 5, at: "2026-10-20" }), /理由/);
+  assert.throws(() => applyReplan(d, impact, { reason: "x", cause: "天災", deltaDays: 5, at: "2026-10-20" }), /原因/);
+});
+
+test("needsReplan: 対象だけなら false、後続が動く／プロジェクト期限を超えるなら true", () => {
+  assert.equal(needsReplan(computeImpact(chain(), "T3", 1)), false);
+  assert.equal(needsReplan(computeImpact(chain(), "T1", 5)), true);
+  assert.equal(needsReplan(computeImpact(mk([["T1", "2026-12-30"]], "2026-12-31"), "T1", 5)), true);
+});
+
+test("tools/impact.js --compress が結果を変える", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pjl-impact-"));
+  try {
+    const f = join(dir, "data.json");
+    writeFileSync(f, JSON.stringify(chain()));
+    const run = (...a) => JSON.parse(spawnSync(process.execPath, [fileURLToPath(new URL("../tools/impact.js", import.meta.url)), f, "T1", "-3", ...a], { encoding: "utf8" }).stdout);
+    assert.equal(run().changes.length, 1);
+    assert.equal(run("--compress").changes.length, 3);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
