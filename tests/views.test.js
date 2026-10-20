@@ -289,3 +289,54 @@ test("利用者入力（group 名）はエスケープされる", () => {
   assert.ok(!html.includes("<img src=x"));
   assert.ok(html.includes("&lt;img src=x"));
 });
+
+// ---- 会議のプロジェクトと確認（Task 14） ----
+const NOW15 = { date: "2026-10-20", time: "15:10" };
+const noSessions = () => { const d = load(); for (const t of d.tasks) t.sessions = []; return d; };
+
+test("会議ブロック: 過ぎて未確認なら unconf と『実績にする』ボタン（日表示のみ）。確認済みは ✓。skip は従来の表示で確認ボタンなし", () => {
+  const d = noSessions();
+  d.events.find((e) => e.id === "m3").date = "2026-10-20";
+  const html = renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW15 });
+  assert.ok(/class="blk mtg\s+act[^"]*"[^>]*data-mtg="m1"/.test(html) && html.includes("09:30-10:30 ✓"), "確認済み");
+  assert.ok(/class="blk mtg\s+unconf[^"]*"[^>]*data-mtg="m2"/.test(html) && html.includes('data-confirmmtg="m2"'), "未確認");
+  const wk = renderSchedule(d, TODAY, { view: "week", date: TODAY, now: NOW15 });
+  assert.ok(!wk.includes("data-confirmmtg"), "週表示にはボタンを出さない");
+  d.events.find((e) => e.id === "m2").skip = true;
+  const sk = renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW15 });
+  assert.ok(sk.includes("blk mtg skip") && !sk.includes('data-confirmmtg="m2"'));
+});
+
+test("会議ブロック: プロジェクト名と（規則|手動）を日表示に出す。未設定は『プロジェクト未設定』", () => {
+  const d = noSessions();
+  const html = renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW15 });
+  assert.ok(html.includes("プロジェクト: 本社コアSW更改（規則）"));
+  assert.ok(html.includes("プロジェクト未設定"));
+  d.events.find((e) => e.id === "m2").projectId = "B"; d.events.find((e) => e.id === "m2").projectBy = "manual";
+  assert.ok(renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW15 }).includes("プロジェクト: 拠点B 回線増設（手動）"));
+});
+
+test("会議フォーム: プロジェクト選択があり、mcp の会議でも disabled でない（件名は disabled のまま）。先頭の選択肢は規則で付く名前", () => {
+  const d = noSessions();
+  const mcp = renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW15, selMtg: "m1" });
+  const sel = /<select[^>]*data-mt="projectId"[^>]*>/.exec(mcp)?.[0];
+  assert.ok(sel, "プロジェクト選択");
+  assert.ok(!/disabled/.test(sel));
+  assert.ok(/<input[^>]*data-mt="title"[^>]*disabled/.test(mcp));
+  assert.ok(mcp.includes("プロジェクトは、規則で自動に付き"));
+  const manual = renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW15, selMtg: "m2" });
+  assert.ok(manual.includes("自動（規則）→ 本社コアSW更改"));
+  assert.ok(mcp.includes("自動（規則）→ 未設定"));
+  d.events.find((e) => e.id === "m2").projectId = "B"; d.events.find((e) => e.id === "m2").projectBy = "manual";
+  const chosen = renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW15, selMtg: "m2" });
+  assert.ok(/<option value="B" selected>/.test(chosen));
+});
+
+test("サマリー: 未確認の会議も件数に入り（内訳つき）、0 件のときは data-confirmall が出ない。凡例に未確認の会議", () => {
+  const d = noSessions();
+  const html = renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW15 });
+  assert.ok(html.includes("未確認 1件（作業枠 0・会議 1）") && html.includes("data-confirmall"));
+  assert.ok(html.includes("未確認の会議"));
+  d.events.find((e) => e.id === "m2").confirmed = true;
+  assert.ok(!renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW15 }).includes("data-confirmall"));
+});

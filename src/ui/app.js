@@ -237,7 +237,7 @@ view.addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
   let cleared = false;
   // 欄外のクリックで、枠・会議の選択と追加中の下書きを外す
-  if ((S.selSess || S.selMtg || S.mtgDraft) && !q("[data-dragsess],[data-mtg],[data-delsel],.mtgform,[data-mtgadd],[data-confirm],[data-confirmall]")) { clearSel(); cleared = true; }
+  if ((S.selSess || S.selMtg || S.mtgDraft) && !q("[data-dragsess],[data-mtg],[data-delsel],.mtgform,[data-mtgadd],[data-confirm],[data-confirmmtg],[data-confirmall]")) { clearSel(); cleared = true; }
   const { date: today, time } = clock();
   const now = clock();
 
@@ -298,9 +298,14 @@ view.addEventListener("click", (e) => {
   if (pk) { S.picked = S.picked === pk.dataset.pick ? null : pk.dataset.pick; if (S.picked && S.sview === "week") toast("日表示にすると、空き枠を押して配置できます"); render(); return; }
   const cf = q("[data-confirm]");
   if (cf) { apply((d) => { const r = confirmSession(d, cf.dataset.confirm, now); if (r.error) throw new Error(r.error); return r.data; }, "実績にしました。時間が違うときは、枠をドラッグして直します"); return; }
+  const cm = q("[data-confirmmtg]");
+  if (cm) { apply((d) => confirmMeeting(d, cm.dataset.confirmmtg, now), "会議を実績にしました。参加しなかったときは「参加しない」にします"); return; }
   if (q("[data-confirmall]")) {
     const days = S.sview === "week" ? [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(weekStartOf(S.sdate), i)) : [S.sdate];
-    apply((d) => d.tasks.flatMap((t) => t.sessions ?? []).filter((s) => days.includes(s.date) && sessionKind(s, now) === "unconfirmed").reduce((acc, s) => confirmSession(acc, s.id, now).data, d), "未確認の枠を実績にしました");
+    apply((d) => {
+      const next = d.tasks.flatMap((t) => t.sessions ?? []).filter((s) => days.includes(s.date) && sessionKind(s, now) === "unconfirmed").reduce((acc, s) => confirmSession(acc, s.id, now).data, d);
+      return next.events.filter((m) => days.includes(m.date) && meetingKind(m, now) === "unconfirmed").reduce((acc, m) => confirmMeeting(acc, m.id, now), next);
+    }, "未確認の枠と会議を実績にしました");
     return;
   }
   if (q("[data-delsel]")) { deleteSelected(); return; }
@@ -377,13 +382,13 @@ function onChange(el) {
       return;
     }
     if (S.mtgDraft) {
-      if (!v && f !== "title" && f !== "skip") { el.value = old; toast("日付と時刻を入力してください"); return; }
+      if (!v && f !== "title" && f !== "skip" && f !== "projectId") { el.value = old; toast("日付と時刻を入力してください"); return; }
       S.mtgDraft = { ...m, [f]: v };
       if (toMin(S.mtgDraft.end) <= toMin(S.mtgDraft.start)) { S.mtgDraft = m; el.value = old; toast("終了は開始より後にしてください"); return; }
       renderCal();
       return;
     }
-    if (!v && f !== "title" && f !== "skip") { el.value = old; toast("日付と時刻を入力してください"); return; }
+    if (!v && f !== "title" && f !== "skip" && f !== "projectId") { el.value = old; toast("日付と時刻を入力してください"); return; }
     if (!apply((d) => updateMeeting(d, m.id, { [f]: v }), f === "skip" ? (v ? "参加しない会議にしました。空き時間として扱います" : "参加する会議に戻しました") : "会議を更新しました", { partial: true })) { el.value = old; }
     return;
   }
