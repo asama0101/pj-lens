@@ -230,7 +230,7 @@ npm run build   # assets/pj-lens.html（プラグインに同梱する完成版�
 
 ## 変更履歴
 
-### 0.1.0
+### 0.3.0（公開済みの 0.2.0 からの変更）
 
 - 廃止: `/pj-lens:daily-planner`（画面の「今日の優先」で足りるため）、`/pj-lens:report` と CLI `tools/report.js`（画面のレポートボタンで足りるため）、CLI `tools/rank.js`・`tools/free.js`。`npm run report` も廃止しました。画面のレポート(HTML)ボタンと「今日の優先」は残っています。
 - 変更: レポートは、プロジェクトと期間を選べるようになり、先週の実績も出せます。ファイル名の規約を決めました（「レポート出力」を参照）。
