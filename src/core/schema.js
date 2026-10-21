@@ -135,6 +135,14 @@ export function validate(data, now = nowLocal()) {
     if (!m || typeof m !== "object" || Object.values(m).some((x) => typeof x !== "string")) err(`settings.wbsMappings.${pid}: 値は文字列のオブジェクトにしてください`);
   }
 
+  for (const [pid, w] of Object.entries(st.wbsImports ?? {})) {
+    if (!projectIds.has(pid)) err(`settings.wbsImports: 不明なプロジェクト "${pid}"`);
+    const okCount = (n) => Number.isInteger(n) && n >= 0;
+    if (!w || typeof w !== "object" || !(w.file === null || typeof w.file === "string") || !isDate(w.at) || !okCount(w.added) || !okCount(w.updated)) {
+      err(`settings.wbsImports.${pid}: file（文字列か null）・at（日付）・added と updated（0 以上の整数）にしてください`);
+    }
+  }
+
   for (const c of data.changeLog) {
     if (!isDate(c.at)) err("changeLog: 日付が不正です");
     for (const id of c.taskIds ?? []) if (!taskIds.has(id)) warn(`changeLog: 存在しないタスク ${id}`);

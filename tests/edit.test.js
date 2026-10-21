@@ -172,7 +172,7 @@ test("updateTask: group/subgroup は trim され、空は null", () => {
 
 test("deleteProject: そのプロジェクトを指す会議のひも付け・規則・WBS の対応も掃除する（ID を再利用しても付け替わらない）", () => {
   const d = {
-    settings: { projectRules: [{ keyword: "x", projectId: "A" }, { keyword: "y", projectId: "B" }], wbsMappings: { A: { title: "t" }, B: { title: "t" } } },
+    settings: { projectRules: [{ keyword: "x", projectId: "A" }, { keyword: "y", projectId: "B" }], wbsMappings: { A: { title: "t" }, B: { title: "t" } }, wbsImports: { A: { file: "a.xlsx", at: "2026-10-20", added: 1, updated: 0 }, B: { file: null, at: "2026-10-20", added: 0, updated: 1 } } },
     projects: [{ id: "A" }, { id: "B" }], tasks: [],
     events: [{ id: "m1", projectId: "A", projectBy: "rule" }, { id: "m2", projectId: "A", projectBy: "manual" }, { id: "m3", projectId: "B", projectBy: "manual" }, { id: "m4" }],
     changeLog: [],
@@ -181,6 +181,7 @@ test("deleteProject: そのプロジェクトを指す会議のひも付け・�
   assert.deepEqual(n.events.map((e) => [e.projectId ?? null, e.projectBy ?? null]), [[null, null], [null, null], ["B", "manual"], [null, null]]);
   assert.deepEqual(n.settings.projectRules, [{ keyword: "y", projectId: "B" }]);
   assert.deepEqual(Object.keys(n.settings.wbsMappings), ["B"]);
+  assert.deepEqual(Object.keys(n.settings.wbsImports), ["B"], "取り込み記録も消える");
   assert.equal(d.events[0].projectId, "A", "元のデータは変わらない");
   assert.equal(deleteProject({ ...d, settings: undefined }, "A").data.settings, undefined, "settings が無くても落ちない");
 });

@@ -251,6 +251,7 @@ export function deleteProject(data, projectId) {
     settings = { ...settings };
     if (settings.projectRules) settings.projectRules = settings.projectRules.filter((r) => r.projectId !== projectId);
     if (settings.wbsMappings) settings.wbsMappings = Object.fromEntries(Object.entries(settings.wbsMappings).filter(([k]) => k !== projectId));
+    if (settings.wbsImports) settings.wbsImports = Object.fromEntries(Object.entries(settings.wbsImports).filter(([k]) => k !== projectId));
   }
   return { data: { ...data, settings, events, projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
 }

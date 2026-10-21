@@ -10,7 +10,7 @@ import { planMailImport, applyMailImport, processedMessageIds, lastMailDate } fr
 import { planCalendarSync, applyCalendarSync } from "../src/import/calendar.js";
 
 const USAGE = `使い方: node tools/intake.js <コマンド> <data.json> ...
-  wbs-plan | wbs-apply   <data.json> <projectId> <rows.json>
+  wbs-plan | wbs-apply   <data.json> <projectId> <rows.json> [--source <取り込んだファイル名>]   (--source は wbs-apply の取り込み記録用)
   mail-plan | mail-apply <data.json> <items.json> [--compress]
   processed              <data.json>
   calendar-plan | calendar-apply <data.json> <fetched.json> <開始日> <終了日>
@@ -34,9 +34,9 @@ function save(path, data) {
 // コマンド名 → [必要な引数の数(コマンド名を除く), 実行]
 const COMMANDS = {
   "wbs-plan": [3, (d, [, pid, rows]) => out(planWbsImport(d, pid, readJson(rows)))],
-  "wbs-apply": [3, (d, [path, pid, rows]) => {
+  "wbs-apply": [3, (d, [path, pid, rows], o) => {
     const plan = planWbsImport(d, pid, readJson(rows));
-    save(path, applyWbsImport(d, pid, plan, { today: today() }));
+    save(path, applyWbsImport(d, pid, plan, { today: today(), source: o.source }));
     out({ ok: true, summary: { added: plan.add.length, updated: plan.update.length }, rejected: plan.rejected, warnings: plan.warnings });
   }],
   "mail-plan": [2, (d, [, items], o) => out(planMailImport(d, readJson(items), { today: today(), compress: o.compress }))],
@@ -64,8 +64,9 @@ const COMMANDS = {
 };
 
 const argv = process.argv.slice(2);
-const opts = { compress: argv.includes("--compress") };
-const [cmd, ...args] = argv.filter((a) => a !== "--compress");
+const si = argv.indexOf("--source"); // wbs-apply の取り込み記録に残す、取り込んだファイル名
+const opts = { compress: argv.includes("--compress"), source: si >= 0 ? argv[si + 1] ?? null : null };
+const [cmd, ...args] = argv.filter((a, i) => a !== "--compress" && a !== "--source" && !(si >= 0 && i === si + 1));
 const spec = COMMANDS[cmd];
 if (!spec || args.length < spec[0]) usage();
 if (cmd.startsWith("calendar-") && !(isDate(args[2]) && isDate(args[3]))) usage();

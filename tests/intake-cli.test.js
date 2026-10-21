@@ -53,6 +53,15 @@ test("wbs-apply: タスクが増え、2回目の wbs-plan は add が0件", () =
   assert.equal(run("wbs-plan", w.data, "A", rows).out.add.length, 0);
 });
 
+test("wbs-apply: --source のファイル名が取り込み記録に入る（なければ null）", () => {
+  const w = work(); const rows = w.put("rows.json", ROWS);
+  assert.equal(run("wbs-apply", w.data, "A", rows, "--source", "plan.xlsx").status, 0);
+  assert.deepEqual(w.json().settings.wbsImports.A, { file: "plan.xlsx", at: w.json().settings.wbsImports.A.at, added: 2, updated: 0 });
+  const w2 = work(); const rows2 = w2.put("rows.json", ROWS);
+  assert.equal(run("wbs-apply", w2.data, "A", rows2).status, 0);
+  assert.equal(w2.json().settings.wbsImports.A.file, null);
+});
+
 test("wbs-apply: 先行が循環する rows では終了コード1で data.json は変わらない", () => {
   const w = work(); const before = w.read();
   const rows = w.put("rows.json", [

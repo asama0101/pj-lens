@@ -112,7 +112,8 @@ export function planWbsImport(data, projectId, rows) {
 }
 
 /** plan を適用したデータを返す。変更が無ければ data をそのまま返す。検証エラーのときは例外（データは返らない） */
-export function applyWbsImport(data, projectId, plan, { today }) {
+/** source: 取り込んだファイル名（パスなし。分からなければ省略）。追加か更新があったときだけ、プロジェクトごとの取り込み記録（最後の 1 件）を settings.wbsImports に書く */
+export function applyWbsImport(data, projectId, plan, { today, source = null }) {
   if (!plan.add.length && !plan.update.length) return data;
   let d = data;
   const idByKey = new Map(d.tasks.filter((t) => t.projectId === projectId && t.wbsKey).map((t) => [t.wbsKey, t.id]));
@@ -146,6 +147,7 @@ export function applyWbsImport(data, projectId, plan, { today }) {
       reason: `WBS 取り込み: 追加 ${added.length} 件・更新 ${plan.update.length} 件`, cause: null, deltaDays: 0, source: "wbs",
     }],
   };
+  d = { ...d, settings: { ...d.settings, wbsImports: { ...(d.settings?.wbsImports ?? {}), [projectId]: { file: source || null, at: today, added: added.length, updated: plan.update.length } } } };
   const { errors } = validate(d);
   if (errors.length) throw new Error(errors.join(" / "));
   return d;
