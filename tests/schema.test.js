@@ -154,3 +154,32 @@ test("サンプルは新しい項目を使っている（大項目・会議の�
   assert.deepEqual(d.settings.projectRules, [{ keyword: "ベンダーX", projectId: "A" }]);
   assert.equal(d.settings.labels.group, "大項目");
 });
+
+// ---- 受信箱（inbox） ----
+const REQ = (extra = {}) => ({ id: "R1", at: "2026-10-21T10:00:00.000Z", projectId: null, status: "pending", thread: [{ role: "user", at: "2026-10-21T10:00:00.000Z", text: "依頼" }], proposal: null, result: null, ...extra });
+
+test("inbox: 正しければ errors なし。inbox が無い従来のデータも通る。changeLog の source: inbox を認める", () => {
+  const d = load();
+  assert.deepEqual(v(d).errors, []);
+  d.inbox = { watching: { at: "2026-10-21T10:00:00.000Z" }, requests: [REQ(), REQ({ id: "R2", status: "proposed", projectId: "A", proposal: { summary: "s", ops: [{ op: "moveDue", taskId: "A3", deltaDays: 5 }], sections: [], warnings: [], base: {} } })] };
+  assert.deepEqual(v(d).errors, []);
+  d.changeLog.push({ at: "2026-10-21", taskIds: ["A3"], reason: "受信箱", cause: null, deltaDays: 0, source: "inbox" });
+  assert.deepEqual(v(d).errors, []);
+});
+
+test("inbox: 不正な status・重複 id・不明な projectId・不正な op・不正な thread・不正な watching は error", () => {
+  const bad = [
+    { requests: [REQ({ status: "done" })] },
+    { requests: [REQ(), REQ()] },
+    { requests: [REQ({ projectId: "ZZ" })] },
+    { requests: [REQ({ proposal: { summary: "s", ops: [{ op: "deleteTask" }] } })] },
+    { requests: [REQ({ thread: [{ role: "bot", at: "x", text: "y" }] })] },
+    { requests: [REQ({ thread: "x" })] },
+    { requests: "x" },
+    { watching: { at: 5 }, requests: [] },
+  ];
+  for (const inbox of bad) {
+    const d = load(); d.inbox = inbox;
+    assert.ok(hit(v(d).errors, "inbox"), JSON.stringify(inbox));
+  }
+});
