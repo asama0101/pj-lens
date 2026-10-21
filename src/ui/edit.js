@@ -201,7 +201,8 @@ export function addTaskQuick(data, projectId, title, today = nowLocal().date, pl
   if (!data.projects.some((p) => p.id === projectId)) throw new Error(`プロジェクト ${projectId} がありません`);
   const extra = {};
   for (const k of ["group", "subgroup"]) if (k in place) extra[k] = String(place[k] ?? "").trim() || null;
-  return { ...data, tasks: [...data.tasks, newTask(data, projectId, name, addDays(today, 7), extra)] };
+  // 開始は今日、期限は 7 日後（開始がないと、ガントでバーにならず点で出るため）
+  return { ...data, tasks: [...data.tasks, newTask(data, projectId, name, addDays(today, 7), { start: today, ...extra })] };
 }
 
 export function addTask(data, task) {
