@@ -172,7 +172,7 @@ test("saveMerged: 最新のデータに編集を当てると例外のときは�
   await s.choose();
   h.text = JSON.stringify({ a: 1, gone: true }); h.modified += 5;
   const bad = await s.saveMerged(() => { throw new Error("もう当てられません"); }, { a: 2 });
-  assert.deepEqual([bad.ok, bad.reason, bad.message], [false, "error", "もう当てられません"]);
+  assert.deepEqual([bad.ok, bad.reason, bad.message], [false, "conflict", "もう当てられません"]);
   assert.equal(h.writes, 0);
   const d = fakeHandle({ a: 1 });
   const s2 = mk(d);
@@ -193,4 +193,17 @@ test("peek: ファイルの最新を読むだけで、読込時点（保存の�
   const r = await s.save({ a: 2 });
   assert.deepEqual([r.ok, r.reason], [false, "conflict"], "peek では、読み込んだことにならない");
   await assert.rejects(mk(fakeHandle({})).peek(), /選ばれていません/);
+});
+
+test("saveMerged: 当て直しに失敗しても、読み込み時点は進めない。次の保存は、古いデータで他の更新を上書きせず、競合になる", async () => {
+  const h = fakeHandle({ a: 1 });
+  const s = mk(h);
+  await s.choose();
+  h.text = JSON.stringify({ a: 1, claude: "applied" }); h.modified += 5; // 他の更新
+  const bad = await s.saveMerged(() => { throw new Error("すでに処理されています"); }, { a: 2 });
+  assert.equal(bad.ok, false);
+  const next = await s.save({ a: 3 }); // 画面は、まだ古いデータのまま、もう一度保存しようとする
+  assert.deepEqual([next.ok, next.reason], [false, "conflict"]);
+  assert.deepEqual(JSON.parse(h.text), { a: 1, claude: "applied" }, "他の更新は消えない");
+  assert.equal(h.writes, 0);
 });
