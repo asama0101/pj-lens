@@ -354,6 +354,12 @@ tr.hl td{transition:background .3s}
 .g-row.g-grp{background:var(--line-soft);min-height:26px;align-items:center}
 .g-row.g-grp .g-label{background:var(--line-soft)}
 .g-grp-t{grid-column:1/-1;font-size:12px;padding-left:6px}
+.g-row.g-grp .g-label{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
+.g-row.g-grp .g-grp-t{flex:1;min-width:0}
+.g-row.g-grp .g-label .in{flex:1 1 100%;order:3}
+.plus{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--surface);color:var(--accent);border-radius:6px;padding:1px 9px;cursor:pointer;flex:none}
+.plus:hover{border-color:var(--accent)}
+.tbl .grp-tr td{background:var(--line-soft);font-size:12px;padding:5px 10px;vertical-align:middle}
 .gfilter{display:inline-flex;align-items:center;gap:6px;margin-left:8px;font-size:12px;color:var(--muted)}
 .banner{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:13px}
 code{font-family:var(--f-mono);font-size:12px;background:var(--line-soft);padding:0 4px;border-radius:3px}
@@ -1367,8 +1373,11 @@ function groupLabels(settings) {
   return { group: pick("group"), subgroup: pick("subgroup") };
 }
 
-/** (大項目, 中項目) の最初の登場順に束ねる。タスクの順序は保つ。未設定は空文字 */
-function groupSections(tasks) {
+/**
+ * 大項目の最初の登場順に、その中は中項目の最初の登場順に束ねる。タスクの順序は保つ。未設定は空文字。
+ * 大項目が空の組は最後のブロックに置く。ensureNone なら、(空, 空) の組がなくても空の組を末尾に足す（追加の入口にするため）
+ */
+function groupSections(tasks, { ensureNone = false } = {}) {
   const out = [];
   const at = new Map();
   for (const t of tasks) {
@@ -1377,6 +1386,11 @@ function groupSections(tasks) {
     if (!at.has(key)) { at.set(key, out.length); out.push({ group, subgroup, tasks: [] }); }
     out[at.get(key)].tasks.push(t);
   }
+  const first = new Map();
+  out.forEach((s, i) => { if (!first.has(s.group)) first.set(s.group, i); });
+  // 大項目の最初の登場位置で並べ（安定ソート）、大項目が空の組は最後に回す
+  out.sort((a, b) => (a.group === "") - (b.group === "") || first.get(a.group) - first.get(b.group));
+  if (ensureNone && !out.some((s) => s.group === "" && s.subgroup === "")) out.push({ group: "", subgroup: "", tasks: [] });
   return out;
 }
 
@@ -1805,11 +1819,14 @@ const newTask = (data, projectId, title, due, extra = {}) => ({
   predecessors: [], waitingOn: null, importance: null, doneAt: null, sessions: [], ...extra,
 });
 
-function addTaskQuick(data, projectId, title, today = nowLocal().date) {
+/** place: { group, subgroup }。見出し行の「＋」から、そのグループへ入れる。含まれるキーだけ入れ、空白は null にする */
+function addTaskQuick(data, projectId, title, today = nowLocal().date, place = {}) {
   const name = String(title ?? "").trim();
   if (!name) throw new Error("タスク名を入力してください");
   if (!data.projects.some((p) => p.id === projectId)) throw new Error(`プロジェクト ${projectId} がありません`);
-  return { ...data, tasks: [...data.tasks, newTask(data, projectId, name, addDays(today, 7))] };
+  const extra = {};
+  for (const k of ["group", "subgroup"]) if (k in place) extra[k] = String(place[k] ?? "").trim() || null;
+  return { ...data, tasks: [...data.tasks, newTask(data, projectId, name, addDays(today, 7), extra)] };
 }
 
 function addTask(data, task) {
@@ -1922,11 +1939,13 @@ function tools(win, hideDone) {
  * @param opts.askDel    削除確認を出すタスク ID
  * @param opts.showActual false なら実績の線と凡例を出さない
  * @param opts.group     "all" か大項目の名前(その大項目の行だけを出す)
+ * @param opts.addAt     名前入力を開いている見出し { pid, group, subgroup }（なければ null）
  */
 function renderGantt(data, projectIds, today, opts = {}) {
-  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, group = "all" } = opts;
+  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, group = "all", addAt = null } = opts;
   const ps = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
-  if (!ps.length || !data.tasks.some((t) => projectIds.includes(t.projectId))) {
+  // 編集画面は、タスクが 0 件でも見出しの「＋」から追加できるように描く
+  if (!ps.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
     return `<p class="muted">タスクがありません。${readonly ? "" : "リスト表示で追加してください。"}</p>`;
   }
 
@@ -1984,10 +2003,8 @@ function renderGantt(data, projectIds, today, opts = {}) {
     const sumRow = `<div class="g-row g-sumrow"><div class="g-label"><span class="id"></span><span class="muted">プロジェクト全体</span></div><div class="g-lane" ${laneStyle}><i class="gbar gsum"${sumAttr} style="left:${x(p.start)};width:${sumW}%;min-width:4px" title="${fmtMD(p.start)}〜${fmtMD(p.due)}${readonly ? "" : "(両端のドラッグで開始・期限を変更)"}"><u style="width:${pct}%"></u>${sumHandles}</i><span class="g-due mono" style="left:${x(p.due)}">${fmtMD(p.due)}</span></div></div>`;
 
     const taskOf = (r) => data.tasks.find((o) => o.id === r.taskId);
-    const visibleRows = g.rows.filter((r) => {
-      const t = taskOf(r);
-      return !(hideDone && t.status === "Done") && (group === "all" || (t.group ?? "") === group);
-    });
+    const inGroup = (r) => group === "all" || (taskOf(r).group ?? "") === group;
+    const shown = (r) => !(hideDone && taskOf(r).status === "Done");
     const rowHtml = (r) => {
       const t = data.tasks.find((o) => o.id === r.taskId);
       const late = taskFlags(t, today, data.settings).includes("overdue");
@@ -2013,17 +2030,29 @@ function renderGantt(data, projectIds, today, opts = {}) {
       }
       return `<div class="g-row">${lab}<div class="g-lane" ${laneStyle}>${bar}${act}<span class="g-due mono" style="left:${x(r.end)}">${fmtMD(t.due)}</span></div></div>`;
     };
-    // 大項目・中項目があるプロジェクトは、(大項目, 中項目) ごとに区切り行を入れて並べる
-    const grouped = visibleRows.some((r) => taskOf(r).group || taskOf(r).subgroup);
+    // (大項目, 中項目) ごとに見出し行を入れて並べる。編集画面は、追加の入口になるので、大項目がなくても「（なし）」の見出しを常に出す。
+    // 見出しは完了を隠していても残す（そのグループへ追加できるように）。レポート用は、見える行があるグループだけを出す
+    const base = g.rows.filter(inGroup).filter((r) => !readonly || shown(r));
+    const grouped = !readonly || base.some((r) => taskOf(r).group || taskOf(r).subgroup);
+    const heading = (sec) => {
+      const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
+      const at = `data-ag="${esc(sec.group)}" data-asg="${esc(sec.subgroup)}"`;
+      const opening = addAt && addAt.pid === p.id && addAt.group === sec.group && addAt.subgroup === sec.subgroup;
+      const ctl = readonly ? ""
+        : opening ? `<input class="in" data-gadd="${esc(p.id)}" ${at} placeholder="タスク名を入力して Enter" aria-label="${esc(name)} に追加するタスク名"><button class="plus" data-gaddok="${esc(p.id)}">追加</button><button class="plus" data-gaddno>やめる</button>`
+        : `<button class="plus" data-gopen="${esc(p.id)}" ${at} aria-label="${esc(name)} にタスクを追加">＋</button>`;
+      return `<div class="g-row g-grp"><div class="g-label"><span class="g-grp-t"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""}</span>${ctl}</div><div class="g-lane" ${laneStyle}></div></div>`;
+    };
     const rows = grouped
-      ? groupSections(visibleRows.map((r) => ({ ...taskOf(r), row: r }))).map((sec) =>
-        `<div class="g-row g-grp"><div class="g-label"><span class="g-grp-t"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""}</span></div><div class="g-lane" ${laneStyle}></div></div>${sec.tasks.map((x) => rowHtml(x.row)).join("")}`).join("")
-      : visibleRows.map(rowHtml).join("");
+      ? groupSections(base.map((r) => ({ ...taskOf(r), row: r })), { ensureNone: !readonly && group === "all" })
+        .map((sec) => ({ sec, vis: sec.tasks.filter((x) => shown(x.row)) }))
+        .filter(({ vis }) => !readonly || vis.length)
+        .map(({ sec, vis }) => `${heading(sec)}${vis.map((x) => rowHtml(x.row)).join("")}`).join("")
+      : base.map(rowHtml).join("");
 
-    const addRow = readonly ? "" : `<div class="g-row g-add"><div class="g-label"><input class="in" data-gadd="${esc(p.id)}" placeholder="＋ タスクを追加(名前を入力して Enter)" aria-label="${esc(p.name)} にタスクを追加"></div><div class="g-lane" ${laneStyle}></div></div>`;
     const headRow = `<div class="g-row g-head"><div class="g-label"></div><div class="g-lane g-axis ${dayScale ? "day" : ""}" ${laneStyle}>${dayScale ? "" : `<span class="todaytag" style="left:${x(today)}">今日</span>`}${axis}</div></div>`;
 
-    return `<section class="pg" aria-label="${esc(p.name)}">${head}<div class="gbody" style="--lanew:${laneW}"><div class="gov under">${grid}</div><div class="gov over">${msLines}${todayLine}</div>${headRow}${msRow}${sumRow}${rows}${addRow}</div></section>`;
+    return `<section class="pg" aria-label="${esc(p.name)}">${head}<div class="gbody" style="--lanew:${laneW}"><div class="gov under">${grid}</div><div class="gov over">${msLines}${todayLine}</div>${headRow}${msRow}${sumRow}${rows}</div></section>`;
   }).join("");
 
   return `${readonly ? "" : tools(win, hideDone)}<div class="gscroll" data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"><div class="gwide">${sections}</div></div>${legend(showActual)}`;
@@ -2376,7 +2405,7 @@ function renderList(data, p, today, opts) {
   const tasks = data.tasks.filter((t) => t.projectId === p.id);
   const labels = groupLabels(data.settings);
   const shown = opts.group && opts.group !== "all" ? tasks.filter((t) => (t.group ?? "") === opts.group) : tasks;
-  const rows = shown.map((t) => {
+  const rowOf = (t) => {
     const preds = t.predecessors ?? [];
     const cand = predecessorCandidates(data, t.id).map((id) => data.tasks.find((u) => u.id === id));
     const chips = preds.map((id) => `<span class="chip">${esc(id)}<button data-rmpre="${esc(t.id)}|${esc(id)}" aria-label="${esc(id)} を先行から外す">×</button></span>`).join("");
@@ -2403,6 +2432,12 @@ function renderList(data, p, today, opts) {
       <td data-l="重要度"><select class="in sm" data-f="importance" data-id="${esc(t.id)}" aria-label="${esc(t.id)} の重要度">${[["", "—"], ["high", "高"], ["mid", "中"], ["low", "低"]].map(([v, l]) => `<option value="${v}" ${(t.importance ?? "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></td>
       <td data-l="メモ"><input class="in" data-f="memo" data-id="${esc(t.id)}" value="${esc(t.memo ?? "")}" placeholder="メモ" aria-label="${esc(t.id)} のメモ"></td>
       <td data-l="実績" class="mono muted">${actText(data, t.id)}</td><td data-l="">${delCell}</td></tr>`;
+  };
+  // (大項目, 中項目) ごとに見出し行を入れて並べる。「＋」はそのグループへ追加する入口なので、0 件でも「（なし）」を出す（絞り込み中は除く）
+  const filtered = opts.group && opts.group !== "all";
+  const rows = groupSections(shown, { ensureNone: !filtered }).map((sec) => {
+    const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
+    return `<tr class="grp-tr"><td colspan="13"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""} <button class="plus" data-addat="${esc(p.id)}" data-ag="${esc(sec.group)}" data-asg="${esc(sec.subgroup)}" aria-label="${esc(name)} にタスクを追加">＋</button></td></tr>${sec.tasks.map(rowOf).join("")}`;
   }).join("");
 
   const projTaskIds = new Set(tasks.map((t) => t.id));
@@ -2424,7 +2459,7 @@ function renderList(data, p, today, opts) {
       <label>期限 <input class="in sm" type="date" data-pf="due" data-pid="${esc(p.id)}" value="${esc(p.due)}" aria-label="${esc(p.name)} の期限"></label>
       <span>進捗 <b class="mono">${prog.done}/${prog.total}</b> (${Math.round(prog.rate * 100)}%)</span><span class="mono hrs">${(() => { const hh = projectHours(data, p.id); return `稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）`; })()}</span></div></div><div>${flagPills(data, p.id, today, projectFlags(data, p.id, today))}</div></div>
     <div class="tscroll"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>先行</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn" data-addtask="${esc(p.id)}">＋ タスクを追加</button><span class="note">変更はその場でファイルに保存されます。後続の日程をまとめて見直すときは、Claude Code の replan に頼みます。</span></div>
+    <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="note">変更はその場でファイルに保存されます。後続の日程をまとめて見直すときは、Claude Code の replan に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>
     <div class="mslist">${ms}<div><button class="btn" data-msadd="${esc(p.id)}">＋ マイルストーンを追加</button> <span class="note">ガントに◆で表示されます。</span></div></div>
     <h2 style="margin:18px 0 2px;font-size:13px">日程変更の履歴</h2><p class="note" style="margin:0 0 8px">日程が動いたとき、いつ・何が・なぜ動いたか(原因: ベンダー／社内／自分)の記録です。Claude Code の replan が日程を更新したときだけ記録され、画面での日付変更は記録されません。</p><ul class="log">${log}</ul>
@@ -2456,7 +2491,7 @@ function renderProjects(data, today, opts = {}) {
     ? `<label class="gfilter">${esc(labels.group)} <select class="in sm" data-groupfilter aria-label="${esc(labels.group)}で絞り込み"><option value="all"${group === "all" ? " selected" : ""}>すべて</option>${names.map((n) => `<option value="${esc(n)}"${n === group ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></label>`
     : "";
   const body = view === "gantt"
-    ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual, group })}</section>`
+    ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual, group, addAt: opts.addAt })}</section>`
     : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, group })).join("")}</div>`;
   return `<div class="toolbar"><div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="プロジェクトで絞り込み">${chips}${gsel}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${addBtn}<div class="seg" role="group" aria-label="表示"><button data-pview="gantt" aria-pressed="${view === "gantt"}">ガント</button><button data-pview="list" aria-pressed="${view === "list"}">リスト</button></div></div></div>
@@ -2619,7 +2654,7 @@ const S = {
   filter: "all", pview: "gantt", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
-  prefs: loadPrefs(), group: "all", pendingReplan: null,
+  prefs: loadPrefs(), group: "all", pendingReplan: null, addAt: null,
   wperiod: "week", wdate: clock().date,
   reportPanel: null,
 };
@@ -2650,7 +2685,7 @@ function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
   if (S.screen === "project") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
+    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, addAt: S.addAt, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
   if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
   return renderSchedule(S.data, today, scheduleOpts());
@@ -2798,14 +2833,18 @@ async function openFile(choose) {
   render();
 }
 
-/** 大項目で絞り込み中に追加したタスクは、その大項目に入れる(入れないと、追加した行がその場で見えなくなる) */
-function addTaskInView(d, pid, name, today) {
-  const had = new Set(d.tasks.map((t) => t.id));
-  let next = addTaskQuick(d, pid, name, today);
-  if (S.group !== "all" && d.tasks.some((t) => t.projectId === pid && t.group === S.group)) {
-    next = updateTask(next, next.tasks.find((t) => !had.has(t.id)).id, { group: S.group }, today);
+/** 見出し行の「＋」の大項目・中項目（data-ag / data-asg）を、追加するタスクの置き場にする */
+const placeOf = (el) => ({ group: el.dataset.ag ?? "", subgroup: el.dataset.asg ?? "" });
+
+/** ガントの名前入力から追加する。空の名前は何もしない。追加できたら入力を閉じる */
+function submitGAdd(input) {
+  const name = input.value.trim(), pid = input.dataset.gadd, place = placeOf(input);
+  if (!name) { toast("タスク名を入力してください"); return; }
+  const before = S.data.tasks.map((t) => t.id);
+  if (apply((d) => addTaskQuick(d, pid, name, clock().date, place))) {
+    S.addAt = null; render();
+    toast(`${S.data.tasks.map((t) => t.id).find((x) => !before.includes(x))} を追加しました。バーをドラッグして日程を決めます`);
   }
-  return next;
 }
 
 /* ---------- 日程変更の確認(期限を変えたとき、後続への影響を見てから反映する) ---------- */
@@ -2919,15 +2958,20 @@ view.addEventListener("click", (e) => {
   }
   const rp = q("[data-rmpre]");
   if (rp) { const [id, pre] = rp.dataset.rmpre.split("|"); apply((d) => updateTask(d, id, { predecessors: d.tasks.find((t) => t.id === id).predecessors.filter((x) => x !== pre) }, today), "先行を外しました"); return; }
-  const at = q("[data-addtask]");
+  const at = q("[data-addat]");
   if (at) {
-    const pid = at.dataset.addtask, before = S.data.tasks.map((t) => t.id);
-    if (apply((d) => addTaskInView(d, pid, "新しいタスク", today))) {
+    const pid = at.dataset.addat, place = placeOf(at), before = S.data.tasks.map((t) => t.id);
+    if (apply((d) => addTaskQuick(d, pid, "新しいタスク", today, place))) {
       const id = S.data.tasks.map((t) => t.id).find((x) => !before.includes(x));
       S.focusSel = `#f-${id}-t`; render(); toast(`${id} を追加しました`);
     }
     return;
   }
+  const go = q("[data-gopen]");
+  if (go) { S.addAt = { pid: go.dataset.gopen, ...placeOf(go) }; S.focusSel = `[data-gadd="${go.dataset.gopen}"]`; render(); return; }
+  const gok = q("[data-gaddok]");
+  if (gok) { const input = view.querySelector(`[data-gadd="${CSS.escape(gok.dataset.gaddok)}"]`); if (input) submitGAdd(input); return; }
+  if (q("[data-gaddno]")) { S.addAt = null; render(); return; }
   const gn = q("[data-goto]");
   if (gn) { const t = S.data.tasks.find((x) => x.id === gn.dataset.goto); S.filter = t.projectId; S.pview = "list"; S.hlId = t.id; S.focusSel = `#f-${t.id}-t`; S.resetScroll = true; render(); return; }
   const ma = q("[data-msadd]");
@@ -3130,6 +3174,7 @@ function onChange(el) {
       apply(() => base, "変更を保存しました");
       return;
     }
+    if (f === "group" || f === "subgroup") S.hlId = id; // 該当グループへ移った行を強調して見失わないようにする
     apply((d) => updateTask(d, id, { [f]: f === "importance" ? el.value || null : el.value }, today), "変更を保存しました");
   }
 }
@@ -3296,17 +3341,8 @@ document.addEventListener("keydown", (e) => {
 });
 view.addEventListener("keydown", (e) => {
   // 日本語入力の変換確定の Enter(isComposing)では追加しない
-  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-gadd]")) {
-    e.preventDefault();
-    const name = e.target.value.trim(), pid = e.target.dataset.gadd;
-    if (!name) { toast("タスク名を入力してください"); return; }
-    const before = S.data.tasks.map((t) => t.id);
-    if (apply((d) => addTaskInView(d, pid, name, clock().date))) {
-      S.focusSel = `[data-gadd="${pid}"]`; render();
-      toast(`${S.data.tasks.map((t) => t.id).find((x) => !before.includes(x))} を追加しました。バーをドラッグして日程を決めます`);
-    }
-    return;
-  }
+  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-gadd]")) { e.preventDefault(); submitGAdd(e.target); return; }
+  if (e.key === "Escape" && e.target.matches("[data-gadd]")) { S.addAt = null; render(); return; }
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-waitparty]")) { e.preventDefault(); submitWait(e.target.dataset.waitparty); return; }
   if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-pick]")) { e.preventDefault(); e.target.click(); }
 });
