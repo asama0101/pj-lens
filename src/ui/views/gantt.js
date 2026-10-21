@@ -125,8 +125,10 @@ export function renderGantt(data, projectIds, today, opts = {}) {
         : `<button class="plus" data-gopen="${esc(p.id)}" ${at} aria-label="${esc(name)} にタスクを追加">＋</button>`;
       return `<div class="g-row g-grp"><div class="g-label"><span class="g-grp-t"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""}</span>${ctl}</div><div class="g-lane" ${laneStyle}></div></div>`;
     };
+    const secs = groupSections(base.map((r) => ({ ...taskOf(r), row: r })), { ensureNone: !readonly && group === "all" });
+    if (!readonly && group !== "all" && !secs.length) secs.push({ group, subgroup: "", tasks: [] }); // 絞り込んだ大項目のタスクがなくても、そこへ追加できるように
     const rows = grouped
-      ? groupSections(base.map((r) => ({ ...taskOf(r), row: r })), { ensureNone: !readonly && group === "all" })
+      ? secs
         .map((sec) => ({ sec, vis: sec.tasks.filter((x) => shown(x.row)) }))
         .filter(({ vis }) => !readonly || vis.length)
         .map(({ sec, vis }) => `${heading(sec)}${vis.map((x) => rowHtml(x.row)).join("")}`).join("")
