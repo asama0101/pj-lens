@@ -50,7 +50,9 @@ function renderList(data, p, today, opts) {
   };
   // (大項目, 中項目) ごとに見出し行を入れて並べる。「＋」はそのグループへ追加する入口なので、0 件でも「（なし）」を出す（絞り込み中は除く）
   const filtered = opts.group && opts.group !== "all";
-  const rows = groupSections(shown, { ensureNone: !filtered }).map((sec) => {
+  const secs = groupSections(shown, { ensureNone: !filtered });
+  if (filtered && !secs.length) secs.push({ group: opts.group, subgroup: "", tasks: [] }); // 絞り込んだ大項目のタスクがなくても、そこへ追加できるように
+  const rows = secs.map((sec) => {
     const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
     return `<tr class="grp-tr"><td colspan="13"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""} <button class="plus" data-addat="${esc(p.id)}" data-ag="${esc(sec.group)}" data-asg="${esc(sec.subgroup)}" aria-label="${esc(name)} にタスクを追加">＋</button></td></tr>${sec.tasks.map(rowOf).join("")}`;
   }).join("");

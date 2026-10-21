@@ -368,6 +368,15 @@ test("リスト: 大項目の絞り込み中は、その大項目の見出しだ
   assert.ok(html.includes('data-ag="X"') && !html.includes("（なし）"));
 });
 
+test("大項目で絞り込んでも、その大項目を持たないプロジェクトに、その大項目の「＋」が出る（リスト・ガント）", () => {
+  const d = setC(load(), [["C1", "X", "a"], ["C2", "X", "a"], ["C3", "X", "a"]]);
+  const list = renderProjects(d, TODAY, { filter: "all", view: "list", group: "X" });
+  assert.ok(list.includes('data-addat="B" data-ag="X" data-asg=""'), "リスト");
+  const g = gantt(d, ["B"], { group: "X" });
+  assert.ok(g.includes('data-gopen="B" data-ag="X" data-asg=""'), "ガント");
+  assert.equal(count(g, /data-goto="/g), 0);
+});
+
 test("利用者入力（group 名）はエスケープされる", () => {
   const d = load(); d.tasks.find((t) => t.id === "A1").group = "<img src=x onerror=1>";
   const html = renderProjects(d, TODAY, { filter: "A", view: "gantt", window: "m6" }) + renderProjects(d, TODAY, { filter: "A", view: "list" });
