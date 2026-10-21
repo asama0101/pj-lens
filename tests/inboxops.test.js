@@ -196,3 +196,14 @@ test("planOps(addTask): 先行がなければ開始日は今日（期限が今�
   const warn = (x) => validate(x, { date: TODAY, time: "10:00" }).warnings;
   assert.deepEqual(warn(out).filter((w) => !warn(d).includes(w)), [], "登録で、新しい注意が増えない");
 });
+
+test("planOps(addPred): 開始日のあるタスクに先行を足すと、開始日を外し（先行から決まる）、その旨を警告する。validate の注意が増えない", () => {
+  const d = load();
+  assert.ok(d.tasks.find((t) => t.id === "A5").start, "前提: A5 は開始日を持つ");
+  const p = planOps(d, [{ op: "addPred", taskId: "A5", predId: "A3" }], { today: TODAY });
+  assert.ok(p.warnings.some((w) => w.includes("A5") && w.includes("開始日")), "開始日を外すことを警告する");
+  const out = apply(d, [{ op: "addPred", taskId: "A5", predId: "A3" }]);
+  assert.equal(out.tasks.find((t) => t.id === "A5").start, null);
+  const warn = (x) => validate(x, { date: TODAY, time: "10:00" }).warnings;
+  assert.deepEqual(warn(out).filter((w) => !warn(d).includes(w)), [], "新しい注意が増えない");
+});
