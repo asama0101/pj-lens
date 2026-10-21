@@ -110,6 +110,15 @@ test("addTaskQuick: 期限は 7 日後・To Do・先行なし。空白の件名�
   ok(b);
 });
 
+test("addTaskQuick: place で大項目・中項目を指定でき、空白は null になる", () => {
+  const d = load();
+  const a = addTaskQuick(d, "C", "x", TODAY, { group: " 設計 ", subgroup: "" });
+  const t = a.tasks.find((y) => y.title === "x");
+  assert.deepEqual([t.group, t.subgroup], ["設計", null]);
+  assert.equal(addTaskQuick(d, "C", "y", TODAY).tasks.find((z) => z.title === "y").group, undefined);
+  ok(a);
+});
+
 test("predecessorCandidates: 自分・既存の先行・後続（孫を含む）を含まない。他プロジェクトも含まない", () => {
   const d = load();
   assert.deepEqual(predecessorCandidates(d, "A4").sort(), ["A1", "A2", "A5"].sort());
