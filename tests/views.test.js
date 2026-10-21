@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { addDays, diffDays } from "../src/core/dates.js";
 import { renderProjects } from "../src/ui/views/project.js";
 import { renderGantt } from "../src/ui/views/gantt.js";
+import { renderPrio } from "../src/ui/views/prio.js";
 import { renderSchedule, snapStart } from "../src/ui/views/schedule.js";
 import { taskActual } from "../src/core/sessions.js";
 import { buildReport } from "../src/ui/views/report.js";
@@ -393,6 +394,39 @@ test("今日の優先のパネルは、固定表示のための prio クラス�
 
 test("プロジェクト画面のフィルタ行は、固定表示のための ptool クラスを持つ", () => {
   for (const view of ["gantt", "list"]) assert.ok(renderProjects(load(), TODAY, { filter: "all", view, window: "m6" }).includes('<div class="toolbar ptool">'), view);
+});
+
+const sections = (html) => [...html.matchAll(/<section class="pg" aria-label="([^"]*)"/g)].map((m) => m[1]);
+const NAMES = { A: "本社コアSW更改", B: "拠点B 回線増設", C: "VPN 断続切断の対処" };
+
+test("ガント: 完了を隠すと、状態が「完了」のプロジェクトと、タスクが全部 Done のプロジェクトも隠れる", () => {
+  const d = load();
+  d.projects.find((p) => p.id === "B").status = "完了";
+  for (const t of d.tasks.filter((x) => x.projectId === "C")) t.status = "Done";
+  assert.deepEqual(sections(gantt(d, ["A", "B", "C"])), [NAMES.A, NAMES.B, NAMES.C], "隠さないときは全部");
+  assert.deepEqual(sections(gantt(d, ["A", "B", "C"], { hideDone: true })), [NAMES.A]);
+});
+
+test("ガント: 1 つのプロジェクトを選んでいるときは、完了していても完了を隠すで消さない", () => {
+  const d = load(); d.projects.find((p) => p.id === "B").status = "完了";
+  assert.deepEqual(sections(gantt(d, ["B"], { hideDone: true })), [NAMES.B]);
+});
+
+test("ガント: 全プロジェクトが隠れても、「完了を隠す」の切り替えは残り、理由を出す", () => {
+  const d = load(); for (const p of d.projects) p.status = "完了";
+  const html = gantt(d, ["A", "B", "C"], { hideDone: true });
+  assert.ok(html.includes("data-hidedone") && html.includes("完了したプロジェクトを隠しています"));
+  assert.deepEqual(sections(html), []);
+});
+
+test("今日の優先: どのプロジェクトのタスクかを、項目の先頭の見出しで示す（プロジェクト画面・スケジュール画面）", () => {
+  const d = load();
+  for (const sched of [false, true]) {
+    const html = renderPrio(d, TODAY, { sched });
+    assert.ok(count(html, /<span class="pj">/g) >= 1, `sched=${sched}`);
+    assert.ok([...html.matchAll(/<span class="pj">([^<]*)<\/span>/g)].every((m) => Object.values(NAMES).includes(m[1])));
+  }
+  assert.ok(!renderPrio(d, TODAY, { sched: false }).includes(" ・ "), "説明文に重複して出さない");
 });
 
 test("利用者入力（group 名）はエスケープされる", () => {
