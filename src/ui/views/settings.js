@@ -15,7 +15,7 @@ export function renderSettings(data, today, opts = {}) {
     const k = esc(r.keyword);
     return `<tr><td data-l="キーワード"><input class="in" data-rkw="${k}" data-ri="${i}" value="${k}" aria-label="キーワード ${k}"></td>
       <td data-l="プロジェクト"><select class="in" data-rpj="${k}" data-ri="${i}" aria-label="${k} のプロジェクト">${unknown}${options(r.projectId)}</select></td>
-      <td class="mono" data-l="付いている会議">${counts[i]} 件</td>
+      <td class="mono" data-l="付いている会議" data-rcount>${counts[i]} 件</td>
       <td data-l=""><button class="btn" data-rdel="${k}" aria-label="${k} の規則を削除">削除</button></td></tr>`;
   }).join("");
   const empty = rules.length ? "" : `<tr><td colspan="4" class="muted">規則はありません。下の行から追加します。</td></tr>`;

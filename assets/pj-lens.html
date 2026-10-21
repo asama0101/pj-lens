@@ -2477,7 +2477,7 @@ function renderSettings(data, today, opts = {}) {
     const k = esc(r.keyword);
     return `<tr><td data-l="キーワード"><input class="in" data-rkw="${k}" data-ri="${i}" value="${k}" aria-label="キーワード ${k}"></td>
       <td data-l="プロジェクト"><select class="in" data-rpj="${k}" data-ri="${i}" aria-label="${k} のプロジェクト">${unknown}${options(r.projectId)}</select></td>
-      <td class="mono" data-l="付いている会議">${counts[i]} 件</td>
+      <td class="mono" data-l="付いている会議" data-rcount>${counts[i]} 件</td>
       <td data-l=""><button class="btn" data-rdel="${k}" aria-label="${k} の規則を削除">削除</button></td></tr>`;
   }).join("");
   const empty = rules.length ? "" : `<tr><td colspan="4" class="muted">規則はありません。下の行から追加します。</td></tr>`;
@@ -2939,11 +2939,11 @@ function persist() {
 }
 
 /** 編集を適用して描画・保存する。edit が例外を投げたら理由を表示して、データは変えない */
-function apply(edit, msg, { partial = false } = {}) {
+function apply(edit, msg, { partial = false, quiet = false } = {}) {
   let next;
   try { next = edit(S.data); } catch (e) { toast(e.message); if (partial) renderCal(); else render(); return false; }
   S.data = next;
-  if (partial) renderCal(); else render();
+  if (partial) renderCal(); else if (!quiet) render();
   if (msg) toast(msg);
   persist();
   return true;
@@ -2956,6 +2956,7 @@ function loaded(data) {
   }
   S.data = data;
   S.pendingReplan = null;
+  S.ruleError = "";
   S.openError = "";
   const { errors, warnings } = validate(data, clock());
   banner(errors.length ? `データに問題があります: ${errors.slice(0, 3).join(" / ")}` : warnings.length ? `注意: ${warnings.slice(0, 2).join(" / ")}` : "");
@@ -2985,14 +2986,43 @@ async function startup() {
 }
 
 /** 設定タブのキーワード規則の編集。エラーは、規則の表の上に出す（描き直しで入力欄が元の値に戻る） */
-function ruleApply(edit, msg) {
+function ruleApply(edit, msg, { inPlace = false } = {}) {
   try { edit(S.data); } catch (e) { S.ruleError = e.message; render(); return false; }
   S.ruleError = "";
-  return apply(edit, msg);
+  if (!inPlace) return apply(edit, msg);
+  if (!apply(edit, msg, { quiet: true })) return false;
+  view.querySelector(".note.err")?.remove();
+  patchRuleRows();
+  return true;
+}
+
+/** 規則の書き換え・プロジェクトの変更が成功したあとは、画面を描き直さず、行の値・属性・件数だけを直す
+ *  （描き直すと、押そうとしていた「削除」などが作り直されて、そのクリックが無視される） */
+function patchRuleRows() {
+  const rules = S.data.settings?.projectRules ?? [];
+  const counts = ruleMeetingCounts(S.data);
+  view.querySelectorAll("[data-rkw]").forEach((input) => {
+    const i = Number(input.dataset.ri), r = rules[i];
+    if (!r) return;
+    const tr = input.closest("tr");
+    input.dataset.rkw = r.keyword;
+    input.value = r.keyword;
+    input.setAttribute("aria-label", `キーワード ${r.keyword}`);
+    const sel = tr.querySelector("[data-rpj]");
+    sel.dataset.rpj = r.keyword;
+    sel.value = r.projectId;
+    sel.setAttribute("aria-label", `${r.keyword} のプロジェクト`);
+    const del = tr.querySelector("[data-rdel]");
+    del.dataset.rdel = r.keyword;
+    del.setAttribute("aria-label", `${r.keyword} の規則を削除`);
+    tr.querySelector("[data-rcount]").textContent = `${counts[i]} 件`;
+  });
 }
 
 /** 規則の追加。エラーは通知だけにして、入力欄は描き直さない（打った文字を残す） */
 function addRule() {
+  S.ruleError = "";
+  view.querySelector(".note.err")?.remove();
   const kw = view.querySelector("[data-rnew]")?.value ?? "", pid = view.querySelector("[data-rnewpj]")?.value;
   if (!pid) { toast("先にプロジェクトを追加してください"); return; }
   const edit = (d) => setProjectRule(d, kw, pid);
@@ -3074,7 +3104,7 @@ $("filebar").addEventListener("click", async (e) => {
     await saveChain;
     if (S.saveFailed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }
     S.confirmRefresh = false;
-    try { S.data = await store.reload(); S.saveFailed = false; banner(""); render(); toast("ファイルから読み直しました"); } catch (err) { toast(err.message); }
+    try { S.data = await store.reload(); S.ruleError = ""; S.saveFailed = false; banner(""); render(); toast("ファイルから読み直しました"); } catch (err) { toast(err.message); }
     return;
   }
   if (e.target.closest("[data-openfile]")) openFile("choose");
@@ -3085,7 +3115,7 @@ $("filebar").addEventListener("click", async (e) => {
 $("banner").addEventListener("click", async (e) => {
   if (e.target.closest("[data-download]")) downloadJson();
   if (e.target.closest("[data-reload]")) {
-    try { S.data = await store.reload(); S.saveFailed = false; banner(""); render(); toast("再読込しました"); } catch (err) { toast(err.message); }
+    try { S.data = await store.reload(); S.ruleError = ""; S.saveFailed = false; banner(""); render(); toast("再読込しました"); } catch (err) { toast(err.message); }
   }
 });
 
@@ -3314,8 +3344,8 @@ function onChange(el) {
     } else p[k] = el.value;
     return;
   }
-  if (el.dataset.rkw !== undefined) { const old = el.dataset.rkw; ruleApply((d) => renameProjectRule(d, old, el.value), "キーワードを変更しました"); return; }
-  if (el.dataset.rpj !== undefined) { const kw = el.dataset.rpj, pid = el.value; ruleApply((d) => setProjectRule(d, kw, pid), "プロジェクトを変更しました"); return; }
+  if (el.dataset.rkw !== undefined) { const old = el.dataset.rkw; ruleApply((d) => renameProjectRule(d, old, el.value), "キーワードを変更しました", { inPlace: true }); return; }
+  if (el.dataset.rpj !== undefined) { const kw = el.dataset.rpj, pid = el.value; ruleApply((d) => setProjectRule(d, kw, pid), "プロジェクトを変更しました", { inPlace: true }); return; }
   if (el.dataset.groupfilter !== undefined) { S.group = el.value; S.resetScroll = true; render(); return; }
   if (el.dataset.pf) {
     const k = el.dataset.pf, pid = el.dataset.pid;
