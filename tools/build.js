@@ -30,6 +30,7 @@ export const MODULES = [
   "src/ui/views/replan.js",
   "src/ui/views/reportpanel.js",
   "src/ui/views/workload.js",
+  "src/ui/views/settings.js",
   "src/ui/views/project.js",
   "src/ui/views/report.js",
   "src/ui/app.js",

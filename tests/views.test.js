@@ -5,6 +5,8 @@ import { addDays, diffDays } from "../src/core/dates.js";
 import { renderProjects } from "../src/ui/views/project.js";
 import { renderGantt } from "../src/ui/views/gantt.js";
 import { renderPrio } from "../src/ui/views/prio.js";
+import { renderSettings } from "../src/ui/views/settings.js";
+import { ruleMeetingCounts } from "../src/core/rules.js";
 import { renderSchedule, snapStart } from "../src/ui/views/schedule.js";
 import { taskActual } from "../src/core/sessions.js";
 import { buildReport } from "../src/ui/views/report.js";
@@ -500,4 +502,44 @@ test("日程変更の履歴: 取り込み（source があり、日数が 0）の
     assert.ok(html.includes("メール報告: 納期延期"));
     assert.ok(!html.includes("WBS 取り込み: 追加 3 件") && !html.includes("メール報告: 着手"));
   }
+});
+
+// ---- 設定タブ ----
+const setv = (d, o = {}) => renderSettings(d, TODAY, o);
+
+test("設定: キーワード規則の一覧（キーワード・プロジェクトの選択・件数・削除）と追加の行、会議名とメールに共通の旨", () => {
+  const d = load();
+  const html = setv(d);
+  assert.ok(html.includes("会議名・メールの件名に共通"));
+  assert.ok(html.includes('data-rkw="ベンダーX"') && html.includes('value="ベンダーX"'));
+  assert.ok(html.includes('data-rpj="ベンダーX"') && /<option value="A" selected>/.test(html));
+  assert.ok(html.includes('data-rdel="ベンダーX"'));
+  assert.ok(html.includes(`>${ruleMeetingCounts(d)[0]} 件</td>`), "いま付いている会議の件数");
+  assert.ok(html.includes("data-rnew") && html.includes("data-rnewpj") && html.includes("data-radd"));
+  assert.ok(html.includes("手動で付けた会議"));
+});
+
+test("設定: 規則が 0 件でも追加の行が出る。ruleError を出す", () => {
+  const d = load(); d.settings.projectRules = [];
+  const html = setv(d, { ruleError: "キーワードを入力してください" });
+  assert.ok(html.includes("規則はありません") && html.includes("data-radd") && html.includes("キーワードを入力してください"));
+});
+
+test("設定: キーワードの特殊文字は escape される。プロジェクトが消えた規則は「不明」と出て落ちない", () => {
+  const d = load(); d.settings.projectRules = [{ keyword: 'a"<b>&', projectId: "A" }, { keyword: "古い", projectId: "ZZ" }];
+  const html = setv(d);
+  assert.ok(html.includes('data-rkw="a&quot;&lt;b&gt;&amp;"') && !html.includes('a"<b>&'));
+  assert.ok(html.includes("不明") && html.includes('data-rdel="古い"'));
+});
+
+test("設定: WBS の取り込み記録（ファイル名・日付・件数）。ファイル名なしは「（不明）」、記録なしは「記録なし」", () => {
+  const d = load();
+  d.settings.wbsImports = { A: { file: "plan.xlsx", at: "2026-10-20", added: 3, updated: 1 }, B: { file: null, at: "2026-10-18", added: 0, updated: 2 } };
+  const html = setv(d);
+  assert.ok(html.includes("plan.xlsx") && html.includes("2026-10-20") && html.includes("（不明）") && html.includes("記録なし"));
+  assert.equal(count(html, /記録なし/g), 1, "記録のあるプロジェクトには出ない（C だけ）");
+  const none = setv(load());
+  assert.equal(count(none, /記録なし/g), 3);
+  const empty = { ...load(), projects: [], tasks: [], events: [] };
+  assert.ok(setv(empty).includes("プロジェクトがありません"));
 });
