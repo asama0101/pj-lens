@@ -194,11 +194,14 @@ const newTask = (data, projectId, title, due, extra = {}) => ({
   predecessors: [], waitingOn: null, importance: null, doneAt: null, sessions: [], ...extra,
 });
 
-export function addTaskQuick(data, projectId, title, today = nowLocal().date) {
+/** place: { group, subgroup }。見出し行の「＋」から、そのグループへ入れる。含まれるキーだけ入れ、空白は null にする */
+export function addTaskQuick(data, projectId, title, today = nowLocal().date, place = {}) {
   const name = String(title ?? "").trim();
   if (!name) throw new Error("タスク名を入力してください");
   if (!data.projects.some((p) => p.id === projectId)) throw new Error(`プロジェクト ${projectId} がありません`);
-  return { ...data, tasks: [...data.tasks, newTask(data, projectId, name, addDays(today, 7))] };
+  const extra = {};
+  for (const k of ["group", "subgroup"]) if (k in place) extra[k] = String(place[k] ?? "").trim() || null;
+  return { ...data, tasks: [...data.tasks, newTask(data, projectId, name, addDays(today, 7), extra)] };
 }
 
 export function addTask(data, task) {
