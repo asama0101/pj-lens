@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const read = (name) => readFileSync(new URL(`../skills/${name}/SKILL.md`, import.meta.url), "utf8");
 const front = (text) => /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
-const NAMES = ["init", "replan", "intake", "mcp"];
+const NAMES = ["init", "replan", "intake", "mcp", "watch", "inbox"];
 
 for (const name of NAMES) {
   test(`コマンド ${name}: frontmatter と、リポジトリ直下を前提にしたパスがないこと`, () => {
@@ -16,6 +16,27 @@ for (const name of NAMES) {
     assert.doesNotMatch(text, /(^|[^.\w])data\/data\.json/m);
   });
 }
+
+for (const name of ["watch", "inbox"]) {
+  test(`${name}: 自動起動しない。inbox.js と inbox エージェントを使い、承認を端末で待たない`, () => {
+    const text = read(name);
+    assert.match(front(text), /^disable-model-invocation: true$/m);
+    assert.ok(text.includes('node "${CLAUDE_PLUGIN_ROOT}/tools/inbox.js"'));
+    assert.ok(text.includes("pj-lens:inbox"));
+    assert.ok(text.includes(".pj-lens/data.json"));
+  });
+}
+
+test("watch: Monitor で wait を動かし、request・decision のイベントと、30 分ごとの再起動を説明する", () => {
+  const text = read("watch");
+  for (const w of ["Monitor", "wait", "request", "decision", "1800000", "止まらない", "R3"]) assert.ok(text.includes(w), w);
+});
+
+test("inbox: 引数の例（承認・却下）と、list で pending を探す手順がある", () => {
+  const text = read("inbox");
+  assert.match(front(text), /^argument-hint: .*承認/m);
+  for (const w of ["list", "pending", "approve", "reject"]) assert.ok(text.includes(w), w);
+});
 
 test("init: 副作用があるので自動起動しない。init.js を呼び、引数を渡す", () => {
   const text = read("init");

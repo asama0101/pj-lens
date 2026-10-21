@@ -37,8 +37,8 @@ test("配布に必要なファイルが git に入っている（.gitignore で�
   const need = [
     ".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "assets/pj-lens.html", "data/sample.json", "tools/init.js",
     "tools/intake.js", "tools/mcpconf.js", "tools/xlsx.js", "tools/xlsx_dump.py",
-    ...["init", "replan", "intake", "mcp"].map((n) => `skills/${n}/SKILL.md`),
-    ...["replan", "intake"].map((n) => `agents/${n}.md`),
+    ...["init", "replan", "intake", "mcp", "watch", "inbox"].map((n) => `skills/${n}/SKILL.md`),
+    ...["replan", "intake", "inbox"].map((n) => `agents/${n}.md`),
   ];
   assert.deepEqual(need.filter((p) => !tracked.has(p)), []);
 });
