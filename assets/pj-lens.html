@@ -31,6 +31,9 @@ body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:1
 .wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
 .mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 header.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;justify-content:space-between}
+/* ヘッダーと「今日の優先」は、スクロールしても上端に固定する。ヘッダーの高さは --hh（app.js が測る）で、固定の帯と「今日の優先」の位置に使う */
+header.top{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0;margin-block:-8px 0}
+.cols>.prio{position:sticky;top:calc(var(--hh,0px) + 8px);align-self:start;max-height:calc(100vh - var(--hh,0px) - 24px);overflow-y:auto}
 h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.01em}
 .today{color:var(--muted);font-size:13px}
 nav[role=tablist]{display:flex;gap:2px;background:var(--line-soft);padding:3px;border-radius:8px}
@@ -191,7 +194,7 @@ label{font-size:13px}
 .pg{padding:6px 0 14px;border-bottom:1px solid var(--line)}.pg:first-child{padding-top:0}.pg:last-of-type{border-bottom:0}
 
 .gtools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-.gtop{position:sticky;top:0;z-index:8;background:var(--surface);padding:6px 0 8px;margin-bottom:6px;border-bottom:1px solid var(--line-soft)}
+.gtop{position:sticky;top:var(--hh,0px);z-index:8;background:var(--surface);padding:6px 0 8px;margin-bottom:6px;border-bottom:1px solid var(--line-soft)}
 .gtop .gtools{margin-bottom:6px}
 .gtop .legend{margin-top:0}
 .gscroll{position:relative;padding-bottom:6px}
@@ -1931,7 +1934,7 @@ function renderPrio(data, today, opts = {}) {
   const note = sched
     ? "タスクをカレンダーへドラッグして配置します(15分刻み・長さ1時間)。配置済みの枠もドラッグで移動できます。キーボードでは、タスクを選んで日表示の空き枠を押します。"
     : "スケジュール画面で、時間枠に配置できます。";
-  return `<section class="panel" aria-labelledby="h-rk"><h2 id="h-rk">今日の優先</h2>${shown.length ? `<ol class="rank">${items}</ol>` : `<p class="muted">優先するタスクはありません。</p>`}<p class="note" style="margin:10px 0 0">${note}</p></section>`;
+  return `<section class="panel prio" aria-labelledby="h-rk"><h2 id="h-rk">今日の優先</h2>${shown.length ? `<ol class="rank">${items}</ol>` : `<p class="muted">優先するタスクはありません。</p>`}<p class="note" style="margin:10px 0 0">${note}</p></section>`;
 }
 
 return { renderPrio };
@@ -3393,6 +3396,10 @@ view.addEventListener("keydown", (e) => {
 
 render();
 startup();
+
+// ヘッダーは上端に固定する（theme.css）。その高さを --hh に入れ、固定の帯や「今日の優先」がヘッダーの下に付くようにする
+const topbar = document.querySelector("header.top");
+if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(() => document.documentElement.style.setProperty("--hh", `${topbar.offsetHeight}px`)).observe(topbar);
 
 
 })();</script>
