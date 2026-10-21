@@ -6,6 +6,8 @@ export const PROJECT_STATUS = ["計画中", "進行中", "保留", "完了", "�
 export const PROJECT_TYPE = ["増設", "更改", "改善", "不具合対処", "その他"];
 export const IMPORTANCE = ["high", "mid", "low"];
 export const CAUSES = ["ベンダー", "社内", "自分", "その他"];
+export const REQUEST_STATUS = ["pending", "working", "question", "proposed", "applied", "rejected", "failed"];
+export const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask"];
 
 const isDone = (t) => t.status === "Done" || t.status === "Cancelled";
 
@@ -143,12 +145,34 @@ export function validate(data, now = nowLocal()) {
     }
   }
 
+  const ib = data.inbox;
+  if (ib != null) {
+    if (typeof ib !== "object" || Array.isArray(ib)) err("inbox: オブジェクトにしてください");
+    else {
+      if (ib.watching != null && !(typeof ib.watching === "object" && typeof ib.watching.at === "string" && ib.watching.at)) err("inbox.watching: at（日時の文字列）が必要です");
+      if (!Array.isArray(ib.requests)) err("inbox.requests: 配列にしてください");
+      else {
+        const seen = new Set();
+        ib.requests.forEach((r, i) => {
+          const w = `inbox.requests[${i}]`;
+          if (!r || typeof r.id !== "string" || !r.id) { err(`${w}: id が必要です`); return; }
+          if (seen.has(r.id)) err(`${w}: id "${r.id}" が重複しています`);
+          seen.add(r.id);
+          if (!REQUEST_STATUS.includes(r.status)) err(`${w}: 不明な status "${r.status}"`);
+          if (r.projectId != null && !projectIds.has(r.projectId)) err(`${w}: 不明な projectId "${r.projectId}"`);
+          if (!Array.isArray(r.thread) || r.thread.some((m) => !m || !["user", "claude"].includes(m.role) || typeof m.text !== "string" || typeof m.at !== "string")) err(`${w}: thread は {role（user か claude）, at, text} の配列にしてください`);
+          if (r.proposal != null && (!Array.isArray(r.proposal.ops) || r.proposal.ops.some((o) => !OP_KINDS.includes(o?.op)))) err(`${w}: proposal.ops の op は ${OP_KINDS.join("・")} のいずれかにしてください`);
+        });
+      }
+    }
+  }
+
   for (const c of data.changeLog) {
     if (!isDate(c.at)) err("changeLog: 日付が不正です");
     for (const id of c.taskIds ?? []) if (!taskIds.has(id)) warn(`changeLog: 存在しないタスク ${id}`);
     if (!Number.isInteger(c.deltaDays)) err("changeLog: deltaDays が整数ではありません");
     if (c.cause != null && !CAUSES.includes(c.cause)) err(`changeLog: 不明な原因 "${c.cause}"`);
-    if (c.source != null && !["wbs", "mail", "calendar"].includes(c.source)) err(`changeLog: 不明な source "${c.source}"`);
+    if (c.source != null && !["wbs", "mail", "calendar", "inbox"].includes(c.source)) err(`changeLog: 不明な source "${c.source}"`);
     if (c.messageIds != null && (!Array.isArray(c.messageIds) || c.messageIds.some((x) => typeof x !== "string"))) err("changeLog: messageIds は文字列の配列にしてください");
   }
 
