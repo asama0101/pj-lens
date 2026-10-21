@@ -95,9 +95,53 @@ test("renderGantt: 1か月は日目盛り（範囲の日数）と土日の着色
   assert.ok([...m3.matchAll(/data-tick="([^"]+)"/g)].every((m) => new Date(m[1] + "T00:00:00Z").getUTCDay() === 1));
 });
 
-test("renderGantt: タスク 0 件で空状態", () => {
+test("renderGantt: タスク 0 件。編集画面は「（なし）」見出しと「＋」、読み取り専用は空状態", () => {
   const d = load(); d.tasks = d.tasks.filter((t) => t.projectId !== "C");
-  assert.ok(gantt(d, ["C"]).includes("タスクがありません"));
+  const html = gantt(d, ["C"]);
+  assert.ok(html.includes("（なし）") && html.includes('data-gopen="C"'));
+  assert.ok(gantt(d, ["C"], { readonly: true }).includes("タスクがありません"));
+});
+
+// プロジェクト C の 3 件に大項目・中項目を付ける（保存順 C1, C2, C3）
+const setC = (d, spec) => { for (const [id, group, subgroup, status] of spec) Object.assign(d.tasks.find((t) => t.id === id), { group, subgroup, ...(status ? { status } : {}) }); return d; };
+const gotoOrder = (html) => [...html.matchAll(/data-goto="([^"]+)"/g)].map((m) => m[1]);
+
+test("ガント: 大項目ごとの見出し行に「＋」があり、最下部の入力行はない", () => {
+  const html = gantt(load(), ["A"]);
+  assert.ok(html.includes('data-gopen="A"'));
+  assert.ok(!html.includes("g-add") && !html.includes("data-gadd="));
+});
+
+test("ガント: 保存順が X/a, Y/b, X/c でも、X の2件が続けて並ぶ", () => {
+  const d = setC(load(), [["C1", "X", "a"], ["C2", "Y", "b"], ["C3", "X", "c"]]);
+  assert.deepEqual(gotoOrder(gantt(d, ["C"])), ["C1", "C3", "C2"]);
+});
+
+test("ガント: 大項目の絞り込み・完了を隠す中でも、グループの見出しが残る", () => {
+  const d = setC(load(), [["C1", "X", "a"], ["C2", "Y", "b", "Done"], ["C3", "X", "c"]]);
+  const html = gantt(d, ["C"], { hideDone: true });
+  assert.ok(html.includes('data-ag="Y"') && !html.includes('data-goto="C2"'));
+  const only = gantt(d, ["C"], { group: "X" });
+  assert.ok(only.includes('data-ag="X"') && !only.includes('data-ag="Y"') && !only.includes('data-gopen="C" data-ag="" '));
+});
+
+test("ガント: addAt のある見出しに名前入力が出る。大項目名の特殊文字は escape される", () => {
+  const g = 'A"<b>|';
+  const d = setC(load(), [["C1", g, "a"]]);
+  const html = gantt(d, ["C"], { addAt: { pid: "C", group: g, subgroup: "a" } });
+  assert.ok(html.includes('data-gadd="C"') && html.includes('data-ag="A&quot;&lt;b&gt;|"'));
+  assert.ok(!html.includes(g));
+  assert.ok(html.includes("data-gaddok=") && html.includes("data-gaddno"));
+});
+
+test("ガント: 大項目が空で中項目だけあるタスクは「（なし）」のブロックに出る", () => {
+  const d = setC(load(), [["C1", "X", "a"], ["C2", "", "メモ"], ["C3", null, null]]);
+  assert.deepEqual(gotoOrder(gantt(d, ["C"])), ["C1", "C2", "C3"]);
+});
+
+test("ガント(readonly): 「＋」も空の「（なし）」見出しも出さない", () => {
+  const html = gantt(load(), ["C"], { readonly: true });
+  assert.ok(!html.includes("data-gopen") && !html.includes("（なし）"));
 });
 
 test("renderGantt: 完了を隠すと Done の行だけが減る（進捗は変わらない）", () => {
@@ -134,12 +178,12 @@ test("先行ありのバーに左端のつまみがなく、先行なしには�
   assert.ok(!bar("A4").includes('data-gh="l"'));
   assert.ok(bar("A4").includes('data-gh="r"'));
   assert.ok(bar("A5").includes('data-gh="l"'));
-  assert.ok(html.includes("data-gp=") && html.includes("data-gms=") && html.includes("data-goto=") && html.includes("data-gadd="));
+  assert.ok(html.includes("data-gp=") && html.includes("data-gms=") && html.includes("data-goto=") && html.includes("data-gopen="));
 });
 
 test("readonly（レポート用）は編集用の属性を出さない", () => {
   const html = gantt(load(), ["A"], { readonly: true });
-  assert.ok(!/data-(gt|gp|gms|goto|gadd|del|gh)=/.test(html));
+  assert.ok(!/data-(gt|gp|gms|goto|gopen|gadd|del|gh)=/.test(html));
   assert.ok(html.includes("機器の発注（ベンダーX）"));
 });
 
@@ -276,15 +320,17 @@ test("絞り込み: group を選ぶと該当しない行が消え、select が�
   assert.ok(renderProjects(d, TODAY, { filter: "A", view: "list", group: "存在しない" }).includes('data-row="A2"'), "存在しない group は絞り込まない");
 });
 
-test("renderGantt: g-grp の区切り行が group ごとに出る（readonly でも）。group が無いデータでは出ない", () => {
+test("renderGantt: g-grp の区切り行が group ごとに出る。編集画面は「（なし）」も常に出し、readonly は group が無いデータでは出ない", () => {
   const d = load();
   const html = gantt(d, ["A"]);
-  assert.equal(count(html, /class="g-row g-grp"/g), 4);
+  assert.equal(count(html, /class="g-row g-grp"/g), 5, "4 グループ＋追加の入口の「（なし）」");
   assert.ok(html.includes("調達") && html.includes("▸ 機器選定"));
   assert.ok(html.indexOf("設計") < html.indexOf('data-gt="A1"') && html.indexOf('data-gt="A1"') < html.indexOf("調達"));
   assert.equal(count(gantt(d, ["A"], { readonly: true }), /class="g-row g-grp"/g), 4);
-  assert.equal(count(gantt(noGroups(), ["A"]), /g-grp/g), 0);
-  assert.equal(count(gantt(d, ["B"]), /g-grp/g), 0, "group を持つタスクが無いプロジェクトには出ない");
+  const head = /class="g-row g-grp"/g;
+  assert.equal(count(gantt(noGroups(), ["A"]), head), 1, "編集画面は「（なし）」だけ出る");
+  assert.equal(count(gantt(noGroups(), ["A"], { readonly: true }), head), 0);
+  assert.equal(count(gantt(d, ["B"], { readonly: true }), head), 0, "group を持つタスクが無いプロジェクトには出ない");
 });
 
 test("利用者入力（group 名）はエスケープされる", () => {
