@@ -854,6 +854,8 @@ function sendRequest() {
   if (!text) { toast("依頼を入力してください"); return; }
   const projectId = S.ib.projectId || null, now = nowIso();
   if (apply((d) => submitRequest(d, { text, projectId, now }), "依頼を送りました。Claude Code が受け取ると、状態が変わります")) {
+    const ta = $("claudebar").querySelector("[data-ib-text]");
+    if (ta) ta.value = ""; // 描き直しは、画面の入力欄の値を先に取り込むので、画面側も空にする
     S.ib.text = "";
     saveInboxDraft("");
     renderBar();
