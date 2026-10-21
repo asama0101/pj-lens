@@ -47,3 +47,29 @@ export function removeProjectRule(data, keyword) {
   const rules = (data.settings?.projectRules ?? []).filter((r) => !sameKey(r.keyword, keyword));
   return assignMeetingProjects({ ...data, settings: { ...data.settings, projectRules: rules } });
 }
+
+/** 規則のキーワードを書き換える（順序とプロジェクトは保つ）。会議へ付け直す。空・不明な元・他の規則と同じキーワードは例外 */
+export function renameProjectRule(data, oldKeyword, newKeyword) {
+  const k = String(newKeyword ?? "").trim();
+  if (!k) throw new Error("キーワードを入力してください");
+  const rules = data.settings?.projectRules ?? [];
+  const at = rules.findIndex((r) => sameKey(r.keyword, oldKeyword));
+  if (at < 0) throw new Error(`キーワード「${oldKeyword}」の規則がありません`);
+  if (rules.some((r, i) => i !== at && sameKey(r.keyword, k))) throw new Error(`キーワード「${k}」の規則がすでにあります`);
+  const next = rules.map((r, i) => (i === at ? { ...r, keyword: k } : r));
+  return assignMeetingProjects({ ...data, settings: { ...data.settings, projectRules: next } });
+}
+
+/** 規則の並びで、その規則で付いている会議（projectBy が rule）の件数。複数の規則に当たる会議は、先の規則だけが数える */
+export function ruleMeetingCounts(data) {
+  const rules = data.settings?.projectRules ?? [];
+  const ids = new Set((data.projects ?? []).map((p) => p.id));
+  const counts = rules.map(() => 0);
+  for (const e of data.events ?? []) {
+    if (e.projectBy !== "rule") continue;
+    const t = String(e.title ?? "").toLowerCase();
+    const at = rules.findIndex((r) => ids.has(r.projectId) && String(r.keyword ?? "").trim() && t.includes(String(r.keyword).trim().toLowerCase()));
+    if (at >= 0) counts[at]++;
+  }
+  return counts;
+}

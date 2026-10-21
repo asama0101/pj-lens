@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule } from "../src/core/rules.js";
+import { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule, renameProjectRule, ruleMeetingCounts } from "../src/core/rules.js";
 
 const ev = (id, title, extra = {}) => ({ id, date: "2026-10-20", start: "10:00", end: "11:00", title, source: "mcp", skip: false, externalId: id, ...extra });
 const data = (events, rules = [], projects = ["A", "B"]) => ({
@@ -54,4 +54,29 @@ test("assignMeetingProjects: projectBy の無い projectId（手で書かれた�
   const a = assignMeetingProjects(d);
   assert.equal(a.events[0].projectId, "B");
   assert.equal(a.events[1], d.events[1]);
+});
+
+test("renameProjectRule: キーワードだけ変え、順序・プロジェクトを保ち、会議へ付け直す", () => {
+  const d = assignMeetingProjects(data([ev("m1", "ベンダーX 打合せ"), ev("m2", "回線 工事")], R));
+  const r = renameProjectRule(d, "ベンダーX", " 納入業者 ");
+  assert.deepEqual(r.settings.projectRules, [{ keyword: "納入業者", projectId: "A" }, { keyword: "回線", projectId: "B" }]);
+  const get = (id) => r.events.find((e) => e.id === id);
+  assert.equal(get("m1").projectId ?? null, null, "旧キーワードで付いた会議は外れる");
+  assert.equal(get("m2").projectId, "B");
+});
+
+test("renameProjectRule: 空・不明な元・他の規則と同じキーワード（大文字小文字を無視）は例外。自分自身への変更（大文字小文字だけ）は通る", () => {
+  const d = data([], [{ keyword: "Vendor", projectId: "A" }, { keyword: "回線", projectId: "B" }]);
+  assert.throws(() => renameProjectRule(d, "Vendor", "  "));
+  assert.throws(() => renameProjectRule(d, "無い", "x"));
+  assert.throws(() => renameProjectRule(d, "Vendor", "回線"));
+  assert.equal(renameProjectRule(d, "Vendor", "VENDOR").settings.projectRules[0].keyword, "VENDOR");
+});
+
+test("ruleMeetingCounts: 規則の並びで、その規則で付いている会議の件数。先に当たった規則だけが数え、manual は数えない", () => {
+  const rules = [{ keyword: "ベンダー", projectId: "A" }, { keyword: "ベンダーX", projectId: "B" }, { keyword: "未使用", projectId: "A" }];
+  const d = assignMeetingProjects(data([ev("m1", "ベンダーX 打合せ"), ev("m2", "ベンダー 定例"), ev("m3", "ベンダー 臨時", { projectId: "B", projectBy: "manual" })], rules));
+  assert.deepEqual(ruleMeetingCounts(d), [2, 0, 0]);
+  assert.deepEqual(ruleMeetingCounts(data([], [])), []);
+  assert.deepEqual(ruleMeetingCounts({ settings: {}, events: [] }), []);
 });
