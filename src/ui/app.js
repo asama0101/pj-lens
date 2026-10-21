@@ -10,7 +10,7 @@ const S = {
   filter: "all", pview: "gantt", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
-  prefs: loadPrefs(), group: "all", pendingReplan: null,
+  prefs: loadPrefs(), group: "all", pendingReplan: null, addAt: null,
   wperiod: "week", wdate: clock().date,
   reportPanel: null,
 };
@@ -41,7 +41,7 @@ function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
   if (S.screen === "project") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
+    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, addAt: S.addAt, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
   if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
   return renderSchedule(S.data, today, scheduleOpts());
@@ -189,14 +189,18 @@ async function openFile(choose) {
   render();
 }
 
-/** 大項目で絞り込み中に追加したタスクは、その大項目に入れる(入れないと、追加した行がその場で見えなくなる) */
-function addTaskInView(d, pid, name, today) {
-  const had = new Set(d.tasks.map((t) => t.id));
-  let next = addTaskQuick(d, pid, name, today);
-  if (S.group !== "all" && d.tasks.some((t) => t.projectId === pid && t.group === S.group)) {
-    next = updateTask(next, next.tasks.find((t) => !had.has(t.id)).id, { group: S.group }, today);
+/** 見出し行の「＋」の大項目・中項目（data-ag / data-asg）を、追加するタスクの置き場にする */
+const placeOf = (el) => ({ group: el.dataset.ag ?? "", subgroup: el.dataset.asg ?? "" });
+
+/** ガントの名前入力から追加する。空の名前は何もしない。追加できたら入力を閉じる */
+function submitGAdd(input) {
+  const name = input.value.trim(), pid = input.dataset.gadd, place = placeOf(input);
+  if (!name) { toast("タスク名を入力してください"); return; }
+  const before = S.data.tasks.map((t) => t.id);
+  if (apply((d) => addTaskQuick(d, pid, name, clock().date, place))) {
+    S.addAt = null; render();
+    toast(`${S.data.tasks.map((t) => t.id).find((x) => !before.includes(x))} を追加しました。バーをドラッグして日程を決めます`);
   }
-  return next;
 }
 
 /* ---------- 日程変更の確認(期限を変えたとき、後続への影響を見てから反映する) ---------- */
@@ -310,15 +314,20 @@ view.addEventListener("click", (e) => {
   }
   const rp = q("[data-rmpre]");
   if (rp) { const [id, pre] = rp.dataset.rmpre.split("|"); apply((d) => updateTask(d, id, { predecessors: d.tasks.find((t) => t.id === id).predecessors.filter((x) => x !== pre) }, today), "先行を外しました"); return; }
-  const at = q("[data-addtask]");
+  const at = q("[data-addat]");
   if (at) {
-    const pid = at.dataset.addtask, before = S.data.tasks.map((t) => t.id);
-    if (apply((d) => addTaskInView(d, pid, "新しいタスク", today))) {
+    const pid = at.dataset.addat, place = placeOf(at), before = S.data.tasks.map((t) => t.id);
+    if (apply((d) => addTaskQuick(d, pid, "新しいタスク", today, place))) {
       const id = S.data.tasks.map((t) => t.id).find((x) => !before.includes(x));
       S.focusSel = `#f-${id}-t`; render(); toast(`${id} を追加しました`);
     }
     return;
   }
+  const go = q("[data-gopen]");
+  if (go) { S.addAt = { pid: go.dataset.gopen, ...placeOf(go) }; S.focusSel = `[data-gadd="${go.dataset.gopen}"]`; render(); return; }
+  const gok = q("[data-gaddok]");
+  if (gok) { const input = view.querySelector(`[data-gadd="${CSS.escape(gok.dataset.gaddok)}"]`); if (input) submitGAdd(input); return; }
+  if (q("[data-gaddno]")) { S.addAt = null; render(); return; }
   const gn = q("[data-goto]");
   if (gn) { const t = S.data.tasks.find((x) => x.id === gn.dataset.goto); S.filter = t.projectId; S.pview = "list"; S.hlId = t.id; S.focusSel = `#f-${t.id}-t`; S.resetScroll = true; render(); return; }
   const ma = q("[data-msadd]");
@@ -521,6 +530,7 @@ function onChange(el) {
       apply(() => base, "変更を保存しました");
       return;
     }
+    if (f === "group" || f === "subgroup") S.hlId = id; // 該当グループへ移った行を強調して見失わないようにする
     apply((d) => updateTask(d, id, { [f]: f === "importance" ? el.value || null : el.value }, today), "変更を保存しました");
   }
 }
@@ -687,17 +697,8 @@ document.addEventListener("keydown", (e) => {
 });
 view.addEventListener("keydown", (e) => {
   // 日本語入力の変換確定の Enter(isComposing)では追加しない
-  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-gadd]")) {
-    e.preventDefault();
-    const name = e.target.value.trim(), pid = e.target.dataset.gadd;
-    if (!name) { toast("タスク名を入力してください"); return; }
-    const before = S.data.tasks.map((t) => t.id);
-    if (apply((d) => addTaskInView(d, pid, name, clock().date))) {
-      S.focusSel = `[data-gadd="${pid}"]`; render();
-      toast(`${S.data.tasks.map((t) => t.id).find((x) => !before.includes(x))} を追加しました。バーをドラッグして日程を決めます`);
-    }
-    return;
-  }
+  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-gadd]")) { e.preventDefault(); submitGAdd(e.target); return; }
+  if (e.key === "Escape" && e.target.matches("[data-gadd]")) { S.addAt = null; render(); return; }
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-waitparty]")) { e.preventDefault(); submitWait(e.target.dataset.waitparty); return; }
   if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-pick]")) { e.preventDefault(); e.target.click(); }
 });
