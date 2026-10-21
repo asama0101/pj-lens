@@ -10,7 +10,7 @@ const S = {
   filter: "all", pview: "gantt", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
-  prefs: loadPrefs(), group: "all", pendingReplan: null, addAt: null, last: null,
+  prefs: loadPrefs(), group: "all", pendingReplan: null, addAt: null, last: null, ruleError: "",
   wperiod: "week", wdate: clock().date,
   reportPanel: null,
 };
@@ -43,6 +43,7 @@ function renderBody() {
   if (S.screen === "project") {
     return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, addAt: S.addAt, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
+  if (S.screen === "settings") return renderSettings(S.data, today, { ruleError: S.ruleError });
   if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
   return renderSchedule(S.data, today, scheduleOpts());
 }
@@ -204,6 +205,22 @@ async function startup() {
   render();
 }
 
+/** 設定タブのキーワード規則の編集。エラーは、規則の表の上に出す（描き直しで入力欄が元の値に戻る） */
+function ruleApply(edit, msg) {
+  try { edit(S.data); } catch (e) { S.ruleError = e.message; render(); return false; }
+  S.ruleError = "";
+  return apply(edit, msg);
+}
+
+/** 規則の追加。エラーは通知だけにして、入力欄は描き直さない（打った文字を残す） */
+function addRule() {
+  const kw = view.querySelector("[data-rnew]")?.value ?? "", pid = view.querySelector("[data-rnewpj]")?.value;
+  const edit = (d) => setProjectRule(d, kw, pid);
+  try { edit(S.data); } catch (e) { toast(e.message); return; }
+  S.ruleError = "";
+  apply(edit, "規則を保存しました（同じキーワードは置き換えます）");
+}
+
 /** 見出し行の「＋」の大項目・中項目（data-ag / data-asg）を、追加するタスクの置き場にする */
 const placeOf = (el) => ({ group: el.dataset.ag ?? "", subgroup: el.dataset.asg ?? "" });
 
@@ -265,6 +282,7 @@ document.querySelector("nav").addEventListener("click", (e) => {
   const b = e.target.closest("[role=tab]");
   if (!b) return;
   S.screen = b.id.slice(4);
+  S.ruleError = "";
   clearSel();
   S.resetScroll = true;
   render();
@@ -310,6 +328,9 @@ view.addEventListener("click", (e) => {
   const { date: today, time } = clock();
   const now = clock();
 
+  if (q("[data-radd]")) { addRule(); return; }
+  const rdel = q("[data-rdel]");
+  if (rdel) { ruleApply((d) => removeProjectRule(d, rdel.dataset.rdel), "規則を削除しました"); return; }
   if (q("[data-reopen]")) { openFile("reopen"); return; }
   if (q("[data-openfile]")) { openFile("choose"); return; }
   /* プロジェクト画面 */
@@ -513,6 +534,8 @@ function onChange(el) {
     } else p[k] = el.value;
     return;
   }
+  if (el.dataset.rkw !== undefined) { const old = el.dataset.rkw; ruleApply((d) => renameProjectRule(d, old, el.value), "キーワードを変更しました"); return; }
+  if (el.dataset.rpj !== undefined) { const kw = el.dataset.rpj, pid = el.value; ruleApply((d) => setProjectRule(d, kw, pid), "プロジェクトを変更しました"); return; }
   if (el.dataset.groupfilter !== undefined) { S.group = el.value; S.resetScroll = true; render(); return; }
   if (el.dataset.pf) {
     const k = el.dataset.pf, pid = el.dataset.pid;
@@ -714,6 +737,7 @@ document.addEventListener("keydown", (e) => {
 view.addEventListener("keydown", (e) => {
   // 日本語入力の変換確定の Enter(isComposing)では追加しない
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-gadd]")) { e.preventDefault(); submitGAdd(e.target); return; }
+  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-rnew]")) { e.preventDefault(); addRule(); return; }
   if (e.key === "Escape" && e.target.matches("[data-gadd]")) { S.addAt = null; render(); return; }
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-waitparty]")) { e.preventDefault(); submitWait(e.target.dataset.waitparty); return; }
   if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-pick]")) { e.preventDefault(); e.target.click(); }

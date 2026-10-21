@@ -389,6 +389,7 @@ code{font-family:var(--f-mono);font-size:12px;background:var(--line-soft);paddin
       <button role="tab" id="tab-project" aria-selected="true">プロジェクト</button>
       <button role="tab" id="tab-schedule" aria-selected="false">スケジュール</button>
       <button role="tab" id="tab-workload" aria-selected="false">稼働</button>
+      <button role="tab" id="tab-settings" aria-selected="false">設定</button>
     </nav>
     <div class="filebar" id="filebar"></div>
   </header>
@@ -627,6 +628,14 @@ function validate(data, now = nowLocal()) {
   for (const [pid, m] of Object.entries(st.wbsMappings ?? {})) {
     if (!projectIds.has(pid)) err(`settings.wbsMappings: 不明なプロジェクト "${pid}"`);
     if (!m || typeof m !== "object" || Object.values(m).some((x) => typeof x !== "string")) err(`settings.wbsMappings.${pid}: 値は文字列のオブジェクトにしてください`);
+  }
+
+  for (const [pid, w] of Object.entries(st.wbsImports ?? {})) {
+    if (!projectIds.has(pid)) err(`settings.wbsImports: 不明なプロジェクト "${pid}"`);
+    const okCount = (n) => Number.isInteger(n) && n >= 0;
+    if (!w || typeof w !== "object" || !(w.file === null || typeof w.file === "string") || !isDate(w.at) || !okCount(w.added) || !okCount(w.updated)) {
+      err(`settings.wbsImports.${pid}: file（文字列か null）・at（日付）・added と updated（0 以上の整数）にしてください`);
+    }
   }
 
   for (const c of data.changeLog) {
@@ -986,7 +995,7 @@ return { computeImpact, needsReplan, applyReplan, commitReplan };
 })();
 
 /* src/core/rules.js */
-const { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule } = (() => {
+const { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule, renameProjectRule, ruleMeetingCounts } = (() => {
 // 会議のプロジェクト規則（件名のキーワード → プロジェクト）。すべて不変更新。
 // 手動で付けたもの（projectBy: "manual"）は、規則の再適用で変えない。
 
@@ -1037,7 +1046,33 @@ function removeProjectRule(data, keyword) {
   return assignMeetingProjects({ ...data, settings: { ...data.settings, projectRules: rules } });
 }
 
-return { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule };
+/** 規則のキーワードを書き換える（順序とプロジェクトは保つ）。会議へ付け直す。空・不明な元・他の規則と同じキーワードは例外 */
+function renameProjectRule(data, oldKeyword, newKeyword) {
+  const k = String(newKeyword ?? "").trim();
+  if (!k) throw new Error("キーワードを入力してください");
+  const rules = data.settings?.projectRules ?? [];
+  const at = rules.findIndex((r) => sameKey(r.keyword, oldKeyword));
+  if (at < 0) throw new Error(`キーワード「${oldKeyword}」の規則がありません`);
+  if (rules.some((r, i) => i !== at && sameKey(r.keyword, k))) throw new Error(`キーワード「${k}」の規則がすでにあります`);
+  const next = rules.map((r, i) => (i === at ? { ...r, keyword: k } : r));
+  return assignMeetingProjects({ ...data, settings: { ...data.settings, projectRules: next } });
+}
+
+/** 規則の並びで、その規則で付いている会議（projectBy が rule）の件数。複数の規則に当たる会議は、先の規則だけが数える */
+function ruleMeetingCounts(data) {
+  const rules = data.settings?.projectRules ?? [];
+  const ids = new Set((data.projects ?? []).map((p) => p.id));
+  const counts = rules.map(() => 0);
+  for (const e of data.events ?? []) {
+    if (e.projectBy !== "rule") continue;
+    const t = String(e.title ?? "").toLowerCase();
+    const at = rules.findIndex((r) => ids.has(r.projectId) && String(r.keyword ?? "").trim() && t.includes(String(r.keyword).trim().toLowerCase()));
+    if (at >= 0) counts[at]++;
+  }
+  return counts;
+}
+
+return { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule, renameProjectRule, ruleMeetingCounts };
 })();
 
 /* src/core/schedule.js */
@@ -1908,6 +1943,7 @@ function deleteProject(data, projectId) {
     settings = { ...settings };
     if (settings.projectRules) settings.projectRules = settings.projectRules.filter((r) => r.projectId !== projectId);
     if (settings.wbsMappings) settings.wbsMappings = Object.fromEntries(Object.entries(settings.wbsMappings).filter(([k]) => k !== projectId));
+    if (settings.wbsImports) settings.wbsImports = Object.fromEntries(Object.entries(settings.wbsImports).filter(([k]) => k !== projectId));
   }
   return { data: { ...data, settings, events, projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
 }
@@ -2422,6 +2458,57 @@ function shiftWorkloadDate(period, date, dir) {
 return { renderWorkload, shiftWorkloadDate };
 })();
 
+/* src/ui/views/settings.js */
+const { renderSettings } = (() => {
+// 「設定」タブ: キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
+
+
+
+/** @param opts.ruleError  規則の追加・書き換えで出たエラーの文言 */
+function renderSettings(data, today, opts = {}) {
+  const projects = data.projects ?? [];
+  const rules = data.settings?.projectRules ?? [];
+  const counts = ruleMeetingCounts(data);
+  const options = (sel) => projects.map((p) => `<option value="${esc(p.id)}"${p.id === sel ? " selected" : ""}>${esc(p.name)}</option>`).join("");
+
+  const ruleRows = rules.map((r, i) => {
+    const known = projects.some((p) => p.id === r.projectId);
+    const unknown = known ? "" : `<option value="${esc(r.projectId)}" selected>（不明: ${esc(r.projectId)}）</option>`;
+    const k = esc(r.keyword);
+    return `<tr><td data-l="キーワード"><input class="in" data-rkw="${k}" value="${k}" aria-label="キーワード ${k}"></td>
+      <td data-l="プロジェクト"><select class="in" data-rpj="${k}" aria-label="${k} のプロジェクト">${unknown}${options(r.projectId)}</select></td>
+      <td class="mono" data-l="付いている会議">${counts[i]} 件</td>
+      <td data-l=""><button class="btn" data-rdel="${k}" aria-label="${k} の規則を削除">削除</button></td></tr>`;
+  }).join("");
+  const empty = rules.length ? "" : `<tr><td colspan="4" class="muted">規則はありません。下の行から追加します。</td></tr>`;
+  const addRow = `<tr><td data-l="キーワード"><input class="in" data-rnew placeholder="件名に含むキーワード" aria-label="追加するキーワード"></td>
+      <td data-l="プロジェクト"><select class="in" data-rnewpj aria-label="追加する規則のプロジェクト">${options(projects[0]?.id)}</select></td>
+      <td data-l=""></td><td data-l=""><button class="btn" data-radd ${projects.length ? "" : "disabled"}>＋ 追加</button></td></tr>`;
+
+  const imports = data.settings?.wbsImports ?? {};
+  const wbsRows = projects.map((p) => {
+    const w = imports[p.id];
+    return w
+      ? `<tr><td data-l="プロジェクト">${esc(p.name)}</td><td data-l="ファイル">${w.file ? esc(w.file) : `<span class="muted">（不明）</span>`}</td><td class="mono" data-l="日付">${esc(w.at)}</td><td class="mono" data-l="追加">${w.added} 件</td><td class="mono" data-l="更新">${w.updated} 件</td></tr>`
+      : `<tr><td data-l="プロジェクト">${esc(p.name)}</td><td colspan="4" class="muted" data-l="ファイル">記録なし</td></tr>`;
+  }).join("");
+
+  return `<div style="display:flex;flex-direction:column;gap:16px">
+    <section class="panel" aria-labelledby="h-rules"><h2 id="h-rules" style="margin-top:0">キーワード規則（会議名・メールの件名に共通）</h2>
+      <p class="note" style="margin:0 0 10px">件名にキーワードを含む会議を、そのプロジェクトに付けます。メールの取り込みの対象にも使います（上の規則が先に当たります）。手動で付けた会議は、規則を変えても変わりません。変更はその場でファイルに保存されます。</p>
+      ${opts.ruleError ? `<p class="note err" role="alert" style="margin:0 0 10px">${esc(opts.ruleError)}</p>` : ""}
+      <div class="tscroll"><table class="tbl edit"><thead><tr><th>キーワード</th><th>プロジェクト</th><th>付いている会議</th><th></th></tr></thead><tbody>${ruleRows}${empty}${addRow}</tbody></table></div>
+    </section>
+    <section class="panel" aria-labelledby="h-wbs"><h2 id="h-wbs" style="margin-top:0">WBS の取り込み記録</h2>
+      <p class="note" style="margin:0 0 10px">プロジェクトごとに、最後に取り込んだ WBS です（取り込むたびに、Claude Code が自動で記録します）。</p>
+      ${projects.length ? `<div class="tscroll"><table class="tbl"><thead><tr><th>プロジェクト</th><th>ファイル</th><th>日付</th><th>追加</th><th>更新</th></tr></thead><tbody>${wbsRows}</tbody></table></div>` : `<p class="muted" style="margin:0">プロジェクトがありません。</p>`}
+    </section>
+  </div>`;
+}
+
+return { renderSettings };
+})();
+
 /* src/ui/views/project.js */
 const { renderProjects } = (() => {
 // プロジェクト画面: 絞り込み × ガント／リスト、右に「今日の優先」
@@ -2697,7 +2784,7 @@ const S = {
   filter: "all", pview: "gantt", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
-  prefs: loadPrefs(), group: "all", pendingReplan: null, addAt: null, last: null,
+  prefs: loadPrefs(), group: "all", pendingReplan: null, addAt: null, last: null, ruleError: "",
   wperiod: "week", wdate: clock().date,
   reportPanel: null,
 };
@@ -2730,6 +2817,7 @@ function renderBody() {
   if (S.screen === "project") {
     return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, addAt: S.addAt, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
+  if (S.screen === "settings") return renderSettings(S.data, today, { ruleError: S.ruleError });
   if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
   return renderSchedule(S.data, today, scheduleOpts());
 }
@@ -2891,6 +2979,22 @@ async function startup() {
   render();
 }
 
+/** 設定タブのキーワード規則の編集。エラーは、規則の表の上に出す（描き直しで入力欄が元の値に戻る） */
+function ruleApply(edit, msg) {
+  try { edit(S.data); } catch (e) { S.ruleError = e.message; render(); return false; }
+  S.ruleError = "";
+  return apply(edit, msg);
+}
+
+/** 規則の追加。エラーは通知だけにして、入力欄は描き直さない（打った文字を残す） */
+function addRule() {
+  const kw = view.querySelector("[data-rnew]")?.value ?? "", pid = view.querySelector("[data-rnewpj]")?.value;
+  const edit = (d) => setProjectRule(d, kw, pid);
+  try { edit(S.data); } catch (e) { toast(e.message); return; }
+  S.ruleError = "";
+  apply(edit, "規則を保存しました（同じキーワードは置き換えます）");
+}
+
 /** 見出し行の「＋」の大項目・中項目（data-ag / data-asg）を、追加するタスクの置き場にする */
 const placeOf = (el) => ({ group: el.dataset.ag ?? "", subgroup: el.dataset.asg ?? "" });
 
@@ -2952,6 +3056,7 @@ document.querySelector("nav").addEventListener("click", (e) => {
   const b = e.target.closest("[role=tab]");
   if (!b) return;
   S.screen = b.id.slice(4);
+  S.ruleError = "";
   clearSel();
   S.resetScroll = true;
   render();
@@ -2997,6 +3102,9 @@ view.addEventListener("click", (e) => {
   const { date: today, time } = clock();
   const now = clock();
 
+  if (q("[data-radd]")) { addRule(); return; }
+  const rdel = q("[data-rdel]");
+  if (rdel) { ruleApply((d) => removeProjectRule(d, rdel.dataset.rdel), "規則を削除しました"); return; }
   if (q("[data-reopen]")) { openFile("reopen"); return; }
   if (q("[data-openfile]")) { openFile("choose"); return; }
   /* プロジェクト画面 */
@@ -3200,6 +3308,8 @@ function onChange(el) {
     } else p[k] = el.value;
     return;
   }
+  if (el.dataset.rkw !== undefined) { const old = el.dataset.rkw; ruleApply((d) => renameProjectRule(d, old, el.value), "キーワードを変更しました"); return; }
+  if (el.dataset.rpj !== undefined) { const kw = el.dataset.rpj, pid = el.value; ruleApply((d) => setProjectRule(d, kw, pid), "プロジェクトを変更しました"); return; }
   if (el.dataset.groupfilter !== undefined) { S.group = el.value; S.resetScroll = true; render(); return; }
   if (el.dataset.pf) {
     const k = el.dataset.pf, pid = el.dataset.pid;
@@ -3401,6 +3511,7 @@ document.addEventListener("keydown", (e) => {
 view.addEventListener("keydown", (e) => {
   // 日本語入力の変換確定の Enter(isComposing)では追加しない
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-gadd]")) { e.preventDefault(); submitGAdd(e.target); return; }
+  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-rnew]")) { e.preventDefault(); addRule(); return; }
   if (e.key === "Escape" && e.target.matches("[data-gadd]")) { S.addAt = null; render(); return; }
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-waitparty]")) { e.preventDefault(); submitWait(e.target.dataset.waitparty); return; }
   if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-pick]")) { e.preventDefault(); e.target.click(); }
