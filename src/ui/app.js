@@ -720,3 +720,7 @@ view.addEventListener("keydown", (e) => {
 
 render();
 startup();
+
+// ヘッダーは上端に固定する（theme.css）。その高さを --hh に入れ、固定の帯や「今日の優先」がヘッダーの下に付くようにする
+const topbar = document.querySelector("header.top");
+if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(() => document.documentElement.style.setProperty("--hh", `${topbar.offsetHeight}px`)).observe(topbar);

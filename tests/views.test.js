@@ -386,6 +386,11 @@ test("ガント: 編集画面の凡例は上端（固定の帯）にあり、レ
   assert.ok(!ro.includes('class="gtop"') && ro.indexOf('class="gscroll"') < ro.indexOf('class="legend"'));
 });
 
+test("今日の優先のパネルは、固定表示のための prio クラスを持つ（プロジェクト画面・スケジュール画面）", () => {
+  assert.ok(renderProjects(load(), TODAY, { filter: "all", view: "list" }).includes('<section class="panel prio"'));
+  assert.ok(sched(load()).includes('<section class="panel prio"'));
+});
+
 test("利用者入力（group 名）はエスケープされる", () => {
   const d = load(); d.tasks.find((t) => t.id === "A1").group = "<img src=x onerror=1>";
   const html = renderProjects(d, TODAY, { filter: "A", view: "gantt", window: "m6" }) + renderProjects(d, TODAY, { filter: "A", view: "list" });
