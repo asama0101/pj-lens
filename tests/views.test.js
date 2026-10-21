@@ -6,6 +6,7 @@ import { renderProjects } from "../src/ui/views/project.js";
 import { renderGantt } from "../src/ui/views/gantt.js";
 import { renderPrio } from "../src/ui/views/prio.js";
 import { renderSettings } from "../src/ui/views/settings.js";
+import { renderInboxBar } from "../src/ui/views/inboxpanel.js";
 import { ruleMeetingCounts } from "../src/core/rules.js";
 import { renderSchedule, snapStart } from "../src/ui/views/schedule.js";
 import { taskActual } from "../src/core/sessions.js";
@@ -542,4 +543,89 @@ test("設定: WBS の取り込み記録（ファイル名・日付・件数）�
   assert.equal(count(none, /記録なし/g), 3);
   const empty = { ...load(), projects: [], tasks: [], events: [] };
   assert.ok(setv(empty).includes("プロジェクトがありません"));
+});
+
+// ---- 受信箱の帯と引き出し ----
+const NOW_MS = Date.parse("2026-10-21T10:01:00.000Z");
+const T0 = "2026-10-21T10:00:00.000Z";
+const reqOf = (id, status, extra = {}) => ({ id, at: T0, projectId: "A", status, thread: [{ role: "user", at: T0, text: `依頼 ${id}` }], proposal: null, result: null, ...extra });
+const PROPOSAL = {
+  summary: "3 種類の変更案", reason: "ベンダーX の納期回答が遅れた", cause: "ベンダー",
+  ops: [{ op: "moveDue", taskId: "A3", deltaDays: 45 }],
+  warnings: ["本社コアSW更改の期限（2027-03-31）を超えます（最後のタスクは 2027-04-10）"],
+  base: { tasks: {}, projects: ["A"] },
+  sections: [
+    { kind: "add", rows: [{ ref: "t1", title: "疎通確認テスト", projectId: "A", group: "構築", subgroup: "検証環境", due: "2026-12-10", start: "2026-10-21", predecessors: ["A4"] }] },
+    { kind: "pred", rows: [{ taskId: "A5", predId: "A3", action: "add" }, { taskId: "A4", predId: "A3", action: "same" }] },
+    { kind: "due", rows: [{ taskId: "A3", title: "機器の発注（ベンダーX）", oldDue: "2026-10-16", newDue: "2026-11-30", reason: "指定（+45日）" }] },
+  ],
+};
+const withInbox = (requests, watching = null) => { const d = load(); d.inbox = { watching, requests }; return d; };
+const UI = (o = {}) => ({ open: false, canWrite: true, nowMs: NOW_MS, text: "", projectId: "", replies: {}, reasons: {}, causes: {}, ...o });
+const ib = (d, o) => renderInboxBar(d, UI(o));
+
+test("受信箱の帯（閉じている）: 見出し・開閉・状態（見ています／見ていません）・提案の印。入力欄は出さない", () => {
+  const html = ib(withInbox([reqOf("R1", "proposed", { proposal: PROPOSAL })], { at: "2026-10-21T10:00:30.000Z" }));
+  assert.ok(html.includes("data-ib-toggle") && html.includes("Claude Code に依頼する"));
+  assert.ok(html.includes("見ています") && !html.includes("見ていません"));
+  assert.ok(html.includes("提案が 1 件届いています"));
+  assert.ok(!html.includes("data-ib-send") && !html.includes("data-ib-text"));
+  const off = ib(withInbox([], { at: "2026-10-21T09:58:00.000Z" }));
+  assert.ok(off.includes("見ていません") && !off.includes("提案が"));
+  assert.ok(ib(withInbox([])).includes("見ていません"), "印なし");
+});
+
+test("受信箱の引き出し（開いている）: 対象の選択・書き方の例・入力（下書きを保つ）・送信。見ていないときは /pj-lens:watch を案内", () => {
+  const html = ib(withInbox([]), { open: true, text: "A3 が 5 日遅れた", projectId: "B" });
+  assert.ok(html.includes("data-ib-send") && html.includes("data-ib-text") && html.includes(">A3 が 5 日遅れた</textarea>"));
+  assert.ok(/<select[^>]*data-ib-project/.test(html) && html.includes('<option value="">すべて</option>') && /<option value="B" selected>/.test(html));
+  for (const k of ["due", "pred", "add"]) assert.ok(html.includes(`data-ib-example="${k}"`), k);
+  assert.ok(html.includes("/pj-lens:watch"));
+  assert.ok(!ib(withInbox([], { at: "2026-10-21T10:00:50.000Z" }), { open: true }).includes("/pj-lens:watch"), "見ているときは案内しない");
+  assert.ok(html.includes("まだ依頼はありません"));
+});
+
+test("受信箱の履歴: 新しい順に、状態（送信済み・処理中・聞き返し・提案・反映済み・却下・失敗）を出す", () => {
+  const reqs = [reqOf("R1", "applied", { result: { at: T0, by: "html", summary: "期限 1 件を反映しました" } }), reqOf("R2", "rejected"), reqOf("R3", "pending"), reqOf("R4", "working"), reqOf("R5", "question", { thread: [{ role: "user", at: T0, text: "依頼 R5" }, { role: "claude", at: T0, text: "どのプロジェクトですか" }] }), reqOf("R6", "proposed", { proposal: PROPOSAL }), reqOf("R7", "failed", { thread: [{ role: "user", at: T0, text: "依頼 R7" }, { role: "claude", at: T0, text: "提案のあとにデータが変わりました" }] })];
+  const html = ib(withInbox(reqs), { open: true });
+  const order = [...html.matchAll(/data-ib-req="(R\d)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["R7", "R6", "R5", "R4", "R3", "R2", "R1"]);
+  for (const w of ["反映済み", "却下", "送信済み", "処理中", "聞き返しがあります", "提案があります", "失敗", "期限 1 件を反映しました"]) assert.ok(html.includes(w), w);
+});
+
+test("提案のカード: 期限・先行・登録の表、警告、理由・原因の入力、承認・修正の依頼・却下", () => {
+  const html = ib(withInbox([reqOf("R1", "proposed", { proposal: PROPOSAL })]), { open: true, reasons: { R1: "手で直した理由" }, causes: { R1: "社内" } });
+  assert.ok(html.includes("疎通確認テスト") && html.includes("構築") && html.includes("検証環境") && html.includes("2026-12-10") || html.includes("12/10"));
+  assert.ok(html.includes("A3") && html.includes("機器の発注（ベンダーX）") && html.includes("10/16") && html.includes("11/30") && html.includes("指定（+45日）"));
+  assert.ok(html.includes("A5") && html.includes("追加") && html.includes("変更なし"));
+  assert.ok(html.includes("2027-04-10"), "警告");
+  assert.ok(html.includes('data-ib-reason="R1"') && html.includes('value="手で直した理由"'));
+  assert.ok(/<option selected>社内<\/option>/.test(html) || /<option[^>]*selected[^>]*>社内</.test(html));
+  for (const a of ['data-ib-approve="R1"', 'data-ib-reply="R1"', 'data-ib-replysend="R1"', 'data-ib-reject="R1"']) assert.ok(html.includes(a), a);
+  const dflt = ib(withInbox([reqOf("R1", "proposed", { proposal: PROPOSAL })]), { open: true });
+  assert.ok(dflt.includes('value="ベンダーX の納期回答が遅れた"'), "理由の既定は提案の理由");
+});
+
+test("聞き返し・失敗: 質問と返信欄、再提案のボタン", () => {
+  const q = reqOf("R1", "question", { thread: [{ role: "user", at: T0, text: "依頼" }, { role: "claude", at: T0, text: "どのプロジェクトですか" }] });
+  const f = reqOf("R2", "failed", { thread: [{ role: "user", at: T0, text: "依頼" }, { role: "claude", at: T0, text: "提案のあとにデータが変わりました" }] });
+  const html = ib(withInbox([q, f]), { open: true, replies: { R1: "A です" } });
+  assert.ok(html.includes("どのプロジェクトですか") && html.includes('data-ib-reply="R1"') && html.includes('value="A です"') && html.includes('data-ib-replysend="R1"'));
+  assert.ok(html.includes("提案のあとにデータが変わりました") && html.includes('data-ib-retry="R2"') && html.includes("もう一度提案してもらう"));
+  assert.ok(!html.includes('data-ib-approve'));
+});
+
+test("受信箱: 直接保存に対応しない環境では、理由を出して、開閉・入力・送信を出さない", () => {
+  const html = ib(withInbox([]), { open: true, canWrite: false });
+  assert.ok(html.includes("ファイルへの直接保存が必要です"));
+  assert.ok(!html.includes("data-ib-toggle") && !html.includes("data-ib-send") && !html.includes("data-ib-text"));
+});
+
+test("受信箱: 依頼・質問・提案の文字は escape される。inbox が無いデータでも落ちない", () => {
+  const evil = '<img src=x onerror=1>"&';
+  const p = { ...PROPOSAL, summary: evil, warnings: [evil], sections: [{ kind: "add", rows: [{ ref: "t", title: evil, projectId: "A", group: evil, subgroup: null, due: "2026-12-10", start: null, predecessors: [] }] }] };
+  const html = ib(withInbox([reqOf("R1", "proposed", { proposal: p, thread: [{ role: "user", at: T0, text: evil }, { role: "claude", at: T0, text: evil }] })]), { open: true, text: evil });
+  assert.ok(!html.includes("<img src=x") && html.includes("&lt;img src=x"));
+  assert.doesNotThrow(() => ib(load(), { open: true }));
+  assert.doesNotThrow(() => ib(load()));
 });
