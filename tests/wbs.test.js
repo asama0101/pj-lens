@@ -188,3 +188,15 @@ test("plan: 同じ件名の手入力のタスクが複数あるときは曖昧�
   assert.equal(p.add.length, 3);
   assert.equal(p.update.length, 0);
 });
+
+test("applyWbsImport: 取り込み記録（ファイル名・日付・件数）を、プロジェクトごとに最後の 1 件だけ書く。変更がなければ書かない", () => {
+  const d0 = empty();
+  const d1 = applyWbsImport(d0, "A", planWbsImport(d0, "A", rows()), { today: TODAY, source: "plan.xlsx" });
+  assert.deepEqual(d1.settings.wbsImports.A, { file: "plan.xlsx", at: TODAY, added: 3, updated: 0 });
+  const changed = rows().map((r, i) => (i === 0 ? { ...r, due: "2026-11-11" } : r));
+  const d2 = applyWbsImport(d1, "A", planWbsImport(d1, "A", changed), { today: "2026-10-25" });
+  assert.deepEqual(d2.settings.wbsImports.A, { file: null, at: "2026-10-25", added: 0, updated: 1 }, "source なしは null で、前の記録を置き換える");
+  const same = applyWbsImport(d2, "A", planWbsImport(d2, "A", changed), { today: "2026-10-30", source: "x.xlsx" });
+  assert.equal(same, d2, "変更がなければ、データも記録も変えない");
+  assert.equal(d0.settings.wbsImports, undefined, "元のデータは変わらない");
+});

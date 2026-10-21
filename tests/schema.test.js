@@ -111,6 +111,15 @@ test("projectRules の keyword が空、または projectId が存在しない�
   assert.ok(hit(v(b).errors, "projectRules"));
 });
 
+test("wbsImports は、存在するプロジェクトのキーと、file（文字列か null）・at（日付）・件数（0 以上の整数）を持つ。不正なら error", () => {
+  const ok = load(); ok.settings.wbsImports = { A: { file: "plan.xlsx", at: "2026-10-20", added: 2, updated: 0 }, B: { file: null, at: "2026-10-20", added: 0, updated: 1 } };
+  assert.deepEqual(v(ok).errors, []);
+  for (const bad of [{ ZZ: { file: null, at: "2026-10-20", added: 0, updated: 0 } }, { A: { file: 3, at: "2026-10-20", added: 0, updated: 0 } }, { A: { file: null, at: "10/20", added: 0, updated: 0 } }, { A: { file: null, at: "2026-10-20", added: -1, updated: 0 } }, { A: { file: null, at: "2026-10-20", added: 1.5, updated: 0 } }, { A: null }]) {
+    const d = load(); d.settings.wbsImports = bad;
+    assert.ok(hit(v(d).errors, "wbsImports"), JSON.stringify(bad));
+  }
+});
+
 test("wbsMappings のキーが存在しないプロジェクト、値が文字列でないなら error", () => {
   const a = load(); a.settings.wbsMappings = { ZZ: { title: "B" } };
   assert.ok(hit(v(a).errors, "wbsMappings"));
