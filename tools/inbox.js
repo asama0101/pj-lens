@@ -7,7 +7,7 @@ import { today } from "../src/core/dates.js";
 import {
   submitRequest, claimRequest, askQuestion, setProposal, rejectRequest, markApplied, markFailed, touchWatching, getRequest,
 } from "../src/core/inbox.js";
-import { planOps, applyProposal } from "../src/ui/inboxops.js";
+import { planOps, applyProposal, summarizeSections } from "../src/ui/inboxops.js";
 
 const USAGE = `使い方: node tools/inbox.js <コマンド> <data.json> ...
   submit  <data.json> <projectId|-> <text>        依頼を足す（テスト・手動用）
@@ -33,12 +33,6 @@ function save(path, data) {
   writeFileSync(path, JSON.stringify(data, null, 2) + "\n");
 }
 
-const counts = (sections) => ["due", "pred", "add"].map((k) => [k, sections.find((s) => s.kind === k)?.rows.filter((r) => r.action !== "same").length ?? 0]);
-const summarize = (sections) => {
-  const [due, pred, add] = counts(sections).map(([, n]) => n);
-  return `期限 ${due} 件・先行 ${pred} 件・登録 ${add} 件`;
-};
-
 const COMMANDS = {
   submit: [3, (d, [path, pid, text]) => {
     const next = submitRequest(d, { text, projectId: pid === "-" ? null : pid, now: now() });
@@ -58,7 +52,7 @@ const COMMANDS = {
     const cause = o.cause ?? "その他";
     if (!CAUSES.includes(cause)) throw new Error(`原因は ${CAUSES.join("・")} のいずれかにしてください`);
     const plan = planOps(d, readJson(opsFile), { today: today() });
-    const summary = o.summary ?? `提案: ${summarize(plan.sections)}`;
+    const summary = o.summary ?? `提案: ${summarizeSections(plan.sections)}`;
     const proposal = { ...plan, summary, reason: o.reason ?? summary, cause };
     save(path, setProposal(d, id, proposal, now()));
     out({ ok: true, id, status: "proposed", sections: plan.sections, warnings: plan.warnings });
@@ -74,7 +68,7 @@ const COMMANDS = {
       if (e.code === "stale") save(path, markFailed(d, id, e.message, now()));
       throw e;
     }
-    save(path, markApplied(applied, id, { by: "claude", summary: `${summarize(r.proposal.sections)}を反映しました`, now: now() }));
+    save(path, markApplied(applied, id, { by: "claude", summary: `${summarizeSections(r.proposal.sections)}を反映しました`, now: now() }));
     out({ ok: true, id, status: "applied" });
   }],
   reject: [2, (d, [path, id]) => { save(path, rejectRequest(d, id, now())); out({ ok: true, id, status: "rejected" }); }],

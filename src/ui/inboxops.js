@@ -146,6 +146,12 @@ function simulate(data, ops, today) {
   return { data: w, sections, warnings, base: { tasks: baseTasks, projects: [...projects].sort() }, moves, inboxIds: [...inboxIds], predCount, addCount };
 }
 
+/** 変更案（sections）の要約。例: 「期限 2 件・先行 1 件・登録 2 件」（変更なしの先行は数えない） */
+export function summarizeSections(sections) {
+  const n = (kind) => sections.find((s) => s.kind === kind)?.rows.filter((r) => r.action !== "same").length ?? 0;
+  return `期限 ${n("due")} 件・先行 ${n("pred")} 件・登録 ${n("add")} 件`;
+}
+
 /** 操作の計画（データは変えない）。例外: 不明なタスク・プロジェクト、循環、別のプロジェクトの先行、完了済みの moveDue、不明な op、など */
 export function planOps(data, ops, { today }) {
   const s = simulate(data, ops, today);

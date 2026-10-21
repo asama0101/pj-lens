@@ -89,6 +89,12 @@ export function createStore(deps = {}) {
     return load();
   }
 
+  /** ファイルの最新を読むだけ（読込時点は変えない。他の更新があるかの確認用） */
+  async function peek() {
+    if (!handle) throw new Error("ファイルが選ばれていません");
+    return JSON.parse(await (await handle.getFile()).text());
+  }
+
   async function reload() {
     if (!handle) throw new Error("ファイルが選ばれていません");
     return load();
@@ -112,5 +118,22 @@ export function createStore(deps = {}) {
     }
   }
 
-  return { restore, reopen, choose, lastFile, reload, save, get hasFile() { return !!handle; }, get rememberFailed() { return rememberFailed; } };
+  /**
+   * 保存する。他（Claude Code など）がファイルを更新していて競合したときは、最新のファイルを読み直して、同じ編集（edit: data → data）を
+   * 最新のデータに当て、もう一度だけ保存する（他の更新も、この編集も消さない）。成功したら、保存したデータを data で返す
+   */
+  async function saveMerged(edit, data) {
+    const first = await save(data);
+    if (first.ok || first.reason !== "conflict") return { ...first, data };
+    let merged;
+    try {
+      merged = edit(await reload());
+    } catch (e) {
+      return { ok: false, reason: "error", message: e?.message ?? String(e), data };
+    }
+    const second = await save(merged);
+    return second.ok ? { ok: true, data: merged } : { ...second, data };
+  }
+
+  return { restore, reopen, choose, lastFile, peek, reload, save, saveMerged, get hasFile() { return !!handle; }, get rememberFailed() { return rememberFailed; } };
 }

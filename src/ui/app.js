@@ -11,6 +11,7 @@ const S = {
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
   prefs: loadPrefs(), group: "all", pendingReplan: null, addAt: null, last: null, ruleError: "",
+  ib: { open: false, text: loadInboxDraft(), projectId: "", replies: {}, reasons: {}, causes: {} },
   wperiod: "week", wdate: clock().date,
   reportPanel: null,
 };
@@ -54,6 +55,7 @@ function render() {
   document.querySelectorAll("nav [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.id === "tab-" + S.screen)));
   $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="prio" aria-pressed="${S.prefs.showPrio}" title="画面右の「今日の優先」を出したり隠したりします">今日の優先</button><button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
+  renderBar();
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
   const prev = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollLeft);
   const keepFocus = focusSelector(document.activeElement);
@@ -154,26 +156,47 @@ async function makeReport() {
 }
 
 let saveChain = Promise.resolve();
-function persist() {
+let pendingEdits = []; // 保存がまだ済んでいない編集（{ edit, merge }）。競合したとき、最新のファイルに当て直す
+let inflight = 0;      // 保存の待ち・実行中の数
+const CONFLICT = "他で更新されました。再読込してください。(再読込すると、保存できていない画面の変更は消えます)";
+function persist(entry) {
+  if (entry) pendingEdits.push(entry);
+  inflight++;
   saveChain = saveChain.then(async () => {
-    if (!store.hasFile) { banner("このブラウザでは直接保存できません。変更は「JSON を書き出す」で保存してください。", { download: true }); return; }
-    const r = await store.save(S.data);
-    if (r.ok) { if (S.saveFailed) banner(""); S.saveFailed = false; return; }
-    S.saveFailed = true;
-    banner(r.reason === "conflict" ? "他で更新されました。再読込してください。(再読込すると、保存できていない画面の変更は消えます)" : r.message, { reload: r.reason === "conflict", download: true });
+    try {
+      if (!store.hasFile) { banner("このブラウザでは直接保存できません。変更は「JSON を書き出す」で保存してください。", { download: true }); return; }
+      const edits = pendingEdits.slice();
+      // 編集が「いまのデータへの差分」として書かれているときだけ、競合を最新のファイルへの当て直しで吸収する（定数を返す編集は、そのまま保存する）
+      const mergeable = edits.every((e) => e.merge);
+      const r = mergeable ? await store.saveMerged((d) => edits.reduce((acc, e) => e.edit(acc), d), S.data) : await store.save(S.data);
+      if (r.ok) {
+        const rest = pendingEdits.filter((e) => !edits.includes(e));
+        pendingEdits = rest;
+        if (r.data && r.data !== S.data) { // 最新のファイルに当て直して保存した。あとから足された編集を、その上に重ねて、画面に出す
+          if (rest.every((e) => e.merge)) { try { S.data = rest.reduce((acc, e) => e.edit(acc), r.data); render(); } catch { S.saveFailed = true; banner(CONFLICT, { reload: true, download: true }); return; } }
+          else { S.saveFailed = true; banner(CONFLICT, { reload: true, download: true }); return; }
+        }
+        if (S.saveFailed) banner("");
+        S.saveFailed = false;
+        return;
+      }
+      S.saveFailed = true;
+      banner(r.reason === "conflict" ? CONFLICT : r.message, { reload: r.reason === "conflict", download: true });
+    } finally { inflight--; }
   });
 }
 
-/** 編集を適用して描画・保存する。edit が例外を投げたら理由を表示して、データは変えない */
-function apply(edit, msg, { partial = false, quiet = false } = {}) {
+/** 編集を適用して描画・保存する。edit が例外を投げたら理由を表示して、データは変えない。merge: false は、edit が「いまのデータへの差分」ではなく、決まった結果を返すとき */
+function apply(edit, msg, { partial = false, quiet = false, merge = true } = {}) {
   let next;
   try { next = edit(S.data); } catch (e) { toast(e.message); if (partial) renderCal(); else render(); return false; }
   S.data = next;
   if (partial) renderCal(); else if (!quiet) render();
   if (msg) toast(msg);
-  persist();
+  persist({ edit, merge });
   return true;
 }
+const applyFixed = (data, msg) => apply(() => data, msg, { merge: false });
 
 /* ---------- ファイルを開く ---------- */
 function loaded(data) {
@@ -181,6 +204,7 @@ function loaded(data) {
     if (!Array.isArray(data?.[k])) throw new Error(`データの形が違います（${k} がありません）`);
   }
   S.data = data;
+  pendingEdits = [];
   S.pendingReplan = null;
   S.ruleError = "";
   S.openError = "";
@@ -330,7 +354,7 @@ $("filebar").addEventListener("click", async (e) => {
     await saveChain;
     if (S.saveFailed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }
     S.confirmRefresh = false;
-    try { S.data = await store.reload(); S.ruleError = ""; S.saveFailed = false; banner(""); render(); toast("ファイルから読み直しました"); } catch (err) { toast(err.message); }
+    try { S.data = await store.reload(); pendingEdits = []; S.ruleError = ""; S.saveFailed = false; banner(""); render(); toast("ファイルから読み直しました"); } catch (err) { toast(err.message); }
     return;
   }
   if (e.target.closest("[data-openfile]")) openFile("choose");
@@ -341,7 +365,7 @@ $("filebar").addEventListener("click", async (e) => {
 $("banner").addEventListener("click", async (e) => {
   if (e.target.closest("[data-download]")) downloadJson();
   if (e.target.closest("[data-reload]")) {
-    try { S.data = await store.reload(); S.ruleError = ""; S.saveFailed = false; banner(""); render(); toast("再読込しました"); } catch (err) { toast(err.message); }
+    try { S.data = await store.reload(); pendingEdits = []; S.ruleError = ""; S.saveFailed = false; banner(""); render(); toast("再読込しました"); } catch (err) { toast(err.message); }
   }
 });
 
@@ -474,7 +498,7 @@ view.addEventListener("click", (e) => {
     const r = addSession(S.data, id, { date: S.sdate, start: toHHMM(st), end: toHHMM(st + 60) }, now);
     if (r.error) { toast(r.error); return; }
     S.picked = null;
-    apply(() => r.data, `${S.data.tasks.find((t) => t.id === id).title} を ${hm(st)} に配置しました${r.warning ? `(${r.warning})` : ""}`);
+    applyFixed(r.data, `${S.data.tasks.find((t) => t.id === id).title} を ${hm(st)} に配置しました${r.warning ? `(${r.warning})` : ""}`);
     return;
   }
   if (cleared) render();
@@ -602,7 +626,7 @@ function onChange(el) {
       let base;
       try { base = updateTask(S.data, id, { due: el.value }, today); } catch (e) { toast(e.message); render(); return; }
       if (dueChange(id, base, S.data, (d) => updateTask(d, id, { due: el.value }, today))) return;
-      apply(() => base, "変更を保存しました");
+      applyFixed(base, "変更を保存しました");
       return;
     }
     if (f === "group" || f === "subgroup") S.hlId = id; // 該当グループへ移った行を強調して見失わないようにする
@@ -690,7 +714,7 @@ view.addEventListener("mousedown", (e) => {
     if (isMtg) apply((d) => updateMeeting(d, id, { end: e2 }), `会議「${rec.title}」の終了を ${hm(end)} に変更しました`);
     else {
       const r = resizeSession(S.data, id, e2, clock());
-      if (r.error) { toast(r.error); render(); } else apply(() => r.data, `終了を ${hm(end)} に変更しました`);
+      if (r.error) { toast(r.error); render(); } else applyFixed(r.data, `終了を ${hm(end)} に変更しました`);
     }
   };
   document.addEventListener("mousemove", move);
@@ -758,7 +782,7 @@ view.addEventListener("mousedown", (e) => {
     }
     if (result.error) { toast(result.error); render(); return; }
     if (kind === "t" && dueChange(t.id, result.data, S.data, dragEdit)) return;
-    apply(() => result.data, `${msg}${result.warning ? `。${result.warning}` : ""}`);
+    applyFixed(result.data, `${msg}${result.warning ? `。${result.warning}` : ""}`);
   };
   document.addEventListener("mousemove", move);
   document.addEventListener("mouseup", up);
@@ -777,6 +801,149 @@ view.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && e.target.matches("[data-gadd]")) { S.addAt = null; render(); return; }
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-waitparty]")) { e.preventDefault(); submitWait(e.target.dataset.waitparty); return; }
   if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-pick]")) { e.preventDefault(); e.target.click(); }
+});
+
+/* ---------- Claude Code への依頼（画面下の帯） ---------- */
+const nowIso = () => new Date().toISOString();
+const IB_EXAMPLES = {
+  due: "<タスクの ID> が <N> 日遅れた（原因: ベンダー）。",
+  pred: "<先行の ID> の後に <後続の ID>, <後続の ID> を結んで。",
+  add: "次を登録して: <件名> <期限> <大項目▸中項目> 先行 <ID>",
+};
+
+/** 打ちかけの入力（依頼・対象・返信・理由・原因）を S.ib に取り込む。描き直しで消さないため */
+function captureBar() {
+  const el = $("claudebar");
+  const t = el.querySelector("[data-ib-text]");
+  if (t) S.ib.text = t.value;
+  const p = el.querySelector("[data-ib-project]");
+  if (p) S.ib.projectId = p.value;
+  for (const [attr, key] of [["data-ib-reply", "replies"], ["data-ib-reason", "reasons"], ["data-ib-cause", "causes"]]) {
+    for (const x of el.querySelectorAll(`[${attr}]`)) S.ib[key][x.getAttribute(attr)] = x.value;
+  }
+}
+
+/** 描き直しのあとに、フォーカスを戻す入力欄の特定（data-ib-text など。依頼ごとの欄は ID つき） */
+function barSelector(a) {
+  const d = a.dataset;
+  if (d.ibText !== undefined) return "[data-ib-text]";
+  if (d.ibProject !== undefined) return "[data-ib-project]";
+  for (const k of ["ibReply", "ibReason", "ibCause"]) if (d[k] !== undefined) return `[data-${k.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase())}="${CSS.escape(d[k])}"]`;
+  return null;
+}
+
+let barSig = "";
+function renderBar() {
+  const el = $("claudebar");
+  if (!S.data) { el.innerHTML = ""; barSig = ""; return; }
+  captureBar();
+  const a = document.activeElement;
+  const keep = a && el.contains(a) ? { sel: barSelector(a), s: a.selectionStart, e: a.selectionEnd } : null;
+  el.innerHTML = renderInboxBar(S.data, { ...S.ib, canWrite: store.hasFile, nowMs: Date.now() });
+  barSig = barSignature();
+  if (keep?.sel) {
+    const n = el.querySelector(keep.sel);
+    if (n) { n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch { /* 選択できない欄 */ } }
+  }
+}
+const barSignature = () => JSON.stringify([S.data?.inbox?.requests, isWatching(S.data ?? {}, Date.now()), S.ib.open, store.hasFile]);
+
+function sendRequest() {
+  captureBar();
+  const text = S.ib.text.trim();
+  if (!text) { toast("依頼を入力してください"); return; }
+  const projectId = S.ib.projectId || null, now = nowIso();
+  if (apply((d) => submitRequest(d, { text, projectId, now }), "依頼を送りました。Claude Code が受け取ると、状態が変わります")) {
+    S.ib.text = "";
+    saveInboxDraft("");
+    renderBar();
+  }
+}
+
+function replyRequest(id) {
+  captureBar();
+  const text = (S.ib.replies[id] ?? "").trim();
+  if (!text) { toast("返信を入力してください"); return; }
+  const now = nowIso();
+  if (apply((d) => replyToRequest(d, id, text, now), "返信しました")) { delete S.ib.replies[id]; renderBar(); }
+}
+
+/** 提案の承認。HTML 自身が、その場で適用して保存する。先に Claude Code が適用・却下していたら、何もしない。提案のあとにデータが変わっていたら、失敗にする */
+function approveRequest(id) {
+  captureBar();
+  const req = getRequest(S.data, id);
+  if (!req || req.status !== "proposed") { toast("この依頼は、すでに処理されています"); pollInbox(true); return; }
+  const reason = String(S.ib.reasons[id] ?? req.proposal.reason ?? "").trim();
+  const cause = S.ib.causes[id] ?? req.proposal.cause ?? "その他";
+  if (!reason) { toast("変更履歴に残す理由を入力してください"); return; }
+  const today = clock().date, now = nowIso();
+  const ok = apply((d) => {
+    const cur = getRequest(d, id);
+    if (cur?.status !== "proposed") throw new Error("この依頼は、すでに処理されています");
+    let next;
+    try { next = applyProposal(d, cur.proposal, { reason, cause, today }); }
+    catch (e) { if (e.code === "stale") return markFailed(d, id, e.message, now); throw e; }
+    return markApplied(next, id, { by: "html", summary: `${summarizeSections(cur.proposal.sections)}を反映しました`, now });
+  }, null);
+  if (!ok) return;
+  const after = getRequest(S.data, id)?.status;
+  toast(after === "applied" ? "反映しました" : "提案のあとにデータが変わったので、反映しませんでした。「もう一度提案してもらう」を押してください");
+}
+
+let polling = false, pollTick = 0;
+/** ファイルを読み直して、Claude Code の更新（受け取り・提案・見ている印）を画面に出す。帯が開いている、または処理中の依頼があるときは 4 秒ごと、そうでなければ 16 秒ごと */
+async function pollInbox(force = false) {
+  if (polling || !S.data || !store.hasFile || document.visibilityState === "hidden") return;
+  const busy = (S.data.inbox?.requests ?? []).some((r) => ["pending", "working", "question", "proposed"].includes(r.status));
+  if (!force && !S.ib.open && !busy && ++pollTick % 4 !== 0) return;
+  if (S.saveFailed || inflight || pendingEdits.length) return;
+  polling = true;
+  try {
+    const strip = (d) => JSON.stringify({ ...d, inbox: undefined });
+    const probe = await store.peek(); // 読むだけ（読み込んだことにしない）。他の更新があるときだけ、読み込み直す
+    if (JSON.stringify(probe) === JSON.stringify(S.data)) { if (barSignature() !== barSig) renderBar(); return; }
+    const fresh = await store.reload();
+    if (pendingEdits.length) { // 読んでいる間に、画面で編集があった。最新のファイルの上に重ねる（保存は、その編集の保存が行う）
+      if (!pendingEdits.every((e) => e.merge)) { S.saveFailed = true; banner(CONFLICT, { reload: true, download: true }); return; }
+      try { S.data = pendingEdits.reduce((d, e) => e.edit(d), fresh); } catch { S.saveFailed = true; banner(CONFLICT, { reload: true, download: true }); return; }
+      render();
+      return;
+    }
+    const bodyChanged = strip(fresh) !== strip(S.data);
+    S.data = fresh;
+    if (bodyChanged) render(); else renderBar();
+  } catch { /* 読めないときは、次の回に */ } finally { polling = false; }
+}
+setInterval(pollInbox, 4000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") pollInbox(true); });
+
+$("claudebar").addEventListener("click", (e) => {
+  const q = (sel) => e.target.closest(sel);
+  if (q("[data-ib-toggle]")) { captureBar(); S.ib.open = !S.ib.open; renderBar(); if (S.ib.open) pollInbox(true); return; }
+  const ex = q("[data-ib-example]");
+  if (ex) {
+    captureBar();
+    const t = IB_EXAMPLES[ex.dataset.ibExample] ?? "";
+    S.ib.text = S.ib.text.trim() ? `${S.ib.text.replace(/\s+$/, "")}\n${t}` : t;
+    saveInboxDraft(S.ib.text);
+    renderBar();
+    $("claudebar").querySelector("[data-ib-text]")?.focus();
+    return;
+  }
+  if (q("[data-ib-send]")) { sendRequest(); return; }
+  const ap = q("[data-ib-approve]"); if (ap) { approveRequest(ap.dataset.ibApprove); return; }
+  const rj = q("[data-ib-reject]"); if (rj) { const id = rj.dataset.ibReject, now = nowIso(); apply((d) => rejectRequest(d, id, now), "却下しました"); return; }
+  const rs = q("[data-ib-replysend]"); if (rs) { replyRequest(rs.dataset.ibReplysend); return; }
+  const rt = q("[data-ib-retry]"); if (rt) { const id = rt.dataset.ibRetry, now = nowIso(); apply((d) => retryRequest(d, id, now), "もう一度提案を頼みました"); }
+});
+$("claudebar").addEventListener("input", (e) => {
+  if (e.target.matches("[data-ib-text]")) { S.ib.text = e.target.value; saveInboxDraft(S.ib.text); }
+});
+$("claudebar").addEventListener("change", (e) => { if (e.target.matches("[data-ib-project],[data-ib-cause],[data-ib-reason],[data-ib-reply]")) captureBar(); });
+$("claudebar").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.isComposing) return;
+  if (e.target.matches("[data-ib-reply]")) { e.preventDefault(); replyRequest(e.target.dataset.ibReply); }
+  else if (e.target.matches("[data-ib-text]") && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendRequest(); }
 });
 
 // ヘッダーとフィルタ行は上端に固定する（theme.css）。その高さを --hh・--th に入れ、固定の帯・表の列見出し・「今日の優先」がその下に付くようにする

@@ -43,3 +43,14 @@ export function loadReportPrefs(storage = browserStorage()) {
 export function saveReportPrefs(prefs, storage = browserStorage()) {
   try { storage?.setItem(REPORT_KEY, JSON.stringify({ kind: prefs.kind, start: prefs.start, end: prefs.end, projectIds: prefs.projectIds })); } catch { /* 保存できない環境 */ }
 }
+
+// Claude Code への依頼の下書き。送るまで、入力の途中の文章を、このブラウザに覚える（閉じても残る）。
+const DRAFT_KEY = "pj-lens.inboxDraft";
+
+export function loadInboxDraft(storage = browserStorage()) {
+  try { const v = storage?.getItem(DRAFT_KEY); return typeof v === "string" ? v : ""; } catch { return ""; }
+}
+
+export function saveInboxDraft(text, storage = browserStorage()) {
+  try { storage?.setItem(DRAFT_KEY, String(text ?? "")); } catch { /* 保存できない環境 */ }
+}
