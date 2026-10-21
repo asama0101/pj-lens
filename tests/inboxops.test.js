@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { validate } from "../src/core/schema.js";
-import { planOps, applyProposal } from "../src/ui/inboxops.js";
+import { planOps, applyProposal, summarizeSections } from "../src/ui/inboxops.js";
 
 const load = () => JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
 const TODAY = "2026-10-21";
@@ -152,4 +152,14 @@ test("applyProposal: 空の理由・不正な原因は例外", () => {
   const d = load(); const p = planOps(d, [{ op: "moveDue", taskId: "A5", deltaDays: 3 }], { today: TODAY });
   assert.throws(() => applyProposal(d, p, { reason: "  ", cause: "ベンダー", today: TODAY }), /理由/);
   assert.throws(() => applyProposal(d, p, { reason: "r", cause: "不明", today: TODAY }), /原因/);
+});
+
+test("summarizeSections: 期限・先行・登録の件数（変更なしの先行は数えない）", () => {
+  const sections = [
+    { kind: "add", rows: [{ ref: "a" }, { ref: "b" }] },
+    { kind: "pred", rows: [{ action: "add" }, { action: "same" }, { action: "remove" }] },
+    { kind: "due", rows: [{ taskId: "A3" }, { taskId: "A4" }, { taskId: "A5" }] },
+  ];
+  assert.equal(summarizeSections(sections), "期限 3 件・先行 2 件・登録 2 件");
+  assert.equal(summarizeSections([]), "期限 0 件・先行 0 件・登録 0 件");
 });

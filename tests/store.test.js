@@ -144,3 +144,53 @@ test("open: JSON が壊れていれば例外", async () => {
   const h = fakeHandle({}); h.text = "{ broken";
   await assert.rejects(mk(h).choose());
 });
+
+test("saveMerged: 競合がなければ、そのまま 1 回で保存する", async () => {
+  const h = fakeHandle({ a: 1 });
+  const s = mk(h);
+  await s.choose();
+  const r = await s.saveMerged((d) => ({ ...d, a: 2 }), { a: 2 });
+  assert.deepEqual([r.ok, r.data], [true, { a: 2 }]);
+  assert.equal(JSON.parse(h.text).a, 2);
+  assert.equal(h.writes, 1);
+});
+
+test("saveMerged: 読込のあとに他がファイルを更新していたら、最新のファイルに同じ編集を当てて保存し、他の更新も消さない", async () => {
+  const h = fakeHandle({ a: 1 });
+  const s = mk(h);
+  await s.choose();
+  h.text = JSON.stringify({ a: 1, inbox: "他が書いた" }); h.modified += 5;
+  const r = await s.saveMerged((d) => ({ ...d, a: 2 }), { a: 2 });
+  assert.deepEqual([r.ok, r.data], [true, { a: 2, inbox: "他が書いた" }]);
+  assert.deepEqual(JSON.parse(h.text), { a: 2, inbox: "他が書いた" });
+  assert.deepEqual(await s.save({ a: 3, inbox: "他が書いた" }), { ok: true }, "その後の保存も通る");
+});
+
+test("saveMerged: 最新のデータに編集を当てると例外のときは、保存せず error。競合が続くときは、再試行は 1 回だけで conflict", async () => {
+  const h = fakeHandle({ a: 1 });
+  const s = mk(h);
+  await s.choose();
+  h.text = JSON.stringify({ a: 1, gone: true }); h.modified += 5;
+  const bad = await s.saveMerged(() => { throw new Error("もう当てられません"); }, { a: 2 });
+  assert.deepEqual([bad.ok, bad.reason, bad.message], [false, "error", "もう当てられません"]);
+  assert.equal(h.writes, 0);
+  const d = fakeHandle({ a: 1 });
+  const s2 = mk(d);
+  await s2.choose();
+  const getFile = d.getFile;
+  d.getFile = async () => { d.modified += 1; return getFile.call(d); }; // 読むたびに更新されている
+  const r = await s2.saveMerged((x) => ({ ...x, a: 2 }), { a: 2 });
+  assert.deepEqual([r.ok, r.reason], [false, "conflict"]);
+  assert.equal(d.writes, 0);
+});
+
+test("peek: ファイルの最新を読むだけで、読込時点（保存の競合の判定）は変えない", async () => {
+  const h = fakeHandle({ a: 1 });
+  const s = mk(h);
+  await s.choose();
+  h.text = JSON.stringify({ a: 1, inbox: "他が書いた" }); h.modified += 5;
+  assert.deepEqual(await s.peek(), { a: 1, inbox: "他が書いた" });
+  const r = await s.save({ a: 2 });
+  assert.deepEqual([r.ok, r.reason], [false, "conflict"], "peek では、読み込んだことにならない");
+  await assert.rejects(mk(fakeHandle({})).peek(), /選ばれていません/);
+});

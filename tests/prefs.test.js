@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_PREFS, loadPrefs, savePrefs } from "../src/ui/prefs.js";
+import { DEFAULT_PREFS, loadPrefs, savePrefs, loadInboxDraft, saveInboxDraft } from "../src/ui/prefs.js";
 
 const fake = (init = {}) => {
   const m = new Map(Object.entries(init));
@@ -46,4 +46,17 @@ test("saveReportPrefs→loadReportPrefs で往復でき、保存できなくて�
   saveReportPrefs(v, s);
   assert.deepEqual(loadReportPrefs(s), v);
   assert.doesNotThrow(() => saveReportPrefs(v, boom));
+});
+
+test("loadInboxDraft / saveInboxDraft: 依頼の下書きを往復でき、無い・壊れた・storage が使えないときは空。保存の失敗で落ちない", () => {
+  const s = fake();
+  assert.equal(loadInboxDraft(s), "");
+  saveInboxDraft("A3 が 5 日遅れた\n次の行", s);
+  assert.equal(loadInboxDraft(s), "A3 が 5 日遅れた\n次の行");
+  saveInboxDraft("", s);
+  assert.equal(loadInboxDraft(s), "");
+  assert.equal(loadInboxDraft(boom), "");
+  assert.equal(loadInboxDraft(null), "");
+  assert.doesNotThrow(() => saveInboxDraft("x", boom));
+  assert.equal(loadInboxDraft(fake({ "pj-lens.inboxDraft": 5 })), "");
 });
