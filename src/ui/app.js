@@ -156,25 +156,23 @@ async function makeReport() {
 }
 
 let saveChain = Promise.resolve();
-let pendingEdits = []; // 保存がまだ済んでいない編集（{ edit, merge }）。競合したとき、最新のファイルに当て直す
-let inflight = 0;      // 保存の待ち・実行中の数
+let pendingEdits = []; // 保存がまだ済んでいない編集（data → data）。競合したとき、最新のファイルに当て直す
+let inflight = 0;      // 保存・読み直しの待ち・実行中の数
 const CONFLICT = "他で更新されました。再読込してください。(再読込すると、保存できていない画面の変更は消えます)";
-function persist(entry) {
-  if (entry) pendingEdits.push(entry);
+function persist(edit) {
+  if (edit) pendingEdits.push(edit);
   inflight++;
   saveChain = saveChain.then(async () => {
     try {
       if (!store.hasFile) { banner("このブラウザでは直接保存できません。変更は「JSON を書き出す」で保存してください。", { download: true }); return; }
       const edits = pendingEdits.slice();
-      // 編集が「いまのデータへの差分」として書かれているときだけ、競合を最新のファイルへの当て直しで吸収する（定数を返す編集は、そのまま保存する）
-      const mergeable = edits.every((e) => e.merge);
-      const r = mergeable ? await store.saveMerged((d) => edits.reduce((acc, e) => e.edit(acc), d), S.data) : await store.save(S.data);
+      const r = await store.saveMerged((d) => edits.reduce((acc, e) => e(acc), d), S.data);
       if (r.ok) {
-        const rest = pendingEdits.filter((e) => !edits.includes(e));
-        pendingEdits = rest;
-        if (r.data && r.data !== S.data) { // 最新のファイルに当て直して保存した。あとから足された編集を、その上に重ねて、画面に出す
-          if (rest.every((e) => e.merge)) { try { S.data = rest.reduce((acc, e) => e.edit(acc), r.data); render(); } catch { S.saveFailed = true; banner(CONFLICT, { reload: true, download: true }); return; } }
-          else { S.saveFailed = true; banner(CONFLICT, { reload: true, download: true }); return; }
+        pendingEdits = pendingEdits.filter((e) => !edits.includes(e));
+        if (r.data !== S.data) { // 最新のファイルに当て直して保存した。あとから足された編集を、その上に重ねて、画面に出す
+          S.data = r.data;
+          try { S.data = pendingEdits.reduce((acc, e) => e(acc), r.data); } catch { pendingEdits = []; toast("他の更新と重なったため、直前の操作は反映されませんでした"); }
+          render();
         }
         if (S.saveFailed) banner("");
         S.saveFailed = false;
@@ -186,17 +184,19 @@ function persist(entry) {
   });
 }
 
-/** 編集を適用して描画・保存する。edit が例外を投げたら理由を表示して、データは変えない。merge: false は、edit が「いまのデータへの差分」ではなく、決まった結果を返すとき */
-function apply(edit, msg, { partial = false, quiet = false, merge = true } = {}) {
+/** 編集を適用して描画・保存する。edit は、いまのデータへの差分（data → data）で、例外を投げたら理由を表示して、データは変えない。
+ *  決まった結果を返す編集（() => data）は、競合のとき、最新のファイルに当て直すと、他の更新を消すので、書かない */
+function apply(edit, msg, { partial = false, quiet = false } = {}) {
   let next;
   try { next = edit(S.data); } catch (e) { toast(e.message); if (partial) renderCal(); else render(); return false; }
   S.data = next;
   if (partial) renderCal(); else if (!quiet) render();
   if (msg) toast(msg);
-  persist({ edit, merge });
+  persist(edit);
   return true;
 }
-const applyFixed = (data, msg) => apply(() => data, msg, { merge: false });
+/** { data, error, warning } を返す編集関数を、apply に渡せる形（data → data）にする */
+const asEdit = (fn) => (d) => { const r = fn(d); if (r.error) throw new Error(r.error); return r.data; };
 
 /* ---------- ファイルを開く ---------- */
 function loaded(data) {
@@ -495,10 +495,11 @@ view.addEventListener("click", (e) => {
     if (!S.picked) { toast("先にタスクを選んでください"); return; }
     const wd = S.data.settings?.workday ?? { start: "09:00", end: "18:00" };
     const st = snapStart(+fr.dataset.free, 60, wd), id = S.picked;
-    const r = addSession(S.data, id, { date: S.sdate, start: toHHMM(st), end: toHHMM(st + 60) }, now);
+    const sess = { date: S.sdate, start: toHHMM(st), end: toHHMM(st + 60) };
+    const r = addSession(S.data, id, sess, now);
     if (r.error) { toast(r.error); return; }
     S.picked = null;
-    applyFixed(r.data, `${S.data.tasks.find((t) => t.id === id).title} を ${hm(st)} に配置しました${r.warning ? `(${r.warning})` : ""}`);
+    apply(asEdit((d) => addSession(d, id, sess, now)), `${S.data.tasks.find((t) => t.id === id).title} を ${hm(st)} に配置しました${r.warning ? `(${r.warning})` : ""}`);
     return;
   }
   if (cleared) render();
@@ -623,10 +624,11 @@ function onChange(el) {
     }
     if (f === "party") { apply((d) => updateTask(d, id, { waitingOn: { party: el.value, since: t.waitingOn?.since ?? today } }, today), "変更を保存しました"); return; }
     if (f === "due") {
+      const due = el.value;
       let base;
-      try { base = updateTask(S.data, id, { due: el.value }, today); } catch (e) { toast(e.message); render(); return; }
-      if (dueChange(id, base, S.data, (d) => updateTask(d, id, { due: el.value }, today))) return;
-      applyFixed(base, "変更を保存しました");
+      try { base = updateTask(S.data, id, { due }, today); } catch (e) { toast(e.message); render(); return; }
+      if (dueChange(id, base, S.data, (d) => updateTask(d, id, { due }, today))) return;
+      apply((d) => updateTask(d, id, { due }, today), "変更を保存しました");
       return;
     }
     if (f === "group" || f === "subgroup") S.hlId = id; // 該当グループへ移った行を強調して見失わないようにする
@@ -650,13 +652,15 @@ function planDrop(dz, clientY) {
   }
   if (drag.kind === "sess") {
     const s = findSession(drag.id), dur = toMin(s.end) - toMin(s.start), st = snapStart(at, dur, wd);
-    const r = moveSession(S.data, s.id, { date, start: toHHMM(st) }, now);
-    return { st, end: st + dur, error: r.error, warning: r.warning, next: () => r.data, msg: `${S.data.tasks.find((t) => t.id === s.taskId).title} を ${fmtMD(date)} ${hm(st)} に移動しました` };
+    const to = { date, start: toHHMM(st) };
+    const r = moveSession(S.data, s.id, to, now);
+    return { st, end: st + dur, error: r.error, warning: r.warning, next: asEdit((d) => moveSession(d, s.id, to, now)), msg: `${S.data.tasks.find((t) => t.id === s.taskId).title} を ${fmtMD(date)} ${hm(st)} に移動しました` };
   }
   const st = snapStart(at, 60, wd);
-  const r = addSession(S.data, drag.id, { date, start: toHHMM(st), end: toHHMM(st + 60) }, now);
+  const did = drag.id, put = { date, start: toHHMM(st), end: toHHMM(st + 60) };
+  const r = addSession(S.data, did, put, now);
   const kind = r.error ? "" : r.data.tasks.find((t) => t.id === drag.id).sessions.at(-1).kind;
-  return { st, end: st + 60, error: r.error, warning: r.warning, next: () => r.data, msg: `${S.data.tasks.find((t) => t.id === drag.id).title} を ${fmtMD(date)} ${hm(st)} に${kind === "actual" ? "実績として記録" : "予定として配置"}しました` };
+  return { st, end: st + 60, error: r.error, warning: r.warning, next: asEdit((d) => addSession(d, did, put, now)), msg: `${S.data.tasks.find((t) => t.id === did).title} を ${fmtMD(date)} ${hm(st)} に${kind === "actual" ? "実績として記録" : "予定として配置"}しました` };
 }
 
 view.addEventListener("dragstart", (e) => {
@@ -713,8 +717,9 @@ view.addEventListener("mousedown", (e) => {
     const e2 = toHHMM(end);
     if (isMtg) apply((d) => updateMeeting(d, id, { end: e2 }), `会議「${rec.title}」の終了を ${hm(end)} に変更しました`);
     else {
-      const r = resizeSession(S.data, id, e2, clock());
-      if (r.error) { toast(r.error); render(); } else applyFixed(r.data, `終了を ${hm(end)} に変更しました`);
+      const at = clock();
+      const r = resizeSession(S.data, id, e2, at);
+      if (r.error) { toast(r.error); render(); } else apply(asEdit((d) => resizeSession(d, id, e2, at)), `終了を ${hm(end)} に変更しました`);
     }
   };
   document.addEventListener("mousemove", move);
@@ -774,15 +779,19 @@ view.addEventListener("mousedown", (e) => {
       dragEdit = (d) => { const r = moveTaskDates(d, t.id, m, amt); if (r.error) throw new Error(r.error); return r.data; };
       msg = `${t.id}: ${fmtMD(addDays(s0, ns))}〜${fmtMD(addDays(s0, ne))}`;
     } else if (kind === "p") {
-      result = moveProjectDates(S.data, p.id, mode === "l" ? "start" : "due", mode === "l" ? ns - s : ne - en);
+      const edge = mode === "l" ? "start" : "due", amt = mode === "l" ? ns - s : ne - en, pid = p.id;
+      result = moveProjectDates(S.data, pid, edge, amt);
+      dragEdit = asEdit((d) => moveProjectDates(d, pid, edge, amt));
       msg = `${p.name}: ${fmtMD(mode === "l" ? addDays(s0, ns) : p.start)}〜${fmtMD(mode === "r" ? addDays(s0, ne) : p.due)}`;
     } else {
-      result = { data: moveMilestone(S.data, p.id, mIdx, dd) };
+      const pid = p.id;
+      result = { data: moveMilestone(S.data, pid, mIdx, dd) };
+      dragEdit = (d) => moveMilestone(d, pid, mIdx, dd);
       msg = `マイルストーン「${p.milestones[mIdx].name}」を ${fmtMD(addDays(s0, ne))} に変更しました`;
     }
     if (result.error) { toast(result.error); render(); return; }
     if (kind === "t" && dueChange(t.id, result.data, S.data, dragEdit)) return;
-    applyFixed(result.data, `${msg}${result.warning ? `。${result.warning}` : ""}`);
+    apply(dragEdit, `${msg}${result.warning ? `。${result.warning}` : ""}`);
   };
   document.addEventListener("mousemove", move);
   document.addEventListener("mouseup", up);
@@ -832,10 +841,13 @@ function barSelector(a) {
   return null;
 }
 
-let barSig = "";
-function renderBar() {
+let barSig = "", composing = false, barDirty = false;
+/** 帯を描く。中身（依頼・見ている印・開閉）が変わっていなければ描き直さない（入力中の文字・変換・スクロールを壊さない）。force は、入力欄を空にしたときなど */
+function renderBar(force = false) {
   const el = $("claudebar");
   if (!S.data) { el.innerHTML = ""; barSig = ""; return; }
+  if (composing) { barDirty = true; return; } // 日本語入力の変換中は、終わるまで待つ
+  if (!force && barSignature() === barSig) return;
   captureBar();
   const a = document.activeElement;
   const keep = a && el.contains(a) ? { sel: barSelector(a), s: a.selectionStart, e: a.selectionEnd } : null;
@@ -846,7 +858,7 @@ function renderBar() {
     if (n) { n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch { /* 選択できない欄 */ } }
   }
 }
-const barSignature = () => JSON.stringify([S.data?.inbox?.requests, isWatching(S.data ?? {}, Date.now()), S.ib.open, store.hasFile]);
+const barSignature = () => JSON.stringify([S.data?.inbox?.requests, S.data?.projects, isWatching(S.data ?? {}, Date.now()), S.ib.open, store.hasFile]);
 
 function sendRequest() {
   captureBar();
@@ -858,7 +870,7 @@ function sendRequest() {
     if (ta) ta.value = ""; // 描き直しは、画面の入力欄の値を先に取り込むので、画面側も空にする
     S.ib.text = "";
     saveInboxDraft("");
-    renderBar();
+    renderBar(true);
   }
 }
 
@@ -893,28 +905,32 @@ function approveRequest(id) {
 }
 
 let polling = false, pollTick = 0;
-/** ファイルを読み直して、Claude Code の更新（受け取り・提案・見ている印）を画面に出す。帯が開いている、または処理中の依頼があるときは 4 秒ごと、そうでなければ 16 秒ごと */
-async function pollInbox(force = false) {
+/** ファイルを読み直して、Claude Code の更新（受け取り・提案・見ている印）を画面に出す。帯が開いている、または処理中の依頼があるときは 4 秒ごと、そうでなければ 16 秒ごと。
+ *  保存と同じ列（saveChain）に並べる（読んでいる間に、画面の編集の保存が済んで、そのあとに、古い内容で上書きされないように） */
+function pollInbox(force = false) {
   if (polling || !S.data || !store.hasFile || document.visibilityState === "hidden") return;
   const busy = (S.data.inbox?.requests ?? []).some((r) => ["pending", "working", "question", "proposed"].includes(r.status));
   if (!force && !S.ib.open && !busy && ++pollTick % 4 !== 0) return;
   if (S.saveFailed || inflight || pendingEdits.length) return;
   polling = true;
-  try {
-    const strip = (d) => JSON.stringify({ ...d, inbox: undefined });
-    const probe = await store.peek(); // 読むだけ（読み込んだことにしない）。他の更新があるときだけ、読み込み直す
-    if (JSON.stringify(probe) === JSON.stringify(S.data)) { if (barSignature() !== barSig) renderBar(); return; }
-    const fresh = await store.reload();
-    if (pendingEdits.length) { // 読んでいる間に、画面で編集があった。最新のファイルの上に重ねる（保存は、その編集の保存が行う）
-      if (!pendingEdits.every((e) => e.merge)) { S.saveFailed = true; banner(CONFLICT, { reload: true, download: true }); return; }
-      try { S.data = pendingEdits.reduce((d, e) => e.edit(d), fresh); } catch { S.saveFailed = true; banner(CONFLICT, { reload: true, download: true }); return; }
-      render();
-      return;
-    }
-    const bodyChanged = strip(fresh) !== strip(S.data);
-    S.data = fresh;
-    if (bodyChanged) render(); else renderBar();
-  } catch { /* 読めないときは、次の回に */ } finally { polling = false; }
+  inflight++;
+  saveChain = saveChain.then(async () => {
+    try {
+      if (S.saveFailed || pendingEdits.length) return; // 並んでいる間に編集があった。その保存を先にする
+      const strip = (d) => JSON.stringify({ ...d, inbox: undefined });
+      const probe = await store.peek(); // 読むだけ（読み込んだことにしない）。他の更新があるときだけ、読み込み直す
+      if (JSON.stringify(probe) === JSON.stringify(S.data)) { renderBar(); return; }
+      const fresh = await store.reload();
+      if (pendingEdits.length) { // 読んでいる間に、画面で編集があった。最新のファイルの上に重ねる（保存は、その編集の保存が行う）
+        try { S.data = pendingEdits.reduce((d, e) => e(d), fresh); } catch { S.saveFailed = true; banner(CONFLICT, { reload: true, download: true }); return; }
+        render();
+        return;
+      }
+      const bodyChanged = strip(fresh) !== strip(S.data);
+      S.data = fresh;
+      if (bodyChanged) render(); else renderBar();
+    } catch { /* 読めないときは、次の回に */ } finally { polling = false; inflight--; }
+  });
 }
 setInterval(pollInbox, 4000);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") pollInbox(true); });
@@ -928,7 +944,7 @@ $("claudebar").addEventListener("click", (e) => {
     const t = IB_EXAMPLES[ex.dataset.ibExample] ?? "";
     S.ib.text = S.ib.text.trim() ? `${S.ib.text.replace(/\s+$/, "")}\n${t}` : t;
     saveInboxDraft(S.ib.text);
-    renderBar();
+    renderBar(true);
     $("claudebar").querySelector("[data-ib-text]")?.focus();
     return;
   }
@@ -938,6 +954,8 @@ $("claudebar").addEventListener("click", (e) => {
   const rs = q("[data-ib-replysend]"); if (rs) { replyRequest(rs.dataset.ibReplysend); return; }
   const rt = q("[data-ib-retry]"); if (rt) { const id = rt.dataset.ibRetry, now = nowIso(); apply((d) => retryRequest(d, id, now), "もう一度提案を頼みました"); }
 });
+$("claudebar").addEventListener("compositionstart", () => { composing = true; });
+$("claudebar").addEventListener("compositionend", () => { composing = false; if (barDirty) { barDirty = false; renderBar(); } });
 $("claudebar").addEventListener("input", (e) => {
   if (e.target.matches("[data-ib-text]")) { S.ib.text = e.target.value; saveInboxDraft(S.ib.text); }
 });

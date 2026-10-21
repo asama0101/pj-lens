@@ -50,7 +50,8 @@ function simulate(data, ops, today) {
     const ref = String(o.ref ?? "").trim();
     if (!ref) throw new Error("addTask には ref が必要です");
     if (refs.has(ref)) throw new Error(`ref "${ref}" が重複しています`);
-    const start = o.start ?? (o.due >= today ? today : null);
+    // 開始日: 書かれていればそのとおり。先行があるタスクは入れない（先行から決まる。入れると validate の注意が出る）。なければ今日（期限が過去なら入れない）
+    const start = o.start ?? ((o.predecessors ?? []).length || o.due < today ? null : today);
     w = addTask(w, { projectId: o.projectId, title: o.title, due: o.due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
     const id = w.tasks.at(-1).id;
     refs.set(ref, id);
@@ -146,6 +147,12 @@ function simulate(data, ops, today) {
   return { data: w, sections, warnings, base: { tasks: baseTasks, projects: [...projects].sort() }, moves, inboxIds: [...inboxIds], predCount, addCount };
 }
 
+/** 変更案の表の同一性（提案と、いまのデータでの計算結果の比較用）。登録する開始日の既定（日付で変わる）と、理由の文は含めない */
+const sectionsKey = (sections) => JSON.stringify(sections.map((s) => [s.kind, s.rows.map((r) =>
+  s.kind === "due" ? [r.taskId, r.oldDue, r.newDue]
+    : s.kind === "pred" ? [r.taskId, r.predId, r.action]
+      : [r.ref, r.title, r.projectId, r.group, r.subgroup, r.due, r.predecessors])]));
+
 /** 変更案（sections）の要約。例: 「期限 2 件・先行 1 件・登録 2 件」（変更なしの先行は数えない） */
 export function summarizeSections(sections) {
   const n = (kind) => sections.find((s) => s.kind === kind)?.rows.filter((r) => r.action !== "same").length ?? 0;
@@ -171,6 +178,8 @@ export function applyProposal(data, proposal, { reason, cause, today }) {
   for (const pid of proposal.base?.projects ?? []) if (!(data.projects ?? []).some((p) => p.id === pid)) throw stale();
 
   const s = simulate(data, proposal.ops, today);
+  // base に入らない後続・別の先行が変わって、提案の表と結果が食い違うときは、適用しない
+  if (proposal.sections && sectionsKey(s.sections) !== sectionsKey(proposal.sections)) throw stale();
   const log = [...(s.data.changeLog ?? [])];
   for (const m of s.moves) log.push({ at: today, taskIds: m.taskIds, reason: why, cause, deltaDays: m.deltaDays });
   if (s.predCount || s.addCount) {

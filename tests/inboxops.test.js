@@ -70,7 +70,7 @@ test("planOps(addTask): ref で別の addTask を先行にできる。ID が既�
   assert.deepEqual(added.map((t) => t.title), ["疎通確認テスト", "切替手順書のレビュー"]);
   assert.deepEqual(added[0].predecessors, ["A4"]);
   assert.deepEqual(added[1].predecessors, [added[0].id]);
-  assert.deepEqual([added[0].group, added[0].subgroup, added[0].start], ["構築", "検証環境", TODAY]);
+  assert.deepEqual([added[0].group, added[0].subgroup, added[0].start], ["構築", "検証環境", null], "先行があるタスクは、開始日を入れない（先行から決まる。入れると validate の注意が出る）");
   assert.throws(() => planOps(d, [ops[0], ops[0]], { today: TODAY }), /t1/);
   assert.throws(() => planOps(d, [{ ...ops[1], predecessors: ["zz"] }], { today: TODAY }), /zz/);
   assert.throws(() => planOps(d, [{ op: "addTask", ref: "t3", projectId: "ZZ", title: "x", due: "2026-12-10" }], { today: TODAY }), /ZZ/);
@@ -162,4 +162,37 @@ test("summarizeSections: 期限・先行・登録の件数（変更なしの先�
   ];
   assert.equal(summarizeSections(sections), "期限 3 件・先行 2 件・登録 2 件");
   assert.equal(summarizeSections([]), "期限 0 件・先行 0 件・登録 0 件");
+});
+
+test("applyProposal: 提案の表にない後続が動いてしまうほど、データが変わっていたら stale（触らなかったタスクが変わった場合）", () => {
+  const d = load();
+  const p = planOps(d, [{ op: "moveDue", taskId: "A3", deltaDays: 45 }], { today: TODAY });
+  assert.deepEqual(dueRows(p).map((r) => r.taskId), ["A3", "A4"]);
+  // 提案のあとに、A5 が「先行 A3・期限 11/05」に変わった（base には入っていないが、承認すると A5 が 11/30 に動いてしまう）
+  const changed = { ...d, tasks: d.tasks.map((t) => (t.id === "A5" ? { ...t, predecessors: ["A3"], due: "2026-11-05", start: null } : t)) };
+  const before = JSON.stringify(changed);
+  assert.throws(() => applyProposal(changed, p, { reason: "r", cause: "ベンダー", today: TODAY }), (e) => e.code === "stale");
+  assert.equal(JSON.stringify(changed), before);
+});
+
+test("applyProposal: 提案した日と承認した日が違っても（登録する開始日の既定が変わるだけなら）stale にならない", () => {
+  const d = load();
+  const ops = [{ op: "addTask", ref: "t1", projectId: "A", title: "疎通確認テスト", due: "2026-12-10" }];
+  const p = planOps(d, ops, { today: "2026-10-21" });
+  assert.doesNotThrow(() => applyProposal(d, p, { reason: "r", cause: "社内", today: "2026-10-22" }));
+});
+
+test("planOps(addTask): 先行がなければ開始日は今日（期限が今日より前なら null）、start を書けばそのとおり。登録しても validate の注意が増えない", () => {
+  const d = load();
+  const ops = [
+    { op: "addTask", ref: "a", projectId: "A", title: "先行なし", due: "2026-12-10" },
+    { op: "addTask", ref: "b", projectId: "A", title: "過去の期限", due: "2026-10-01" },
+    { op: "addTask", ref: "c", projectId: "A", title: "開始を指定", due: "2026-12-10", start: "2026-11-01" },
+    { op: "addTask", ref: "e", projectId: "A", title: "先行あり", due: "2026-12-10", predecessors: ["A4"] },
+  ];
+  const out = apply(d, ops);
+  const by = (title) => out.tasks.find((t) => t.title === title);
+  assert.deepEqual(["先行なし", "過去の期限", "開始を指定", "先行あり"].map((t) => by(t).start), [TODAY, null, "2026-11-01", null]);
+  const warn = (x) => validate(x, { date: TODAY, time: "10:00" }).warnings;
+  assert.deepEqual(warn(out).filter((w) => !warn(d).includes(w)), [], "登録で、新しい注意が増えない");
 });

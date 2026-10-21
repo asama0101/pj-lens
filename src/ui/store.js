@@ -119,18 +119,23 @@ export function createStore(deps = {}) {
   }
 
   /**
-   * 保存する。他（Claude Code など）がファイルを更新していて競合したときは、最新のファイルを読み直して、同じ編集（edit: data → data）を
-   * 最新のデータに当て、もう一度だけ保存する（他の更新も、この編集も消さない）。成功したら、保存したデータを data で返す
+   * 保存する。他（Claude Code など）がファイルを更新していて競合したときは、最新のファイルに、同じ編集（edit: data → data）を
+   * 当てて、もう一度だけ保存する（他の更新も、この編集も消さない）。成功したら、保存したデータを data で返す。
+   * 当て直せないとき（edit が例外）は、reason: "conflict" で返す
    */
   async function saveMerged(edit, data) {
     const first = await save(data);
     if (first.ok || first.reason !== "conflict") return { ...first, data };
-    let merged;
+    let merged, mod;
     try {
-      merged = edit(await reload());
+      const file = await handle.getFile();
+      mod = file.lastModified;
+      merged = edit(JSON.parse(await file.text()));
     } catch (e) {
-      return { ok: false, reason: "error", message: e?.message ?? String(e), data };
+      // 最新のファイルに、同じ編集を当てられない（すでに処理されている、など）。競合として返す。読み込み時点は進めない
+      return { ok: false, reason: "conflict", message: e?.message ?? String(e), data };
     }
+    loadedAt = mod; // 当て直しが通ってから、読み込み時点を進める（先に進めると、次の保存が、他の更新を古いデータで上書きする）
     const second = await save(merged);
     return second.ok ? { ok: true, data: merged } : { ...second, data };
   }
