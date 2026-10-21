@@ -10,7 +10,7 @@ const S = {
   filter: "all", pview: "gantt", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
-  prefs: loadPrefs(), group: "all", pendingReplan: null, addAt: null,
+  prefs: loadPrefs(), group: "all", pendingReplan: null, addAt: null, last: null,
   wperiod: "week", wdate: clock().date,
   reportPanel: null,
 };
@@ -30,7 +30,7 @@ function startScreen() {
   const canPick = typeof window.showOpenFilePicker === "function";
   return `<section class="panel"><h2>データファイルを開いてください</h2>
     <p>プロジェクトとタスクのデータ(JSON)を選びます。初めてのときは、<code>data/sample.json</code> を <code>data/data.json</code> にコピーして選んでください。</p>
-    ${canPick ? `<button class="btn" data-openfile>ファイルを開く</button>`
+    ${canPick ? `${S.last?.name ? `<button class="btn primary" data-reopen>前回のファイル（${esc(S.last.name)}）を開く</button> <button class="btn" data-openfile>別のファイルを開く</button>` : `<button class="btn" data-openfile>ファイルを開く</button>`}${S.last?.error ? `<p class="note">前回のファイルの記憶を読めませんでした（${esc(S.last.error)}）。毎回ファイルを選ぶ必要があります。</p>` : ""}`
       : `<p class="note">このブラウザはファイルへの直接保存に対応していません。読み込みだけできます。変更したときは、画面上部の「JSON を書き出す」で保存してください(Edge か Chrome なら直接保存できます)。</p><input type="file" accept=".json,application/json" data-fileinput aria-label="データファイルを選ぶ">`}
     ${S.openError ? `<p class="ask" style="max-width:none" role="alert">${esc(S.openError)}</p>` : ""}</section>`;
 }
@@ -180,12 +180,26 @@ function loaded(data) {
   banner(errors.length ? `データに問題があります: ${errors.slice(0, 3).join(" / ")}` : warnings.length ? `注意: ${warnings.slice(0, 2).join(" / ")}` : "");
 }
 
-async function openFile(choose) {
-  try { loaded(await (choose ? store.choose() : store.open())); S.resetScroll = true; }
-  catch (e) {
+/** mode: "choose"＝ファイル選択を出す / "reopen"＝前回のファイルを、権限の確認だけで開く */
+async function openFile(mode) {
+  try {
+    loaded(await (mode === "reopen" ? store.reopen() : store.choose()));
+    S.resetScroll = true;
+    if (store.rememberFailed) toast("このブラウザでは、選んだファイルを記憶できません。次回もファイルを選ぶ必要があります");
+  } catch (e) {
     if (e?.name === "AbortError") return;
     S.openError = `開けません: ${e.message}`;
   }
+  render();
+}
+
+/** 起動時: 権限が許可済みなら、前回のファイルを自動で開く。使えなければ、開始画面に前回のファイルを出す */
+async function startup() {
+  try {
+    const data = await store.restore();
+    if (data) { loaded(data); S.resetScroll = true; }
+  } catch (e) { S.openError = `前回のファイルを開けません: ${e.message}`; }
+  if (!S.data) S.last = await store.lastFile();
   render();
 }
 
@@ -264,7 +278,7 @@ $("filebar").addEventListener("click", async (e) => {
     try { S.data = await store.reload(); S.saveFailed = false; banner(""); render(); toast("ファイルから読み直しました"); } catch (err) { toast(err.message); }
     return;
   }
-  if (e.target.closest("[data-openfile]")) openFile(true);
+  if (e.target.closest("[data-openfile]")) openFile("choose");
   if (e.target.closest("[data-download]")) downloadJson();
   const rb = e.target.closest("[data-report]");
   if (rb) { S.reportPanel = S.reportPanel ? null : { ...loadReportPrefs(), error: "" }; render(); view.scrollIntoView?.({ block: "start" }); }
@@ -295,7 +309,8 @@ view.addEventListener("click", (e) => {
   const { date: today, time } = clock();
   const now = clock();
 
-  if (q("[data-openfile]")) { openFile(false); return; }
+  if (q("[data-reopen]")) { openFile("reopen"); return; }
+  if (q("[data-openfile]")) { openFile("choose"); return; }
   /* プロジェクト画面 */
   const rpl = q("[data-replan]"); if (rpl) { replanAction(rpl.dataset.replan); return; }
   const gw = q("[data-gwin]"); if (gw) { S.gwin = gw.dataset.gwin; S.resetScroll = true; render(); return; }
@@ -704,3 +719,4 @@ view.addEventListener("keydown", (e) => {
 });
 
 render();
+startup();

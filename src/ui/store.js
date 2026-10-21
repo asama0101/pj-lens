@@ -1,10 +1,11 @@
 // データファイル(JSON)の読み書き。File System Access API を使い、選んだファイルのハンドルを IndexedDB に覚える。
 // 保存前に更新日時を比べ、他（Claude Code など）が更新していたら上書きせず conflict を返す。
+// 開き直しは、権限が許可済みなら restore（確認なし）、確認が必要なら reopen（ボタンの押下で確認だけ）。ファイル選択は choose だけが出す。
 
 const KEY = "dataFileHandle";
 const PICKER_TYPES = [{ description: "プロジェクトデータ (JSON)", accept: { "application/json": [".json"] } }];
 
-/** 既定の IndexedDB 保存先（使えない環境では記憶しないだけ） */
+/** 既定の IndexedDB 保存先。get は失敗を投げ（理由を画面に出すため）、set は失敗しても false を返すだけ（記憶できないだけで、使えなくはしない） */
 function defaultIdb() {
   const open = () => new Promise((resolve, reject) => {
     const req = indexedDB.open("pj-lens", 1);
@@ -21,8 +22,8 @@ function defaultIdb() {
     });
   };
   return {
-    get: (k) => run("readonly", (s) => s.get(k)).catch(() => undefined),
-    set: (k, v) => run("readwrite", (s) => s.put(v, k)).catch(() => undefined),
+    get: (k) => run("readonly", (s) => s.get(k)),
+    set: (k, v) => run("readwrite", (s) => s.put(v, k)).then(() => true, () => false),
   };
 }
 
@@ -31,6 +32,7 @@ export function createStore(deps = {}) {
   const idb = deps.idb ?? defaultIdb();
   let handle = null;
   let loadedAt = null; // 読み込み（または直近の保存）時点のファイル更新日時
+  let rememberFailed = false; // choose で選んだファイルを記憶できなかった（次回も選び直しになる）
 
   async function ensureWritable(h) {
     try {
@@ -48,14 +50,32 @@ export function createStore(deps = {}) {
     return data;
   }
 
-  /** 保存済みのハンドルがあれば再利用し、なければファイル選択を出す */
-  async function open() {
-    const saved = await idb.get(KEY);
-    if (saved && (await ensureWritable(saved))) {
-      handle = saved;
-    } else {
-      return choose();
+  /** 記憶したファイルの名前。なければ null、記憶を読めなければ { error } */
+  async function lastFile() {
+    try {
+      const saved = await idb.get(KEY);
+      return saved ? { name: saved.name ?? "" } : null;
+    } catch (e) {
+      return { error: e?.message ?? String(e) };
     }
+  }
+
+  /** 起動時の自動オープン。権限が許可済みのときだけ読み、確認もファイル選択も出さない。使えなければ null */
+  async function restore() {
+    let saved;
+    try { saved = await idb.get(KEY); } catch { return null; }
+    if (!saved || (await saved.queryPermission?.({ mode: "readwrite" })) !== "granted") return null;
+    handle = saved;
+    return load();
+  }
+
+  /** 「前回のファイルを開く」。権限の確認だけを出し（ボタン押下の中で呼ぶ）、拒否されてもファイル選択には切り替えない */
+  async function reopen() {
+    let saved;
+    try { saved = await idb.get(KEY); } catch (e) { throw new Error(`前回のファイルの記憶を読めません: ${e?.message ?? e}`); }
+    if (!saved) throw new Error("前回のファイルの記憶がありません。「別のファイルを開く」で選んでください");
+    if (!(await ensureWritable(saved))) throw new Error("ファイルへの書き込みが許可されませんでした。もう一度押して許可するか、「別のファイルを開く」で選び直してください");
+    handle = saved;
     return load();
   }
 
@@ -65,7 +85,7 @@ export function createStore(deps = {}) {
     const [h] = await picker({ types: PICKER_TYPES, multiple: false });
     handle = h;
     await ensureWritable(h);
-    await idb.set(KEY, h);
+    rememberFailed = (await idb.set(KEY, h)) === false;
     return load();
   }
 
@@ -92,5 +112,5 @@ export function createStore(deps = {}) {
     }
   }
 
-  return { open, choose, reload, save, get hasFile() { return !!handle; } };
+  return { restore, reopen, choose, lastFile, reload, save, get hasFile() { return !!handle; }, get rememberFailed() { return rememberFailed; } };
 }
