@@ -27,6 +27,19 @@ test("replan は impact を使う", () => {
   assert.ok(read("agents/replan.md").includes("${CLAUDE_PLUGIN_ROOT}/tools/impact.js"));
 });
 
+test("inbox: 受信箱を処理するエージェント。tools は Read, Bash で絞り、聞き返し・重要度・承認・CLI を持つ", () => {
+  const text = read("agents/inbox.md");
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
+  assert.match(fm, /^name: inbox$/m);
+  assert.match(fm, /^description: .+/m);
+  assert.match(fm, /^tools: Read, Bash$/m);
+  for (const word of ["${CLAUDE_PLUGIN_ROOT}/tools/inbox.js", "claim", "propose", "ask", "fail", "approve", "reject", "承認", "重要度", ".pj-lens/data.json", "moveDue", "addPred", "addTask", "compress"]) assert.ok(text.includes(word), word);
+  assert.match(text, /推測/);
+  assert.match(text, /止まらない/);
+  assert.doesNotMatch(text, /node "?tools\//);
+  assert.doesNotMatch(text, /(^|[^.\w])data\/data\.json/m);
+});
+
 test("MCP を同梱しない（.mcp.json がない）", () => {
   assert.equal(existsSync(new URL(".mcp.json", root)), false);
 });
