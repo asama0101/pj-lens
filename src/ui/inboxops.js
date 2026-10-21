@@ -86,7 +86,10 @@ function simulate(data, ops, today) {
     if (before.has(predId)) touched.add(predId);
     if (o.op === "addPred") {
       if (has) { predRows.push({ taskId, predId, action: "same" }); warnings.push(`${predId} は、すでに ${taskId} の先行です`); continue; }
-      w = updateTask(w, taskId, { predecessors: [...(t.predecessors ?? []), predId] }, today);
+      // 先行があるタスクの開始日は、先行から決まる（残すと validate の注意が出る）。外すので、提案の注意に出す
+      const patch = { predecessors: [...(t.predecessors ?? []), predId] };
+      if (t.start) { patch.start = null; warnings.push(`${taskId} は先行ができるので、開始日 ${t.start} を外します（先行から決まります）`); }
+      w = updateTask(w, taskId, patch, today);
       predRows.push({ taskId, predId, action: "add" });
       predCount++; inboxIds.add(taskId);
       if (!closed(p)) raise(taskId, p.due, `先行 ${predId} を追加`, inboxIds);
