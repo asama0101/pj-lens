@@ -15,9 +15,9 @@ export function renderPrio(data, today, opts = {}) {
     const t = data.tasks.find((x) => x.id === r.taskId);
     const a = taskActual(data, t.id);
     const pill = a.count ? ` <span class="pill ok">${a.count}回・実績 ${a.hours.toFixed(1)}h</span>` : "";
-    const proj = sched ? "" : `${esc(data.projects.find((p) => p.id === t.projectId)?.name ?? "")} ・ `;
+    const proj = esc(data.projects.find((p) => p.id === t.projectId)?.name ?? "");
     const drag = sched ? ` draggable="true" data-pick="${esc(t.id)}" tabindex="0"` : "";
-    return `<li${drag} class="${picked === t.id ? "picked" : ""}"><span class="n">${i + 1}</span><span class="t">${r.action === "chase" ? `<span class="act">${r.reasons.some((x) => x.includes("催促")) ? "催促" : "確認"}</span>` : ""}${esc(t.title)}${pill}</span><span class="why">${proj}${esc(r.reasons.join("。"))}</span></li>`;
+    return `<li${drag} class="${picked === t.id ? "picked" : ""}"><span class="n">${i + 1}</span><span class="pj">${proj}</span><span class="t">${r.action === "chase" ? `<span class="act">${r.reasons.some((x) => x.includes("催促")) ? "催促" : "確認"}</span>` : ""}${esc(t.title)}${pill}</span><span class="why">${esc(r.reasons.join("。"))}</span></li>`;
   }).join("");
   const note = sched
     ? "タスクをカレンダーへドラッグして配置します(15分刻み・長さ1時間)。配置済みの枠もドラッグで移動できます。キーボードでは、タスクを選んで日表示の空き枠を押します。"

@@ -25,11 +25,17 @@ function tools(win, hideDone) {
  */
 export function renderGantt(data, projectIds, today, opts = {}) {
   const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, group = "all", addAt = null } = opts;
-  const ps = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
+  const all = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
   // 編集画面は、タスクが 0 件でも見出しの「＋」から追加できるように描く
-  if (!ps.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
+  if (!all.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
     return `<p class="muted">タスクがありません。${readonly ? "" : "リスト表示で追加してください。"}</p>`;
   }
+  // 完了を隠すは、複数のプロジェクトを出しているとき、完了したプロジェクト（状態が「完了」、またはタスクが 1 件以上あって全部 Done）も隠す。1 つを選んでいるときは隠さない
+  const closed = (p) => { const ts = data.tasks.filter((t) => t.projectId === p.id); return p.status === "完了" || (ts.length > 0 && ts.every((t) => t.status === "Done")); };
+  const ps = hideDone && all.length > 1 ? all.filter((p) => !closed(p)) : all;
+  // 編集画面は、道具と凡例を上端の固定の帯に置く（タスクが多くても、スクロール中に色の意味を見失わない）。レポート用は従来どおり下に置く
+  const top = readonly ? "" : `<div class="gtop">${tools(win, hideDone)}${legend(showActual)}</div>`;
+  if (!ps.length) return `${top}<p class="muted">完了したプロジェクトを隠しています。「完了を隠す」を押すと、また出ます。</p>`;
 
   const geo = new Map(ps.map((p) => [p.id, ganttRows(data, p.id, today)]));
   const starts = [...geo.values()].map((g) => g.range.start);
@@ -139,7 +145,5 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     return `<section class="pg" aria-label="${esc(p.name)}">${head}<div class="gbody" style="--lanew:${laneW}"><div class="gov under">${grid}</div><div class="gov over">${msLines}${todayLine}</div>${headRow}${msRow}${sumRow}${rows}</div></section>`;
   }).join("");
 
-  // 編集画面は、道具と凡例を上端の固定の帯に置く（タスクが多くても、スクロール中に色の意味を見失わない）。レポート用は従来どおり下に置く
-  const top = readonly ? "" : `<div class="gtop">${tools(win, hideDone)}${legend(showActual)}</div>`;
   return `${top}<div class="gscroll" data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"><div class="gwide">${sections}</div></div>${readonly ? legend(showActual) : ""}`;
 }

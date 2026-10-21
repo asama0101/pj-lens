@@ -82,7 +82,9 @@ h2{font-size:14px;margin:0 0 10px;font-weight:700}
 .rank{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
 .rank li{padding:10px 0;border-bottom:1px solid var(--line-soft);display:grid;grid-template-columns:22px minmax(0,1fr);gap:4px 8px}
 .rank li:last-child{border-bottom:0}
-.rank .n{font-family:var(--f-mono);color:var(--muted);font-size:12px;padding-top:2px}
+.rank .n{font-family:var(--f-mono);color:var(--muted);font-size:12px;padding-top:2px;grid-row:1/3}
+.rank .pj{grid-column:2;font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.02em;overflow-wrap:anywhere}
+.rank .pj:empty{display:none}
 .rank .t{font-weight:700;line-height:1.4;overflow-wrap:anywhere}
 .rank .why{grid-column:2;color:var(--muted);font-size:12px;line-height:1.5}
 .rank .act{display:inline-block;font-size:11px;padding:0 6px;border-radius:4px;background:var(--warn-soft);color:var(--warn);margin-right:6px}
@@ -1931,9 +1933,9 @@ function renderPrio(data, today, opts = {}) {
     const t = data.tasks.find((x) => x.id === r.taskId);
     const a = taskActual(data, t.id);
     const pill = a.count ? ` <span class="pill ok">${a.count}回・実績 ${a.hours.toFixed(1)}h</span>` : "";
-    const proj = sched ? "" : `${esc(data.projects.find((p) => p.id === t.projectId)?.name ?? "")} ・ `;
+    const proj = esc(data.projects.find((p) => p.id === t.projectId)?.name ?? "");
     const drag = sched ? ` draggable="true" data-pick="${esc(t.id)}" tabindex="0"` : "";
-    return `<li${drag} class="${picked === t.id ? "picked" : ""}"><span class="n">${i + 1}</span><span class="t">${r.action === "chase" ? `<span class="act">${r.reasons.some((x) => x.includes("催促")) ? "催促" : "確認"}</span>` : ""}${esc(t.title)}${pill}</span><span class="why">${proj}${esc(r.reasons.join("。"))}</span></li>`;
+    return `<li${drag} class="${picked === t.id ? "picked" : ""}"><span class="n">${i + 1}</span><span class="pj">${proj}</span><span class="t">${r.action === "chase" ? `<span class="act">${r.reasons.some((x) => x.includes("催促")) ? "催促" : "確認"}</span>` : ""}${esc(t.title)}${pill}</span><span class="why">${esc(r.reasons.join("。"))}</span></li>`;
   }).join("");
   const note = sched
     ? "タスクをカレンダーへドラッグして配置します(15分刻み・長さ1時間)。配置済みの枠もドラッグで移動できます。キーボードでは、タスクを選んで日表示の空き枠を押します。"
@@ -1973,11 +1975,17 @@ function tools(win, hideDone) {
  */
 function renderGantt(data, projectIds, today, opts = {}) {
   const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, group = "all", addAt = null } = opts;
-  const ps = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
+  const all = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
   // 編集画面は、タスクが 0 件でも見出しの「＋」から追加できるように描く
-  if (!ps.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
+  if (!all.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
     return `<p class="muted">タスクがありません。${readonly ? "" : "リスト表示で追加してください。"}</p>`;
   }
+  // 完了を隠すは、複数のプロジェクトを出しているとき、完了したプロジェクト（状態が「完了」、またはタスクが 1 件以上あって全部 Done）も隠す。1 つを選んでいるときは隠さない
+  const closed = (p) => { const ts = data.tasks.filter((t) => t.projectId === p.id); return p.status === "完了" || (ts.length > 0 && ts.every((t) => t.status === "Done")); };
+  const ps = hideDone && all.length > 1 ? all.filter((p) => !closed(p)) : all;
+  // 編集画面は、道具と凡例を上端の固定の帯に置く（タスクが多くても、スクロール中に色の意味を見失わない）。レポート用は従来どおり下に置く
+  const top = readonly ? "" : `<div class="gtop">${tools(win, hideDone)}${legend(showActual)}</div>`;
+  if (!ps.length) return `${top}<p class="muted">完了したプロジェクトを隠しています。「完了を隠す」を押すと、また出ます。</p>`;
 
   const geo = new Map(ps.map((p) => [p.id, ganttRows(data, p.id, today)]));
   const starts = [...geo.values()].map((g) => g.range.start);
@@ -2087,8 +2095,6 @@ function renderGantt(data, projectIds, today, opts = {}) {
     return `<section class="pg" aria-label="${esc(p.name)}">${head}<div class="gbody" style="--lanew:${laneW}"><div class="gov under">${grid}</div><div class="gov over">${msLines}${todayLine}</div>${headRow}${msRow}${sumRow}${rows}</div></section>`;
   }).join("");
 
-  // 編集画面は、道具と凡例を上端の固定の帯に置く（タスクが多くても、スクロール中に色の意味を見失わない）。レポート用は従来どおり下に置く
-  const top = readonly ? "" : `<div class="gtop">${tools(win, hideDone)}${legend(showActual)}</div>`;
   return `${top}<div class="gscroll" data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"><div class="gwide">${sections}</div></div>${readonly ? legend(showActual) : ""}`;
 }
 
