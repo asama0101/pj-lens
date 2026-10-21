@@ -13,8 +13,8 @@ export function renderSettings(data, today, opts = {}) {
     const known = projects.some((p) => p.id === r.projectId);
     const unknown = known ? "" : `<option value="${esc(r.projectId)}" selected>（不明: ${esc(r.projectId)}）</option>`;
     const k = esc(r.keyword);
-    return `<tr><td data-l="キーワード"><input class="in" data-rkw="${k}" value="${k}" aria-label="キーワード ${k}"></td>
-      <td data-l="プロジェクト"><select class="in" data-rpj="${k}" aria-label="${k} のプロジェクト">${unknown}${options(r.projectId)}</select></td>
+    return `<tr><td data-l="キーワード"><input class="in" data-rkw="${k}" data-ri="${i}" value="${k}" aria-label="キーワード ${k}"></td>
+      <td data-l="プロジェクト"><select class="in" data-rpj="${k}" data-ri="${i}" aria-label="${k} のプロジェクト">${unknown}${options(r.projectId)}</select></td>
       <td class="mono" data-l="付いている会議">${counts[i]} 件</td>
       <td data-l=""><button class="btn" data-rdel="${k}" aria-label="${k} の規則を削除">削除</button></td></tr>`;
   }).join("");
@@ -38,7 +38,7 @@ export function renderSettings(data, today, opts = {}) {
       <div class="tscroll"><table class="tbl edit"><thead><tr><th>キーワード</th><th>プロジェクト</th><th>付いている会議</th><th></th></tr></thead><tbody>${ruleRows}${empty}${addRow}</tbody></table></div>
     </section>
     <section class="panel" aria-labelledby="h-wbs"><h2 id="h-wbs" style="margin-top:0">WBS の取り込み記録</h2>
-      <p class="note" style="margin:0 0 10px">プロジェクトごとに、最後に取り込んだ WBS です（取り込むたびに、Claude Code が自動で記録します）。</p>
+      <p class="note" style="margin:0 0 10px">プロジェクトごとに、最後に取り込んだ WBS です（追加か更新があった取り込みを、Claude Code が自動で記録します。変更がなかった取り込みは記録しません）。</p>
       ${projects.length ? `<div class="tscroll"><table class="tbl"><thead><tr><th>プロジェクト</th><th>ファイル</th><th>日付</th><th>追加</th><th>更新</th></tr></thead><tbody>${wbsRows}</tbody></table></div>` : `<p class="muted" style="margin:0">プロジェクトがありません。</p>`}
     </section>
   </div>`;

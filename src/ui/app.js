@@ -87,6 +87,11 @@ function focusSelector(el) {
   if (d.pf && d.pid) return q("data-pf", d.pf) + q("data-pid", d.pid);
   if (d.mf && d.pid) return q("data-mf", d.mf) + q("data-pid", d.pid) + q("data-i", d.i);
   if (d.gadd) return q("data-gadd", d.gadd);
+  // 規則の欄は、書き換えるとキーワードが変わるので、行の位置（data-ri。書き換えても並びは変わらない）で探す
+  if (d.rkw !== undefined) return `[data-rkw][data-ri="${CSS.escape(d.ri)}"]`;
+  if (d.rpj !== undefined) return `[data-rpj][data-ri="${CSS.escape(d.ri)}"]`;
+  if (d.rnew !== undefined) return "[data-rnew]";
+  if (d.rnewpj !== undefined) return "[data-rnewpj]";
   if (d.waitparty) return q("data-waitparty", d.waitparty);
   if (d.rp) return q("data-rp", d.rp);
   if (d.rptp) return q("data-rptp", d.rptp);
@@ -215,6 +220,7 @@ function ruleApply(edit, msg) {
 /** 規則の追加。エラーは通知だけにして、入力欄は描き直さない（打った文字を残す） */
 function addRule() {
   const kw = view.querySelector("[data-rnew]")?.value ?? "", pid = view.querySelector("[data-rnewpj]")?.value;
+  if (!pid) { toast("先にプロジェクトを追加してください"); return; }
   const edit = (d) => setProjectRule(d, kw, pid);
   try { edit(S.data); } catch (e) { toast(e.message); return; }
   S.ruleError = "";

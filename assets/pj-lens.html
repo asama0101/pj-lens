@@ -2475,8 +2475,8 @@ function renderSettings(data, today, opts = {}) {
     const known = projects.some((p) => p.id === r.projectId);
     const unknown = known ? "" : `<option value="${esc(r.projectId)}" selected>（不明: ${esc(r.projectId)}）</option>`;
     const k = esc(r.keyword);
-    return `<tr><td data-l="キーワード"><input class="in" data-rkw="${k}" value="${k}" aria-label="キーワード ${k}"></td>
-      <td data-l="プロジェクト"><select class="in" data-rpj="${k}" aria-label="${k} のプロジェクト">${unknown}${options(r.projectId)}</select></td>
+    return `<tr><td data-l="キーワード"><input class="in" data-rkw="${k}" data-ri="${i}" value="${k}" aria-label="キーワード ${k}"></td>
+      <td data-l="プロジェクト"><select class="in" data-rpj="${k}" data-ri="${i}" aria-label="${k} のプロジェクト">${unknown}${options(r.projectId)}</select></td>
       <td class="mono" data-l="付いている会議">${counts[i]} 件</td>
       <td data-l=""><button class="btn" data-rdel="${k}" aria-label="${k} の規則を削除">削除</button></td></tr>`;
   }).join("");
@@ -2500,7 +2500,7 @@ function renderSettings(data, today, opts = {}) {
       <div class="tscroll"><table class="tbl edit"><thead><tr><th>キーワード</th><th>プロジェクト</th><th>付いている会議</th><th></th></tr></thead><tbody>${ruleRows}${empty}${addRow}</tbody></table></div>
     </section>
     <section class="panel" aria-labelledby="h-wbs"><h2 id="h-wbs" style="margin-top:0">WBS の取り込み記録</h2>
-      <p class="note" style="margin:0 0 10px">プロジェクトごとに、最後に取り込んだ WBS です（取り込むたびに、Claude Code が自動で記録します）。</p>
+      <p class="note" style="margin:0 0 10px">プロジェクトごとに、最後に取り込んだ WBS です（追加か更新があった取り込みを、Claude Code が自動で記録します。変更がなかった取り込みは記録しません）。</p>
       ${projects.length ? `<div class="tscroll"><table class="tbl"><thead><tr><th>プロジェクト</th><th>ファイル</th><th>日付</th><th>追加</th><th>更新</th></tr></thead><tbody>${wbsRows}</tbody></table></div>` : `<p class="muted" style="margin:0">プロジェクトがありません。</p>`}
     </section>
   </div>`;
@@ -2861,6 +2861,11 @@ function focusSelector(el) {
   if (d.pf && d.pid) return q("data-pf", d.pf) + q("data-pid", d.pid);
   if (d.mf && d.pid) return q("data-mf", d.mf) + q("data-pid", d.pid) + q("data-i", d.i);
   if (d.gadd) return q("data-gadd", d.gadd);
+  // 規則の欄は、書き換えるとキーワードが変わるので、行の位置（data-ri。書き換えても並びは変わらない）で探す
+  if (d.rkw !== undefined) return `[data-rkw][data-ri="${CSS.escape(d.ri)}"]`;
+  if (d.rpj !== undefined) return `[data-rpj][data-ri="${CSS.escape(d.ri)}"]`;
+  if (d.rnew !== undefined) return "[data-rnew]";
+  if (d.rnewpj !== undefined) return "[data-rnewpj]";
   if (d.waitparty) return q("data-waitparty", d.waitparty);
   if (d.rp) return q("data-rp", d.rp);
   if (d.rptp) return q("data-rptp", d.rptp);
@@ -2989,6 +2994,7 @@ function ruleApply(edit, msg) {
 /** 規則の追加。エラーは通知だけにして、入力欄は描き直さない（打った文字を残す） */
 function addRule() {
   const kw = view.querySelector("[data-rnew]")?.value ?? "", pid = view.querySelector("[data-rnewpj]")?.value;
+  if (!pid) { toast("先にプロジェクトを追加してください"); return; }
   const edit = (d) => setProjectRule(d, kw, pid);
   try { edit(S.data); } catch (e) { toast(e.message); return; }
   S.ruleError = "";
