@@ -21,11 +21,13 @@ function tools(win, hideDone) {
  * @param opts.askDel    削除確認を出すタスク ID
  * @param opts.showActual false なら実績の線と凡例を出さない
  * @param opts.group     "all" か大項目の名前(その大項目の行だけを出す)
+ * @param opts.addAt     名前入力を開いている見出し { pid, group, subgroup }（なければ null）
  */
 export function renderGantt(data, projectIds, today, opts = {}) {
-  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, group = "all" } = opts;
+  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, group = "all", addAt = null } = opts;
   const ps = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
-  if (!ps.length || !data.tasks.some((t) => projectIds.includes(t.projectId))) {
+  // 編集画面は、タスクが 0 件でも見出しの「＋」から追加できるように描く
+  if (!ps.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
     return `<p class="muted">タスクがありません。${readonly ? "" : "リスト表示で追加してください。"}</p>`;
   }
 
@@ -83,10 +85,8 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     const sumRow = `<div class="g-row g-sumrow"><div class="g-label"><span class="id"></span><span class="muted">プロジェクト全体</span></div><div class="g-lane" ${laneStyle}><i class="gbar gsum"${sumAttr} style="left:${x(p.start)};width:${sumW}%;min-width:4px" title="${fmtMD(p.start)}〜${fmtMD(p.due)}${readonly ? "" : "(両端のドラッグで開始・期限を変更)"}"><u style="width:${pct}%"></u>${sumHandles}</i><span class="g-due mono" style="left:${x(p.due)}">${fmtMD(p.due)}</span></div></div>`;
 
     const taskOf = (r) => data.tasks.find((o) => o.id === r.taskId);
-    const visibleRows = g.rows.filter((r) => {
-      const t = taskOf(r);
-      return !(hideDone && t.status === "Done") && (group === "all" || (t.group ?? "") === group);
-    });
+    const inGroup = (r) => group === "all" || (taskOf(r).group ?? "") === group;
+    const shown = (r) => !(hideDone && taskOf(r).status === "Done");
     const rowHtml = (r) => {
       const t = data.tasks.find((o) => o.id === r.taskId);
       const late = taskFlags(t, today, data.settings).includes("overdue");
@@ -112,17 +112,29 @@ export function renderGantt(data, projectIds, today, opts = {}) {
       }
       return `<div class="g-row">${lab}<div class="g-lane" ${laneStyle}>${bar}${act}<span class="g-due mono" style="left:${x(r.end)}">${fmtMD(t.due)}</span></div></div>`;
     };
-    // 大項目・中項目があるプロジェクトは、(大項目, 中項目) ごとに区切り行を入れて並べる
-    const grouped = visibleRows.some((r) => taskOf(r).group || taskOf(r).subgroup);
+    // (大項目, 中項目) ごとに見出し行を入れて並べる。編集画面は、追加の入口になるので、大項目がなくても「（なし）」の見出しを常に出す。
+    // 見出しは完了を隠していても残す（そのグループへ追加できるように）。レポート用は、見える行があるグループだけを出す
+    const base = g.rows.filter(inGroup).filter((r) => !readonly || shown(r));
+    const grouped = !readonly || base.some((r) => taskOf(r).group || taskOf(r).subgroup);
+    const heading = (sec) => {
+      const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
+      const at = `data-ag="${esc(sec.group)}" data-asg="${esc(sec.subgroup)}"`;
+      const opening = addAt && addAt.pid === p.id && addAt.group === sec.group && addAt.subgroup === sec.subgroup;
+      const ctl = readonly ? ""
+        : opening ? `<input class="in" data-gadd="${esc(p.id)}" ${at} placeholder="タスク名を入力して Enter" aria-label="${esc(name)} に追加するタスク名"><button class="plus" data-gaddok="${esc(p.id)}">追加</button><button class="plus" data-gaddno>やめる</button>`
+        : `<button class="plus" data-gopen="${esc(p.id)}" ${at} aria-label="${esc(name)} にタスクを追加">＋</button>`;
+      return `<div class="g-row g-grp"><div class="g-label"><span class="g-grp-t"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""}</span>${ctl}</div><div class="g-lane" ${laneStyle}></div></div>`;
+    };
     const rows = grouped
-      ? groupSections(visibleRows.map((r) => ({ ...taskOf(r), row: r }))).map((sec) =>
-        `<div class="g-row g-grp"><div class="g-label"><span class="g-grp-t"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""}</span></div><div class="g-lane" ${laneStyle}></div></div>${sec.tasks.map((x) => rowHtml(x.row)).join("")}`).join("")
-      : visibleRows.map(rowHtml).join("");
+      ? groupSections(base.map((r) => ({ ...taskOf(r), row: r })), { ensureNone: !readonly && group === "all" })
+        .map((sec) => ({ sec, vis: sec.tasks.filter((x) => shown(x.row)) }))
+        .filter(({ vis }) => !readonly || vis.length)
+        .map(({ sec, vis }) => `${heading(sec)}${vis.map((x) => rowHtml(x.row)).join("")}`).join("")
+      : base.map(rowHtml).join("");
 
-    const addRow = readonly ? "" : `<div class="g-row g-add"><div class="g-label"><input class="in" data-gadd="${esc(p.id)}" placeholder="＋ タスクを追加(名前を入力して Enter)" aria-label="${esc(p.name)} にタスクを追加"></div><div class="g-lane" ${laneStyle}></div></div>`;
     const headRow = `<div class="g-row g-head"><div class="g-label"></div><div class="g-lane g-axis ${dayScale ? "day" : ""}" ${laneStyle}>${dayScale ? "" : `<span class="todaytag" style="left:${x(today)}">今日</span>`}${axis}</div></div>`;
 
-    return `<section class="pg" aria-label="${esc(p.name)}">${head}<div class="gbody" style="--lanew:${laneW}"><div class="gov under">${grid}</div><div class="gov over">${msLines}${todayLine}</div>${headRow}${msRow}${sumRow}${rows}${addRow}</div></section>`;
+    return `<section class="pg" aria-label="${esc(p.name)}">${head}<div class="gbody" style="--lanew:${laneW}"><div class="gov under">${grid}</div><div class="gov over">${msLines}${todayLine}</div>${headRow}${msRow}${sumRow}${rows}</div></section>`;
   }).join("");
 
   return `${readonly ? "" : tools(win, hideDone)}<div class="gscroll" data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"><div class="gwide">${sections}</div></div>${legend(showActual)}`;
