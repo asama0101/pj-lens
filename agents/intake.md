@@ -38,7 +38,7 @@ description: 文章（メール・議事録・メモ）、Excel の WBS、メー
    - 先行は `predecessorKeys`（先行する行の「大項目/中項目/件名」を `/` で連結したもの）で書く。
    - `rows.json` は OS の一時フォルダ（スクラッチパッドが与えられていればそこ）に書き、プロジェクトのフォルダには置かない。
 5. `node "${CLAUDE_PLUGIN_ROOT}/tools/intake.js" wbs-plan ".pj-lens/data.json" <projectId> "<rows.json>"` を実行し、結果を表で見せる: **追加**（件数と一覧）、**更新**（旧→新）、変更なし（件数）、**WBS に無い既存**（削除しない）、**rejected**（弾いた行と理由）、**warnings**。再取り込みでは、画面で直した件名（`title`）は上書きされないことを添える。
-6. **承認後に** `wbs-apply ".pj-lens/data.json" <projectId> "<rows.json>"` を実行する。結果（追加・更新の件数）を報告する。
+6. **承認後に** `wbs-apply ".pj-lens/data.json" <projectId> "<rows.json>" --source "<取り込んだファイルの名前（パスなし。例: plan.xlsx）>"` を実行する。`--source` は、画面の「設定」タブの取り込み記録に出るファイル名になる（ファイルが分からないときは省く）。結果（追加・更新の件数）を報告する。
 
 ## mail（アウトソース先の進捗報告メールを取り込む）
 依頼の例: `mail`、`mail [A社] 今週分`、`mail 10/1から`
