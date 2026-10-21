@@ -391,6 +391,10 @@ test("今日の優先のパネルは、固定表示のための prio クラス�
   assert.ok(sched(load()).includes('<section class="panel prio"'));
 });
 
+test("プロジェクト画面のフィルタ行は、固定表示のための ptool クラスを持つ", () => {
+  for (const view of ["gantt", "list"]) assert.ok(renderProjects(load(), TODAY, { filter: "all", view, window: "m6" }).includes('<div class="toolbar ptool">'), view);
+});
+
 test("利用者入力（group 名）はエスケープされる", () => {
   const d = load(); d.tasks.find((t) => t.id === "A1").group = "<img src=x onerror=1>";
   const html = renderProjects(d, TODAY, { filter: "A", view: "gantt", window: "m6" }) + renderProjects(d, TODAY, { filter: "A", view: "list" });

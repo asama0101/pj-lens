@@ -68,6 +68,7 @@ function render() {
     S.focusSel = null;
     if (el) { el.focus(); el.select?.(); }
   }
+  syncSticky();
   if (S.hlId) {
     let row = null;
     try { row = view.querySelector(`[data-row="${CSS.escape(S.hlId)}"]`); } catch { /* 無視 */ }
@@ -718,9 +719,32 @@ view.addEventListener("keydown", (e) => {
   if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-pick]")) { e.preventDefault(); e.target.click(); }
 });
 
+// ヘッダーとフィルタ行は上端に固定する（theme.css）。その高さを --hh・--th に入れ、固定の帯・表の列見出し・「今日の優先」がその下に付くようにする
+const topbar = document.querySelector("header.top");
+function syncSticky() {
+  const root = document.documentElement.style;
+  root.setProperty("--hh", `${topbar?.offsetHeight ?? 0}px`);
+  const tool = view.querySelector(".ptool");
+  root.setProperty("--th", `${tool ? tool.offsetHeight : 0}px`);
+  pinTableHeads();
+}
+
+/** リストの表の列見出しを、スクロール中も、ヘッダーとフィルタ行の下に付ける（表の枠の中でセルをずらす。表の下端は越えない） */
+function pinTableHeads() {
+  const cs = getComputedStyle(document.documentElement);
+  const top = (parseFloat(cs.getPropertyValue("--hh")) || 0) + (parseFloat(cs.getPropertyValue("--th")) || 0);
+  for (const box of view.querySelectorAll(".tscroll")) {
+    const ths = box.querySelectorAll("thead th");
+    if (!ths.length) continue;
+    const r = box.getBoundingClientRect();
+    const dy = Math.max(0, Math.min(top - r.top, r.height - ths[0].offsetHeight - 4));
+    for (const th of ths) th.style.transform = dy ? `translateY(${dy}px)` : "";
+  }
+}
+let pinQueued = false;
+window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); }); } }, { passive: true });
+if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(syncSticky).observe(topbar);
+window.addEventListener("resize", syncSticky);
+
 render();
 startup();
-
-// ヘッダーは上端に固定する（theme.css）。その高さを --hh に入れ、固定の帯や「今日の優先」がヘッダーの下に付くようにする
-const topbar = document.querySelector("header.top");
-if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(() => document.documentElement.style.setProperty("--hh", `${topbar.offsetHeight}px`)).observe(topbar);
