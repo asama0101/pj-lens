@@ -9,8 +9,11 @@ export function groupLabels(settings) {
   return { group: pick("group"), subgroup: pick("subgroup") };
 }
 
-/** (大項目, 中項目) の最初の登場順に束ねる。タスクの順序は保つ。未設定は空文字 */
-export function groupSections(tasks) {
+/**
+ * 大項目の最初の登場順に、その中は中項目の最初の登場順に束ねる。タスクの順序は保つ。未設定は空文字。
+ * 大項目が空の組は最後のブロックに置く。ensureNone なら、(空, 空) の組がなくても空の組を末尾に足す（追加の入口にするため）
+ */
+export function groupSections(tasks, { ensureNone = false } = {}) {
   const out = [];
   const at = new Map();
   for (const t of tasks) {
@@ -19,6 +22,11 @@ export function groupSections(tasks) {
     if (!at.has(key)) { at.set(key, out.length); out.push({ group, subgroup, tasks: [] }); }
     out[at.get(key)].tasks.push(t);
   }
+  const first = new Map();
+  out.forEach((s, i) => { if (!first.has(s.group)) first.set(s.group, i); });
+  // 大項目の最初の登場位置で並べ（安定ソート）、大項目が空の組は最後に回す
+  out.sort((a, b) => (a.group === "") - (b.group === "") || first.get(a.group) - first.get(b.group));
+  if (ensureNone && !out.some((s) => s.group === "" && s.subgroup === "")) out.push({ group: "", subgroup: "", tasks: [] });
   return out;
 }
 
