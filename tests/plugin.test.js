@@ -10,7 +10,7 @@ const json = (p) => JSON.parse(readFileSync(new URL(p, root), "utf8"));
 test("plugin.json: 名前とバージョンが package.json と一致する", () => {
   const plugin = json(".claude-plugin/plugin.json");
   assert.equal(plugin.name, "pj-lens");
-  assert.equal(plugin.version, "0.3.0");
+  assert.equal(plugin.version, "0.4.0");
   assert.equal(plugin.version, json("package.json").version);
   assert.ok(plugin.description);
 });
