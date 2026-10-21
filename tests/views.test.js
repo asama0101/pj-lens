@@ -333,6 +333,41 @@ test("renderGantt: g-grp の区切り行が group ごとに出る。編集画面
   assert.equal(count(gantt(d, ["B"], { readonly: true }), head), 0, "group を持つタスクが無いプロジェクトには出ない");
 });
 
+const rowOrder = (html) => [...html.matchAll(/<tr data-row="([^"]+)"/g)].map((m) => m[1]);
+const listOf = (d, pid, extra = {}) => renderProjects(d, TODAY, { filter: pid, view: "list", ...extra });
+
+test("リスト: 大項目・中項目ごとの見出し行があり、同じグループのタスクが続けて並ぶ", () => {
+  const d = setC(load(), [["C1", "X", "a"], ["C2", "Y", "b"], ["C3", "X", "c"]]);
+  const html = listOf(d, "C");
+  assert.deepEqual(rowOrder(html), ["C1", "C3", "C2"]);
+  assert.equal(count(html, /class="grp-tr"/g), 4, "X/a, X/c, Y/b と、追加の入口の（なし）");
+  assert.ok(html.includes('data-addat="C" data-ag="X" data-asg="a"'));
+});
+
+test("リスト: 最下部の「＋ タスクを追加」ボタンはない", () => {
+  assert.ok(!listOf(load(), "A").includes("data-addtask"));
+});
+
+test("リスト: 0件のプロジェクトにも「（なし）」見出しと「＋」が出る", () => {
+  const d = load(); d.tasks = d.tasks.filter((t) => t.projectId !== "C");
+  const html = listOf(d, "C");
+  assert.ok(html.includes("（なし）") && html.includes('data-addat="C"'));
+});
+
+test("リスト: 大項目名の特殊文字は escape され、「＋」の属性に入る", () => {
+  const g = 'A"<b>|';
+  const html = listOf(setC(load(), [["C1", g, "a"]]), "C");
+  assert.ok(html.includes('data-ag="A&quot;&lt;b&gt;|"'));
+  assert.ok(!html.includes(g));
+});
+
+test("リスト: 大項目の絞り込み中は、その大項目の見出しだけが出て「（なし）」は出ない", () => {
+  const d = setC(load(), [["C1", "X", "a"], ["C2", "Y", "b"], ["C3", null, null]]);
+  const html = listOf(d, "C", { group: "X" });
+  assert.equal(count(html, /class="grp-tr"/g), 1);
+  assert.ok(html.includes('data-ag="X"') && !html.includes("（なし）"));
+});
+
 test("利用者入力（group 名）はエスケープされる", () => {
   const d = load(); d.tasks.find((t) => t.id === "A1").group = "<img src=x onerror=1>";
   const html = renderProjects(d, TODAY, { filter: "A", view: "gantt", window: "m6" }) + renderProjects(d, TODAY, { filter: "A", view: "list" });
