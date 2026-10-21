@@ -372,3 +372,44 @@ code{font-family:var(--f-mono);font-size:12px;background:var(--line-soft);paddin
 /* 狭い画面では、週表示のカレンダーの中だけを横スクロールにする(ページ全体は横スクロールさせない) */
 .cal.wk{overflow-x:auto}
 .cal.wk .week{min-width:560px}
+
+/* 画面下端の「Claude Code に依頼する」の帯と引き出し（帯は常に出し、引き出しは開いたときだけ） */
+body{padding-block:16px 76px}
+.toast{bottom:72px}
+.ib{position:fixed;left:0;right:0;bottom:0;z-index:40;background:#16202E;color:#E5EBF3;box-shadow:0 -4px 14px rgba(20,30,50,.18)}
+.ib.open{background:var(--surface);color:var(--ink);border-top:1px solid var(--line);border-radius:14px 14px 0 0;box-shadow:0 -10px 30px rgba(20,30,50,.28)}
+.ib-bar{display:flex;align-items:center;gap:12px;height:52px;box-sizing:border-box;padding:0 max(16px,env(safe-area-inset-left,0px));flex-wrap:nowrap;overflow:hidden}
+.ib.open .ib-bar{border-bottom:1px solid var(--line-soft)}
+.ib-toggle{font:inherit;font-size:12px;cursor:pointer;border:1px solid #55B8D4;background:transparent;color:#55B8D4;border-radius:6px;padding:0 10px;line-height:24px;white-space:nowrap}
+.ib.open .ib-toggle{border-color:var(--accent);color:var(--accent)}
+.ib-hint{font-size:12px;color:#9AA7B9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ib-sp{flex:1 1 0}
+.ib-badge{font-size:12px;background:var(--warn-soft);color:var(--warn);border-radius:99px;padding:2px 12px;white-space:nowrap}
+.ib-state{font-size:12px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;color:#9AA7B9}
+.ib.open .ib-state{color:var(--muted)}
+.ib-state i{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--bad)}
+.ib-state.on i{background:var(--ok)}
+.ib-off .ib-hint{white-space:normal}
+.ib-drawer{max-height:min(68vh,640px);overflow:auto;padding:14px max(16px,env(safe-area-inset-left,0px)) 18px}
+.ib-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:24px;align-items:start}
+@media(max-width:900px){.ib-body{grid-template-columns:minmax(0,1fr)}.ib-hint{display:none}}
+.ib-compose{display:flex;flex-direction:column;gap:8px}
+.ib-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
+.ib-ex{font:inherit;font-size:12px;border:1px dashed var(--muted);background:var(--surface);color:var(--ink);border-radius:99px;padding:3px 12px;cursor:pointer}
+.ib-note{border:1px solid var(--warn-soft);background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:12px;line-height:1.6}
+.ib-reqs{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}
+.ib-req{border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.ib-rh{display:flex;gap:10px;align-items:center;font-size:12px;flex-wrap:wrap}
+.ib-rt{font-size:13px;margin-top:2px;overflow-wrap:anywhere}
+.ib-card{margin-top:8px;border-top:1px solid var(--line-soft);padding-top:8px;display:flex;flex-direction:column;gap:10px;font-size:13px}
+.ib-msg{font-size:13px;overflow-wrap:anywhere}
+.ib-sec b{font-size:13px}
+.ib-list{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.ib-warn{background:var(--warn-soft);color:var(--warn);border-radius:6px;padding:6px 10px;font-size:12px}
+.ib-ctl{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.ib-ctl label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.ib-act{display:flex;gap:8px;flex-wrap:wrap}
+.pill.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.pill.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.pill.done{background:var(--free);color:var(--ok);border-color:transparent}
+.pill.off{color:var(--muted)}
