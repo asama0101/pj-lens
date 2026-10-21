@@ -377,6 +377,15 @@ test("大項目で絞り込んでも、その大項目を持たないプロジ�
   assert.equal(count(g, /data-goto="/g), 0);
 });
 
+test("ガント: 編集画面の凡例は上端（固定の帯）にあり、レポート用（readonly）は従来どおり下にある", () => {
+  const top = gantt(load(), ["A"]);
+  assert.ok(top.indexOf('class="gtop"') >= 0 && top.indexOf('class="gtop"') < top.indexOf('class="legend"'));
+  assert.ok(top.indexOf('class="legend"') < top.indexOf('class="gscroll"'), "凡例が表より前");
+  assert.equal(count(top, /class="legend"/g), 1);
+  const ro = gantt(load(), ["A"], { readonly: true });
+  assert.ok(!ro.includes('class="gtop"') && ro.indexOf('class="gscroll"') < ro.indexOf('class="legend"'));
+});
+
 test("利用者入力（group 名）はエスケープされる", () => {
   const d = load(); d.tasks.find((t) => t.id === "A1").group = "<img src=x onerror=1>";
   const html = renderProjects(d, TODAY, { filter: "A", view: "gantt", window: "m6" }) + renderProjects(d, TODAY, { filter: "A", view: "list" });
