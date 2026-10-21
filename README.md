@@ -90,10 +90,32 @@ Claude Code を開いたフォルダ（`pj-lens.html` があるフォルダ）�
 | `/pj-lens:replan` | 外部要因で日程が動いたときの影響範囲の計算と変更案 | `/pj-lens:replan A3 が 5 日遅れた` |
 | `/pj-lens:intake` | 文章・Excel の WBS・進捗報告メール・予定表の会議の取り込み、会議のプロジェクト規則 | `/pj-lens:intake wbs plan.xlsx` ほか（下記） |
 | `/pj-lens:mcp` | メール・予定表で使う MCP の指定 | `/pj-lens:mcp mail` |
+| `/pj-lens:watch` | HTML の「Claude Code に依頼する」から届く依頼を見張って処理する | `/pj-lens:watch` |
+| `/pj-lens:inbox` | 届いている依頼を、今ある分だけ処理する。「R3 を承認」「R3 を却下」も | `/pj-lens:inbox R3 を承認` |
 
 `replan`・`intake` は同名のサブエージェントです。「A3 が 5 日遅れた。影響を見て」のように普通の言葉で頼んでも動きます。いずれも、変更案を示して**承認を得てから**データを書き換え、書き込み後に検証（`validate`）を実行します。書き込みは検証に通ったときだけで、通らなければ何も書きません。
 
 エージェントが計算コマンド（`impact` など）を実行するとき、Claude Code が許可の確認を出すことがあります。このプラグインのコマンドなので、許可して構いません（「今後も許可」を選べます）。`/pj-lens:init` と `/pj-lens:mcp` は、自分のスクリプトだけを事前に許可しているため、確認は出ません。
+
+### HTML から Claude Code に依頼する
+
+画面の下端の帯「Claude Code に依頼する」から、**コピー&貼り付けなしで**、期限の見直し・先行の対応付け・タスクの登録を、文章で頼めます（1 回に、複数の種類を混ぜて構いません）。
+
+1. Claude Code で、`/pj-lens:watch` を 1 回実行します（見張りの開始）。見張っている間、帯に「Claude Code が見ています」と出ます。見ていないときは「見ていません」と出ます。
+2. 帯を開いて、対象のプロジェクトを選び、依頼を書いて「依頼を送る」を押します。例: 「A3 が 45 日遅れた（原因: ベンダー）。A3 の後に A5 を結んで。次を登録して: 疎通確認テスト 12/10 構築▸検証環境 先行 A4」。依頼は、データファイル（`data.json`）の受信箱に書かれます。
+3. 見張っている Claude Code が受け取り、提案（変更案）を作ります。数秒で、帯の履歴に、期限・先行・登録の表と、プロジェクト期限の超過などの警告が出ます。足りない情報があると、聞き返しが出るので、返信します。
+4. 提案を確認して、「承認して反映する」を押します。**承認するまで、タスクの日程・先行・一覧は変わりません。** 承認は、Claude Code の画面で「R3 を承認」と伝えても、同じ結果になります。承認のとき、変更履歴に残す理由と原因（ベンダー／社内／自分／その他）を直せます。
+5. 修正したいときは、「修正を依頼する」に「A5 は 5 日にして」のように返信します。却下もできます。
+
+変更履歴には、期限を動かす操作ごとに 1 件（日数・理由つき）と、先行・登録をまとめた 1 件（`source` が `inbox`。画面の「日程変更の履歴」には出ません）が残ります。
+
+- **後続の動き**: 先行を足したとき、後続の期限が先行より前なら、先行の期限と同じ日まで動かします（`replan` と同じ規則）。操作は、登録→先行→期限の順に当てます。
+- **提案のあとにデータが変わったとき**: 反映せず、依頼が「失敗」になります。「もう一度提案してもらう」を押すと、Claude Code が作り直します。先に Claude Code の画面で承認・却下した依頼を、HTML でもう一度承認しても、何も変わりません（二重には反映されません）。
+- **できないこと**: タスクの削除・状態の変更、プロジェクトや会議の追加・削除は、依頼できません（「できない」と返ります）。重要度は、依頼では設定しません。
+- **履歴**: 依頼の履歴は、最新の 20 件まで残ります（処理中のものは消えません）。1 件の文章は 4000 文字まで、やりとりは 40 件までです。
+- **見張りの仕組み**: `/pj-lens:watch` は、Claude Code の Monitor（バックグラウンドの出力を、イベントとして受け取る仕組み）で、`node tools/inbox.js wait` を動かします。30 分ごとに終わるので、そのたびに再起動します。**作業中の Claude Code が、依頼のイベントを受け取って動くことは確認済みです。Claude Code が入力待ちの間に自動で起きることは、未確認です**（確認できないときは、`/pj-lens:inbox` で、今ある分を処理します）。見張りが止まると、90 秒ほどで、帯が「見ていません」になります。
+- **保存の競合**: Claude Code が、受信箱や見ている印（30 秒ごとに更新）を書くので、画面での編集と、ファイルの更新が重なることがあります。そのときは、画面が、最新のファイルを読み直して、同じ編集を当ててから、もう一度保存します（編集は消えません）。
+- **使えない環境**: ファイルへの直接保存に対応していない環境（読み込みだけできる環境）では、帯が使えません。
 
 ### 取り込み（intake）
 
@@ -193,7 +215,8 @@ Claude Code を開いたフォルダ（`pj-lens.html` があるフォルダ）�
 | `projects` | `id`、`name`、`type`（増設／更改／改善／不具合対処／その他）、`status`、`start`、`due`、`milestones`（`name`、`date`） |
 | `tasks` | `id`、`projectId`、`title`、`due`、`start`、`status`、`memo`、`predecessors`、`waitingOn`、`importance`（`high`／`mid`／`low`／`null`）、`doneAt`、`sessions`（作業枠。`id`、`date`、`start`、`end`、`kind`＝`planned`／`actual`）、`group`（大項目）、`subgroup`（中項目）、`wbsKey`（WBS 上の項目名の連結。再取り込みの照合用）。`waitingOn` は `party`、`since`。大項目・中項目は表示と絞り込み用の文字列で、親の期限や進捗は集計しません |
 | `events` | 会議。`id`、`date`、`start`、`end`、`title`、`source`（`manual`／`mcp`）、`skip`、`externalId`、`projectId`、`projectBy`（`rule`／`manual`）、`confirmed`（過ぎたあと確認すると稼働に数える） |
-| `changeLog` | 日程変更と取り込みの履歴。`at`、`taskIds`、`reason`、`cause`、`deltaDays`。取り込みの記録には、`source`（`wbs`／`mail`／`calendar`）と、メールの `messageIds` が付きます |
+| `inbox` | 任意。HTML から Claude Code への依頼の受信箱。`watching`（`at`: Claude Code が見ている印の日時。30 秒ごとに更新）、`requests`（最新 20 件。`id`＝`R1` など、`at`、`projectId`、`status`＝`pending`／`working`／`question`／`proposed`／`applied`／`rejected`／`failed`、`thread`＝`role`（`user`／`claude`）・`at`・`text` のやりとり、`proposal`＝`summary`・`reason`・`cause`・`ops`（`moveDue`／`addPred`／`removePred`／`addTask`）・`sections`・`warnings`・`base`、`result`＝`at`・`by`（`html`／`claude`）・`summary`） |
+| `changeLog` | 日程変更と取り込みの履歴。`at`、`taskIds`、`reason`、`cause`、`deltaDays`。取り込みの記録には、`source`（`wbs`／`mail`／`calendar`／`inbox`）と、メールの `messageIds` が付きます |
 
 ### 補助コマンド
 
@@ -203,6 +226,7 @@ Claude Code を開いたフォルダ（`pj-lens.html` があるフォルダ）�
 node tools/validate.js data/data.json                  # 検証（errors があれば終了コード 1）
 node tools/impact.js data/data.json A3 5 [--compress]  # A3 が 5 日遅れたときの影響範囲（負の日数は前倒し。--compress で後続も詰める）
 node tools/intake.js                                   # 取り込み・会議の規則・WBS の列の対応のコマンド一覧
+node tools/inbox.js                                    # 受信箱（HTML からの依頼）のコマンド一覧（wait・claim・propose・approve など）
 node tools/mcpconf.js <保存先> show                    # メール・予定表の MCP の指定
 node tools/xlsx.js <保存先> plan.xlsx                  # Excel を JSON で読む（Python と venv を使う）
 ```
@@ -235,6 +259,7 @@ npm run build   # assets/pj-lens.html（プラグインに同梱する完成版�
 
 ### 0.4.0
 
+- 追加: 画面の下端の帯「Claude Code に依頼する」。期限の見直し・先行の対応付け・タスクの登録を、コピー&貼り付けなしで文章で頼み、提案の確認と承認（HTML か Claude Code の画面）まで進められます。`/pj-lens:watch`（見張り）、`/pj-lens:inbox`（今ある分の処理・承認・却下）、サブエージェント `inbox`、CLI `tools/inbox.js` を追加しました。依頼は `data.json` の `inbox` に残ります（最新 20 件。従来の `data.json` はそのまま読めます）。変更履歴に、`source` が `inbox` の記録が加わります。
 - 追加: ナビに「設定」タブを追加しました。キーワード規則（会議名・メールの件名に共通）を画面から追加・書き換え・削除でき、各規則で付いている会議の件数が出ます。WBS の取り込み記録（ファイル名・日付・件数）も出ます。`wbs-apply` に、記録するファイル名を渡す `--source` を足しました。`data.json` の `settings.wbsImports` に記録され、従来の `data.json` はそのまま読めます。
 - 変更: 追加したタスクの既定を、開始＝今日・期限＝今日の 7 日後にしました（以前は開始なしで、ガントでは点として出ていました）。
 - 変更: 「今日の優先」の各項目の先頭に、どのプロジェクトのタスクかを出します（スケジュール画面にも出ます）。
