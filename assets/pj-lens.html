@@ -33,7 +33,9 @@ body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:1
 header.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;justify-content:space-between}
 /* ヘッダーと「今日の優先」は、スクロールしても上端に固定する。ヘッダーの高さは --hh（app.js が測る）で、固定の帯と「今日の優先」の位置に使う */
 header.top{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0;margin-block:-8px 0}
-.cols>.prio{position:sticky;top:calc(var(--hh,0px) + 8px);align-self:start;max-height:calc(100vh - var(--hh,0px) - 24px);overflow-y:auto}
+/* プロジェクト画面のフィルタ行は、ヘッダーの下に固定する。高さは --th（app.js が測る） */
+.toolbar.ptool{position:sticky;top:var(--hh,0px);z-index:9;background:var(--bg);padding:6px 0 10px;margin-bottom:0}
+.cols>.prio{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + 8px);align-self:start;max-height:calc(100vh - var(--hh,0px) - var(--th,0px) - 24px);overflow-y:auto}
 h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.01em}
 .today{color:var(--muted);font-size:13px}
 nav[role=tablist]{display:flex;gap:2px;background:var(--line-soft);padding:3px;border-radius:8px}
@@ -166,6 +168,8 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .in.sm{width:auto}
 .in.gi{width:7em}
 .tscroll{overflow-x:auto}
+/* 列見出しは、スクロール中も上端に付ける。表が横スクロールの枠の中にあり sticky が効かないので、app.js が見出しのセルをずらす */
+.tbl.edit thead th{position:relative;z-index:2;background:var(--surface);box-shadow:inset 0 -1px 0 var(--line)}
 .hrs{background:var(--accent-soft);color:var(--ink);border-radius:4px;padding:0 8px}
 .wl-tbl .num{text-align:right;white-space:nowrap}
 .wl-tbl tfoot td{font-weight:700;border-top:1px solid var(--line)}
@@ -194,7 +198,7 @@ label{font-size:13px}
 .pg{padding:6px 0 14px;border-bottom:1px solid var(--line)}.pg:first-child{padding-top:0}.pg:last-of-type{border-bottom:0}
 
 .gtools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-.gtop{position:sticky;top:var(--hh,0px);z-index:8;background:var(--surface);padding:6px 0 8px;margin-bottom:6px;border-bottom:1px solid var(--line-soft)}
+.gtop{position:sticky;top:calc(var(--hh,0px) + var(--th,0px));z-index:8;background:var(--surface);padding:6px 0 8px;margin-bottom:6px;border-bottom:1px solid var(--line-soft)}
 .gtop .gtools{margin-bottom:6px}
 .gtop .legend{margin-top:0}
 .gscroll{position:relative;padding-bottom:6px}
@@ -2525,7 +2529,7 @@ function renderProjects(data, today, opts = {}) {
   const body = view === "gantt"
     ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual, group, addAt: opts.addAt })}</section>`
     : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, group })).join("")}</div>`;
-  return `<div class="toolbar"><div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="プロジェクトで絞り込み">${chips}${gsel}</div>
+  return `<div class="toolbar ptool"><div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="プロジェクトで絞り込み">${chips}${gsel}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${addBtn}<div class="seg" role="group" aria-label="表示"><button data-pview="gantt" aria-pressed="${view === "gantt"}">ガント</button><button data-pview="list" aria-pressed="${view === "list"}">リスト</button></div></div></div>
     ${opts.pendingReplan ? renderReplanPanel(data, opts.pendingReplan) : ""}
     <div class="cols${showPrio ? "" : " one"}">${body}${showPrio ? renderPrio(data, today, { sched: false }) : ""}</div>`;
@@ -2744,6 +2748,7 @@ function render() {
     S.focusSel = null;
     if (el) { el.focus(); el.select?.(); }
   }
+  syncSticky();
   if (S.hlId) {
     let row = null;
     try { row = view.querySelector(`[data-row="${CSS.escape(S.hlId)}"]`); } catch { /* 無視 */ }
@@ -3394,12 +3399,35 @@ view.addEventListener("keydown", (e) => {
   if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-pick]")) { e.preventDefault(); e.target.click(); }
 });
 
+// ヘッダーとフィルタ行は上端に固定する（theme.css）。その高さを --hh・--th に入れ、固定の帯・表の列見出し・「今日の優先」がその下に付くようにする
+const topbar = document.querySelector("header.top");
+function syncSticky() {
+  const root = document.documentElement.style;
+  root.setProperty("--hh", `${topbar?.offsetHeight ?? 0}px`);
+  const tool = view.querySelector(".ptool");
+  root.setProperty("--th", `${tool ? tool.offsetHeight : 0}px`);
+  pinTableHeads();
+}
+
+/** リストの表の列見出しを、スクロール中も、ヘッダーとフィルタ行の下に付ける（表の枠の中でセルをずらす。表の下端は越えない） */
+function pinTableHeads() {
+  const cs = getComputedStyle(document.documentElement);
+  const top = (parseFloat(cs.getPropertyValue("--hh")) || 0) + (parseFloat(cs.getPropertyValue("--th")) || 0);
+  for (const box of view.querySelectorAll(".tscroll")) {
+    const ths = box.querySelectorAll("thead th");
+    if (!ths.length) continue;
+    const r = box.getBoundingClientRect();
+    const dy = Math.max(0, Math.min(top - r.top, r.height - ths[0].offsetHeight - 4));
+    for (const th of ths) th.style.transform = dy ? `translateY(${dy}px)` : "";
+  }
+}
+let pinQueued = false;
+window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); }); } }, { passive: true });
+if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(syncSticky).observe(topbar);
+window.addEventListener("resize", syncSticky);
+
 render();
 startup();
-
-// ヘッダーは上端に固定する（theme.css）。その高さを --hh に入れ、固定の帯や「今日の優先」がヘッダーの下に付くようにする
-const topbar = document.querySelector("header.top");
-if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(() => document.documentElement.style.setProperty("--hh", `${topbar.offsetHeight}px`)).observe(topbar);
 
 
 })();</script>
