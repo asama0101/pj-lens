@@ -99,11 +99,11 @@ test("moveProjectDates / moveMilestone", () => {
   assert.deepEqual(proj(m, "A").milestones.map((x) => x.name), ["本番切替", "機器発注"]);
 });
 
-test("addTaskQuick: 期限は 7 日後・To Do・先行なし。空白の件名は例外。ID は重複しない", () => {
+test("addTaskQuick: 開始は今日・期限は 7 日後・To Do・先行なし。空白の件名は例外。ID は重複しない", () => {
   const d = load();
   const a = addTaskQuick(d, "C", "  追加タスク ", TODAY);
   const t = a.tasks.find((x) => x.title === "追加タスク");
-  assert.deepEqual([t.projectId, t.due, t.status, t.predecessors, t.start], ["C", "2026-10-27", "To Do", [], null]);
+  assert.deepEqual([t.projectId, t.due, t.status, t.predecessors, t.start], ["C", "2026-10-27", "To Do", [], TODAY]);
   assert.throws(() => addTaskQuick(d, "C", "   ", TODAY));
   const b = addTaskQuick(a, "C", "もう1件", TODAY);
   assert.equal(new Set(b.tasks.map((x) => x.id)).size, b.tasks.length);
