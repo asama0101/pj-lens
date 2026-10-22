@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { today } from "../core/dates.js";
 
 const FILE = "pj-lens-mcp.json";
+/** 保存形式の版。形式を変える版では上げ、README に移行手順を書く。schema_version の無い既存ファイルは 1 として読む */
+export const SCHEMA_VERSION = 1;
 
 /** 役割ごとの必須項目: メールは検索と本文取得、予定表は期間の取得 */
 export const ROLES = { mail: ["server", "searchTool", "readTool"], calendar: ["server", "listTool"] };
@@ -13,23 +15,31 @@ export const ROLES = { mail: ["server", "searchTool", "readTool"], calendar: ["s
 export function validateMcpConfig(cfg) {
   const errors = [];
   for (const [role, v] of Object.entries(cfg ?? {})) {
-    if (role === "savedAt") continue;
+    if (role === "savedAt" || role === "schema_version") continue;
     if (!ROLES[role]) { errors.push(`不明な役割です: ${role}（mail か calendar）`); continue; }
     for (const k of ROLES[role]) if (typeof v?.[k] !== "string" || !v[k].trim()) errors.push(`${role}.${k} が必要です`);
   }
   return errors;
 }
 
-/** 保存済みの指定。ファイルが無ければ {} */
+/** 保存済みの指定。ファイルが無ければ {}。schema_version が無い既存ファイルは 1 として読む（読んだ内容は変えない） */
 export function readMcpConfig(dir) {
   const p = join(dir, FILE);
-  return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : {};
+  if (!existsSync(p)) return {};
+  const cfg = JSON.parse(readFileSync(p, "utf8"));
+  if (cfg.schema_version !== undefined && cfg.schema_version !== SCHEMA_VERSION) {
+    throw new Error(`pj-lens-mcp.json の schema_version ${cfg.schema_version} には対応していません（対応: ${SCHEMA_VERSION}）。README の移行手順を見てください`);
+  }
+  return cfg;
 }
 
 function write(dir, cfg) {
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, FILE), JSON.stringify(cfg, null, 2) + "\n");
-  return cfg;
+  const { schema_version: old, ...body } = cfg;
+  void old;
+  const out = { schema_version: SCHEMA_VERSION, ...body }; // 書くときは必ず現在の版を付ける
+  writeFileSync(join(dir, FILE), JSON.stringify(out, null, 2) + "\n");
+  return out;
 }
 
 /** 役割の指定を保存する（他の役割は保つ）。検証に通らなければ例外で、何も書かない */

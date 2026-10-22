@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { pickPython, venvPython, ensureEnv } from "../plugins/pj-lens/tools/xlsx.js";
+import { pickPython, venvPython, ensureEnv, readPin } from "../plugins/pj-lens/tools/xlsx.js";
 
 const REPO = fileURLToPath(new URL("../plugins/pj-lens/", import.meta.url));
 const ok = (stdout = "") => ({ status: 0, stdout, stderr: "" });
@@ -47,10 +47,10 @@ test("ensureEnv: 承認済みなら venv を作り、版を固定して pip inst
     if (args.includes("venv")) made = true;
     return ok();
   };
-  const r = ensureEnv(dir, { run, python: ["py", "-3"], exists: () => made, platform: "win32", approve: true, pin: PIN });
+  const r = ensureEnv(dir, { run, python: ["py", "-3"], exists: () => made, platform: "win32", approve: true, pin: PIN, requirements: "/req uirements.txt" });
   assert.equal(r.ok, true);
   assert.deepEqual(calls[0], ["py", "-3", "-m", "venv", join(dir, "venv")]);
-  assert.deepEqual(calls[1].slice(1), ["-m", "pip", "install", "--quiet", `openpyxl==${PIN}`]);
+  assert.deepEqual(calls[1].slice(1), ["-m", "pip", "install", "--quiet", "--require-hashes", "-r", "/req uirements.txt"], "ハッシュ付きの requirements.txt から入れる");
   assert.equal(r.python, venvPython(dir, "win32"));
 });
 
@@ -80,8 +80,11 @@ test("ensureEnv: 承認済みでも venv を作れない／pip が失敗した�
   assert.match(b.message, /openpyxl/);
 });
 
-test("requirements.txt: openpyxl を == で固定している", () => {
-  assert.match(readFileSync(join(REPO, "requirements.txt"), "utf8"), /^openpyxl==\d+\.\d+\.\d+$/m);
+test("requirements.txt: openpyxl と et_xmlfile を == で固定し、すべてハッシュ付き", () => {
+  const text = readFileSync(join(REPO, "requirements.txt"), "utf8");
+  assert.match(text, /^openpyxl==\d+\.\d+\.\d+ \\\r?\n\s+--hash=sha256:[0-9a-f]{64}/m);
+  assert.match(text, /^et_xmlfile==\d+\.\d+\.\d+ \\\r?\n\s+--hash=sha256:[0-9a-f]{64}/m);
+  assert.equal(readPin(), /^openpyxl==(\S+)/m.exec(text)[1]);
 });
 
 test("統合: fixtures/wbs-merged.xlsx を読むと結合セルが展開され、日付が YYYY-MM-DD になる（Python 3 が無い環境だけ skip）", (t) => {
@@ -125,4 +128,76 @@ test("統合: 非表示の行・列は読み取らず、件数を hiddenRows・h
   assert.deepEqual([sh.hiddenRows, sh.hiddenColumns], [1, 1]);
   assert.deepEqual(sh.rows[0], ["項目", "期限"], "非表示の列を除いて詰める");
   assert.equal(JSON.parse(r.stdout).sheets[0].hiddenRows, 0);
+});
+
+// --- doctor / setup / 置き場の優先順 (A6・A7・H5) ---
+import { mkdtempSync, rmSync } from "node:fs";
+import { after } from "node:test";
+import { diagnose } from "../plugins/pj-lens/tools/xlsx.js";
+
+const XLSX_JS = join(REPO, "tools/xlsx.js");
+const scratch = mkdtempSync(join(tmpdir(), "pjl-xlsx-"));
+after(() => rmSync(scratch, { recursive: true, force: true }));
+// PJ_LENS_HOME が開発者の環境に残っていても影響しないよう、テストごとに明示する
+const cli = (args, env = {}) => spawnSync(process.execPath, [XLSX_JS, ...args], { encoding: "utf8", timeout: 300000, env: { ...process.env, PJ_LENS_HOME: "", ...env } });
+
+test("置き場が決まらないときは終了コード 2（doctor・setup・読み取り）", () => {
+  for (const args of [["doctor"], ["setup"], ["x.xlsx"]]) {
+    const r = cli(args);
+    assert.equal(r.status, 2, args.join(" "));
+    assert.match(r.stderr, /PJ_LENS_HOME/);
+    assert.match(r.stderr, /--data/);
+  }
+});
+
+test("引数の誤りは終了コード 2（引数なし・サブコマンドに余分な引数）", () => {
+  assert.equal(cli([]).status, 2);
+  assert.equal(cli(["doctor", "余分", "--data", join(scratch, "a")]).status, 2);
+});
+
+test("置き場の優先順: PJ_LENS_HOME が --data と従来の位置引数に勝つ", () => {
+  const home = join(scratch, "env home");
+  for (const args of [["doctor", "--data", join(scratch, "arg")], [join(scratch, "arg"), "doctor"]]) {
+    const r = cli(args, { PJ_LENS_HOME: home });
+    assert.equal(r.status, 3);
+    assert.ok(r.stdout.includes(home), r.stdout);
+    assert.ok(!r.stdout.includes(join(scratch, "arg")));
+  }
+  const r = cli(["doctor", "--data", join(scratch, "arg")]);
+  assert.ok(r.stdout.includes(join(scratch, "arg")), "環境変数がなければ --data");
+});
+
+test("diagnose: 環境がなければ usable:false で案内、固定した版が入っていれば usable:true。何も実行・変更しない", () => {
+  const calls = [];
+  const run = (c, a) => { calls.push([c, ...a]); return a.includes("-c") && a[a.length - 1].includes("openpyxl") ? ok() : { status: 0, stdout: "C:\Python\python.exe\n", stderr: "" }; };
+  const none = diagnose("/d", { run, python: ["py", "-3"], exists: () => false, platform: "linux", pin: PIN });
+  assert.equal(none.usable, false);
+  assert.match(none.lines.join("\n"), /setup/);
+  assert.match(none.lines.join("\n"), /C:\Python\python\.exe/, "作成元の Python のパス");
+  assert.equal(diagnose("/d", { run, python: ["py", "-3"], exists: () => true, platform: "linux", pin: PIN }).usable, true);
+  assert.ok(calls.every(([, ...a]) => !a.includes("venv") && !a.includes("pip")), "診断は環境を作らない");
+});
+
+test("統合: 空白と日本語を含む置き場で doctor が動き、setup は --yes なしでは何も作らない。--yes で作り、doctor が 0 になる（Python 3 が無い環境だけ skip）", (t) => {
+  const real = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8" });
+  if (!pickPython(real)) return t.skip("Python 3 が見つかりません");
+  const home = join(scratch, "利用者 名", "データ 置き場");
+  let r = cli(["doctor", "--data", home]);
+  assert.equal(r.status, 3, r.stderr);
+  assert.ok(r.stdout.includes(home) && r.stdout.includes(venvPython(home)), r.stdout);
+  assert.match(r.stdout, /作成元の Python: .+/);
+  assert.equal(existsSync(home), false, "doctor は何も作らない");
+  r = cli(["setup", "--data", home]);
+  assert.equal(r.status, 3);
+  assert.ok(r.stderr.includes(home) && /openpyxl==/.test(r.stderr) && /--yes/.test(r.stderr), r.stderr);
+  assert.equal(existsSync(home), false, "承認なしでは作らない");
+  r = cli(["setup", "--yes", "--data", home]);
+  assert.equal(r.status, 0, r.stderr);
+  r = cli(["doctor"], { PJ_LENS_HOME: home });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /使えます/);
+  const fixture = fileURLToPath(new URL("fixtures/wbs-merged.xlsx", import.meta.url));
+  r = cli([home, fixture]); // 従来の呼び出し（<置き場> <ファイル>）
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).sheets.length, 3);
 });

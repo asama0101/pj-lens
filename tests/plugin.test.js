@@ -71,3 +71,61 @@ test("レポート(PDF)を廃止した: 画面にPDFボタンも印刷起動も�
   assert.ok(!readme.includes("- **レポート(PDF)**"));
   assert.match(readme, /レポート\(PDF\)を廃止/);
 });
+
+// --- F1 の 3・4・8: パスの実在、禁止するパスの書き方、claude plugin validate ---
+import { readdirSync } from "node:fs";
+
+const rootPath = fileURLToPath(root);
+const docs = () => [
+  ...readdirSync(new URL("skills/", root)).map((n) => `skills/${n}/SKILL.md`),
+  ...readdirSync(new URL("agents/", root)).filter((f) => f.endsWith(".md")).map((f) => `agents/${f}`),
+].map((p) => ({ p, text: readFileSync(new URL(p, root), "utf8") }));
+
+test("SKILL.md・agents が書く ${CLAUDE_PLUGIN_ROOT}/… のパスが、plugins/pj-lens 内に実在する", () => {
+  const found = [];
+  for (const { p, text } of docs()) {
+    for (const m of text.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^\s"'`)<>*]+)/g)) {
+      const rel = m[1].replace(/[.,;:、。]+$/, "");
+      found.push(rel);
+      assert.ok(existsSync(new URL(rel, root)), `${p}: \${CLAUDE_PLUGIN_ROOT}/${rel} がありません`);
+    }
+  }
+  assert.ok(found.length > 5, "パスを 1 つも拾えていない（検査が空振りしている）");
+});
+
+test("SKILL.md・agents に、相対リンク・ハードコードした絶対パス・${CLAUDE_SKILL_DIR} を書いていない", () => {
+  for (const { p, text } of docs()) {
+    assert.doesNotMatch(text, /\]\(\.\.?\//, `${p}: 相対リンク`);
+    assert.doesNotMatch(text, /[A-Za-z]:[\/]+Users[\/]/i, `${p}: 絶対パス`);
+    assert.doesNotMatch(text, /\$\{CLAUDE_SKILL_DIR\}/, `${p}: CLAUDE_SKILL_DIR`);
+  }
+});
+
+// claude コマンドが無ければ skip。Windows の claude.cmd を起動できるよう shell を経由する（引数は固定の文字列だけ）
+const claude = (args, cwd) => spawnSync(`claude ${args}`, { cwd, encoding: "utf8", shell: true, timeout: 120000 });
+for (const [label, args, cwd] of [["プラグイン(--strict)", "plugin validate plugins/pj-lens --strict", repoRoot], ["marketplace", "plugin validate .", repoRoot]]) {
+  test(`claude ${args} が通る（claude コマンドが無ければ skip）`, (t) => {
+    if (claude("--version", rootPath).status !== 0) return t.skip("claude コマンドが見つかりません");
+    const r = claude(args, fileURLToPath(cwd));
+    assert.equal(r.status, 0, `${label}\n${r.stdout}\n${r.stderr}`);
+  });
+}
+
+test("H1: plugin.json と marketplace.json の description に「Windows 専用」を書いている", () => {
+  assert.match(json(".claude-plugin/plugin.json").description, /Windows 専用/);
+  assert.match(marketplace().plugins[0].description, /Windows 専用/);
+});
+
+test("C3: intake は tools を省略し、その理由を本文に書いている", () => {
+  const text = readFileSync(new URL("agents/intake.md", root), "utf8");
+  assert.doesNotMatch(/^---\r?\n([\s\S]*?)\r?\n---/.exec(text)[1], /^tools:/m);
+  assert.match(text, /`tools` を省略/);
+});
+
+test("README: アンインストールで消えるもの・残るもの(H4)と、自動起動を外す理由(C5)を書いている", () => {
+  const readme = readFileSync(new URL("README.md", root), "utf8");
+  assert.match(readme, /### アンインストールで消えるもの・残るもの/);
+  assert.match(readme, /pj-lens-mcp\.json/);
+  assert.match(readme, /`disable-model-invocation` を付けていません/);
+  for (const n of ["intake", "replan"]) assert.doesNotMatch(readFileSync(new URL(`skills/${n}/SKILL.md`, root), "utf8"), /disable-model-invocation/);
+});

@@ -7,7 +7,7 @@
     {
       "name": "pj-lens",
       "source": "./plugins/pj-lens",
-      "description": "プロジェクト・タスク管理ダッシュボードと、日程見直しと取り込み（WBS・メール・予定表）のサブエージェント"
+      "description": "プロジェクト・タスク管理ダッシュボードと、日程見直しと取り込み（WBS・メール・予定表）のサブエージェント。Windows 専用"
     }
   ],
   "metadata": {

@@ -72,3 +72,44 @@ test("setMcpRole: savedAt を足し、他の役割を保つ。不正は例外", 
   assert.throws(() => setMcpRole(d, "mail", { server: "s" }));
   assert.equal(readMcpConfig(d).mail.server, "s");
 });
+
+// --- schema_version (H3) と置き場の優先順 (A7) ---
+import { writeFileSync, mkdirSync } from "node:fs";
+import { SCHEMA_VERSION } from "../plugins/pj-lens/src/import/mcpconf.js";
+
+const cliEnv = (env, ...args) => spawnSync(process.execPath, [join(REPO, "tools/mcpconf.js"), ...args], { encoding: "utf8", env: { ...process.env, PJ_LENS_HOME: "", ...env } });
+
+test("schema_version: 保存すると現在の版(1)が先頭に入り、validate・show の対象の役割には数えない", () => {
+  const d = dir();
+  assert.equal(SCHEMA_VERSION, 1);
+  const saved = setMcpRole(d, "mail", { server: "s", searchTool: "a", readTool: "b" });
+  assert.equal(saved.schema_version, 1);
+  const onDisk = JSON.parse(readFileSync(join(d, "pj-lens-mcp.json"), "utf8"));
+  assert.equal(Object.keys(onDisk)[0], "schema_version");
+  assert.deepEqual(validateMcpConfig(onDisk), []);
+  assert.deepEqual(cli(d, "show").out.configured, { mail: true, calendar: false });
+});
+
+test("schema_version: 無い既存ファイルは 1 として読め、次に保存するとき付く。未対応の版は読まずに止まる", () => {
+  const d = dir();
+  mkdirSync(d, { recursive: true });
+  const legacy = { mail: { server: "s", searchTool: "a", readTool: "b" }, savedAt: "2026-01-01" };
+  writeFileSync(join(d, "pj-lens-mcp.json"), JSON.stringify(legacy));
+  assert.deepEqual(readMcpConfig(d), legacy);
+  assert.equal(setMcpRole(d, "calendar", { server: "c", listTool: "l" }).schema_version, 1);
+  assert.equal(readMcpConfig(d).mail.server, "s", "他の役割は保たれる");
+  writeFileSync(join(d, "pj-lens-mcp.json"), JSON.stringify({ schema_version: 99 }));
+  assert.throws(() => readMcpConfig(d), /schema_version 99/);
+  assert.equal(cli(d, "show").status, 1);
+});
+
+test("置き場: PJ_LENS_HOME が最優先、次に --data か従来の位置引数。どれも無ければ終了コード 2", () => {
+  const env = dir("env"), arg = dir("arg");
+  assert.equal(cliEnv({ PJ_LENS_HOME: env }, arg, "set", ...MAIL).status, 0);
+  assert.equal(existsSync(join(env, "pj-lens-mcp.json")), true);
+  assert.equal(existsSync(arg), false, "位置引数の置き場には書かない");
+  assert.equal(cliEnv({}, "--data", arg, "set", ...MAIL).status, 0);
+  assert.equal(existsSync(join(arg, "pj-lens-mcp.json")), true);
+  assert.equal(cliEnv({}, "show").status, 2);
+  assert.equal(cliEnv({ PJ_LENS_HOME: env }, "show").status, 0, "環境変数だけでも動く");
+});

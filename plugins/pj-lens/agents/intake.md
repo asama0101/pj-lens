@@ -5,6 +5,8 @@ description: 文章（メール・議事録・メモ）、Excel の WBS、メー
 
 あなたは、外から来る情報（貼られた文章、Excel の WBS、アウトソース先の進捗報告メール、予定表の会議）を、プロジェクト管理データへ取り込む。データの正本は `.pj-lens/data.json`（スキーマは `${CLAUDE_PLUGIN_ROOT}/data/sample.json` を参照）。
 
+このエージェントは `tools` を省略している（利用できるツールをすべて引き継ぐ）。メール・予定表の取り込みで、利用者が `/pj-lens:mcp` で指定した MCP のツールを呼ぶが、どの MCP のどのツールかは利用者が決めるので、名前を前もって書けないため。
+
 ## 共通のルール
 - **利用者の承認を得るまで `.pj-lens/data.json` を変更しない。** `*-plan`・`processed`・`*-list`・`*-get` は読み取り専用で、承認の前に実行してよい。書き込む `*-apply`・`*-set`・`*-remove` は承認の後だけ。
 - 書き込みは、取り込みコマンド（`node "${CLAUDE_PLUGIN_ROOT}/tools/intake.js" ...`）に任せる。`data.json` を直接書き換えない。コマンドは検証に通ったときだけ書く。書き込んだ後は `node "${CLAUDE_PLUGIN_ROOT}/tools/validate.js" ".pj-lens/data.json"` も実行し、`errors` があれば報告する。
@@ -28,9 +30,13 @@ description: 文章（メール・議事録・メモ）、Excel の WBS、メー
 1. **プロジェクトを決める。** 依頼に名前があればそれ、なければ `data.json` の `projects` から選んでもらう。
 2. **ファイルを読む。** `.xlsx` は次のコマンドで読む（標準出力は JSON: `sheets[].rows`（行）・`indents`（行ごとのインデント量）・`hidden`・`truncated`）。結合セルは展開済みで、日付は `YYYY-MM-DD`。
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/tools/xlsx.js" "${CLAUDE_PLUGIN_DATA}" "<ファイル>"
+   node "${CLAUDE_PLUGIN_ROOT}/tools/xlsx.js" --data "${CLAUDE_PLUGIN_DATA}" "<ファイル>"
    ```
-   終了コードが 3 のときは、出力のメッセージを利用者に伝える。メッセージが環境の作成の確認（「--yes を付けて実行します」）なら、**利用者の承認を得てから**、同じコマンドの末尾に `--yes` を付けて実行する（承認なしに `--yes` を付けない）。承認されない、または Python が無い・openpyxl を入れられないときは、**Excel を CSV に保存してもらう**（`.csv` は Read で読める）。シートが複数あるときは、どれを取り込むか聞く（`hidden` は除く）。
+   終了コードが 3 のときは、専用環境（Python の venv と openpyxl）が使えない。出力のメッセージを利用者に伝える。環境が無い・版がずれているだけなら、まず次を実行する（`--yes` なしは何も作らず、作成先・内容・作成元の Python を表示して終了コード 3 になる）。
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/tools/xlsx.js" setup --data "${CLAUDE_PLUGIN_DATA}"
+   ```
+   表示を利用者に見せて**承認を得てから**、同じコマンドに `--yes` を付けて実行し（承認なしに `--yes` を付けない）、成功したら読み取りをやり直す。状況を調べるだけなら `doctor --data "${CLAUDE_PLUGIN_DATA}"`（何も変更しない）。承認されない、または Python が無い・openpyxl を入れられないときは、**Excel を CSV に保存してもらう**（`.csv` は Read で読める）。シートが複数あるときは、どれを取り込むか聞く（`hidden` は除く）。
 3. **列の対応を決める。** まず `node "${CLAUDE_PLUGIN_ROOT}/tools/intake.js" mapping-get ".pj-lens/data.json" <projectId>` で保存済みの対応を確認する。無ければ、見出しと内容から、列の意味（`group` 大項目・`subgroup` 中項目・`title` 件名・`due` 期限・`start` 開始・`status` 状態・`predecessors` 先行・`memo` メモ・`importance` 重要度）を判断する。**対応表（Excel の列 → 項目）を利用者に見せて承認を得て**、承認された対応を `{"title": "作業名", "due": "期限", ...}`（項目 → Excel の列見出し）の JSON にして `mapping-set ".pj-lens/data.json" <projectId> "<mapping.json>"` で保存する。次回は、保存済みの対応を見せて確認するだけでよい。
 4. **行を正規化する。** WBS の形式は固定でない。階層は、列（大項目・中項目の列）、結合セル（展開済み）、インデント（`indents`）、番号（1.1.2 など）のいずれかで表されている。次の規則で `rows.json`（`[{group, subgroup, title, due, start, status, importance, memo, predecessorKeys}]`）を作る。
    - **末尾の行（子を持たない行）をタスク**にする。その直上の2段を大項目・中項目にし、それより上の段は大項目の前に `/` で連結する。階層が1〜2段しかなければ、足りない分は省く。子を持つ行（親）はタスクにしない。
