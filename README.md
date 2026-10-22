@@ -134,7 +134,7 @@ Claude Code を開いたフォルダ（`pj-lens.html` があるフォルダ）�
 - WBS の形式は固定でなくて構いません。列の意味（大項目・中項目・件名・期限・先行など）は Claude が見出しと内容から判断し、**対応表を見せて確認を取ります**。承認された対応表はプロジェクトごとに保存し、次回は確認するだけです。
 - 階層は、列・結合セル・インデント・番号のどれで表されていても読めます。末尾の行（子を持たない行）をタスク（小項目）にし、その上の2段を大項目・中項目にします。
 - 再取り込みでは、WBS 上の項目名（大項目/中項目/件名の連結。`wbsKey`）で同じタスクを探し、期限などを更新します。`wbsKey` を持たない手入力のタスクは、同じ件名のものが1つだけなら、同じタスクとして扱い、取り込みで `wbsKey` を付けます（重複して追加しません）。画面で直した件名は上書きしません。WBS に無くなった既存のタスクは削除せず、一覧で知らせます。
-- **Python 3 が要ります。** 初回だけ、プラグイン専用のフォルダに venv を作り、`openpyxl` を入れます（ネットワークが必要。約10秒）。Python が無い、または入れられないときは、Excel を CSV に保存すれば、Python なしで取り込めます。
+- **Python 3 が要ります。** 初回だけ、プラグイン専用のフォルダに venv を作り、`openpyxl`（`requirements.txt` で版を固定）を入れます（ネットワークが必要。約 20 MB、約10秒）。作る前に、場所と内容を示して**承認を求めます**（承認なしには作りません）。承認されない、Python が無い、または入れられないときは、Excel を CSV に保存すれば、Python なしで取り込めます。
 
 #### メール・予定表を取り込むとき
 
@@ -228,7 +228,7 @@ node tools/impact.js data/data.json A3 5 [--compress]  # A3 が 5 日遅れた�
 node tools/intake.js                                   # 取り込み・会議の規則・WBS の列の対応のコマンド一覧
 node tools/inbox.js                                    # 受信箱（HTML からの依頼）のコマンド一覧（wait・claim・propose・approve など）
 node tools/mcpconf.js <保存先> show                    # メール・予定表の MCP の指定
-node tools/xlsx.js <保存先> plan.xlsx                  # Excel を JSON で読む（Python と venv を使う）
+node tools/xlsx.js <保存先> plan.xlsx [--yes]           # Excel を JSON で読む（Python と venv を使う。環境が無いときは --yes（承認）が付くまで作らず、終了コード 3）
 ```
 
 ## 開発

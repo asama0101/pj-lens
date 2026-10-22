@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -25,39 +25,63 @@ test("venvPython: win32 と linux でパスが違う", () => {
   assert.match(venvPython("/d/x", "linux"), /venv[\\/]bin[\\/]python$/);
 });
 
-test("ensureEnv: venv が無ければ作り、openpyxl が無ければ pip install する（run の呼び出し順を検査）。dataDir の空白は1つの引数のまま", () => {
+const PIN = "3.1.5";
+
+test("ensureEnv: 承認(approve)なしで環境が足りないときは、何も作らず needsApproval で止まり、作成先と内容を案内する", () => {
+  const calls = [];
+  const r = ensureEnv("/d/data dir", { run: (c, a) => { calls.push([c, ...a]); return ng; }, python: ["python"], exists: () => false, platform: "linux", pin: PIN });
+  assert.equal(r.ok, false);
+  assert.equal(r.needsApproval, true);
+  assert.match(r.message, /data dir/);
+  assert.match(r.message, new RegExp(`openpyxl==${PIN}`));
+  assert.match(r.message, /--yes/);
+  assert.equal(calls.length, 0, "承認前は何も実行しない");
+});
+
+test("ensureEnv: 承認済みなら venv を作り、版を固定して pip install する（呼び出し順を検査）。dataDir の空白は1つの引数のまま", () => {
   const dir = join(tmpdir(), "pjl x", "data dir");
   const calls = [];
   let made = false;
   const run = (cmd, args) => {
     calls.push([cmd, ...args]);
     if (args.includes("venv")) made = true;
-    if (args[0] === "-c") return calls.filter((c) => c[1] === "-c").length === 1 ? ng : ok();
     return ok();
   };
-  const r = ensureEnv(dir, { run, python: ["py", "-3"], exists: () => made, platform: "win32" });
+  const r = ensureEnv(dir, { run, python: ["py", "-3"], exists: () => made, platform: "win32", approve: true, pin: PIN });
   assert.equal(r.ok, true);
   assert.deepEqual(calls[0], ["py", "-3", "-m", "venv", join(dir, "venv")]);
-  assert.deepEqual(calls[1].slice(1), ["-c", "import openpyxl"]);
-  assert.deepEqual(calls[2].slice(1), ["-m", "pip", "install", "--quiet", "openpyxl"]);
+  assert.deepEqual(calls[1].slice(1), ["-m", "pip", "install", "--quiet", `openpyxl==${PIN}`]);
   assert.equal(r.python, venvPython(dir, "win32"));
 });
 
-test("ensureEnv: すでに venv と openpyxl があれば何も作らず入れない", () => {
+test("ensureEnv: venv と固定した版の openpyxl があれば、承認なしでも何も作らず入れない", () => {
   const calls = [];
-  const r = ensureEnv("/d", { run: (c, a) => { calls.push([c, ...a]); return ok(); }, python: ["python"], exists: () => true, platform: "linux" });
+  const r = ensureEnv("/d", { run: (c, a) => { calls.push([c, ...a]); return ok(); }, python: ["python"], exists: () => true, platform: "linux", pin: PIN });
   assert.equal(r.ok, true);
   assert.equal(calls.length, 1);
+  assert.ok(calls[0][2].includes(PIN), "固定した版を照合する");
 });
 
-test("ensureEnv: venv を作れない／pip が失敗したら ok:false で CSV を案内するメッセージ", () => {
-  const a = ensureEnv("/d", { run: () => ng, python: ["python"], exists: () => false, platform: "linux" });
+test("ensureEnv: 版がずれた openpyxl は、承認なしでは needsApproval で止まる", () => {
+  const r = ensureEnv("/d", { run: (c, a) => (a[0] === "-c" ? ng : ok()), python: ["python"], exists: () => true, platform: "linux", pin: PIN });
+  assert.equal(r.needsApproval, true);
+  assert.doesNotMatch(r.message, /環境がありません/, "venv はあるので、入れ直すのは openpyxl だけと案内する");
+  assert.match(r.message, new RegExp(`openpyxl==${PIN}`));
+});
+
+test("ensureEnv: 承認済みでも venv を作れない／pip が失敗したら ok:false（needsApproval でない）で CSV を案内する", () => {
+  const a = ensureEnv("/d", { run: () => ng, python: ["python"], exists: () => false, platform: "linux", approve: true, pin: PIN });
   assert.equal(a.ok, false);
+  assert.notEqual(a.needsApproval, true);
   assert.match(a.message, /venv/);
-  const b = ensureEnv("/d", { run: (c, args) => (args.includes("pip") || args[0] === "-c" ? ng : ok()), python: ["python"], exists: () => true, platform: "linux" });
+  const b = ensureEnv("/d", { run: (c, args) => (args.includes("pip") || args[0] === "-c" ? ng : ok()), python: ["python"], exists: () => true, platform: "linux", approve: true, pin: PIN });
   assert.equal(b.ok, false);
   assert.match(b.message, /CSV/);
   assert.match(b.message, /openpyxl/);
+});
+
+test("requirements.txt: openpyxl を == で固定している", () => {
+  assert.match(readFileSync(join(REPO, "requirements.txt"), "utf8"), /^openpyxl==\d+\.\d+\.\d+$/m);
 });
 
 test("統合: fixtures/wbs-merged.xlsx を読むと結合セルが展開され、日付が YYYY-MM-DD になる（Python 3 が無い環境だけ skip）", (t) => {
@@ -66,7 +90,7 @@ test("統合: fixtures/wbs-merged.xlsx を読むと結合セルが展開され�
   const fixture = join(REPO, "tests/fixtures/wbs-merged.xlsx");
   assert.ok(existsSync(fixture), "fixture がありません");
   const dataDir = join(tmpdir(), "pjlens-test-xlsx"); // 2回目以降は venv を使い回す
-  const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), dataDir, fixture], { encoding: "utf8", timeout: 300000 });
+  const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), dataDir, fixture, "--yes"], { encoding: "utf8", timeout: 300000 });
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
   assert.equal(out.sheets.length, 3);
@@ -92,7 +116,7 @@ test("統合: 非表示の行・列は読み取らず、件数を hiddenRows・h
   const real = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8" });
   if (!pickPython(real)) return t.skip("Python 3 が見つかりません");
   const dataDir = join(tmpdir(), "pjlens-test-xlsx");
-  const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), dataDir, join(REPO, "tests/fixtures/wbs-merged.xlsx")], { encoding: "utf8", timeout: 300000 });
+  const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), dataDir, join(REPO, "tests/fixtures/wbs-merged.xlsx"), "--yes"], { encoding: "utf8", timeout: 300000 });
   assert.equal(r.status, 0, r.stderr);
   const sh = JSON.parse(r.stdout).sheets[2];
   const flat = sh.rows.flat();

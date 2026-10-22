@@ -30,7 +30,7 @@ description: 文章（メール・議事録・メモ）、Excel の WBS、メー
    ```
    node "${CLAUDE_PLUGIN_ROOT}/tools/xlsx.js" "${CLAUDE_PLUGIN_DATA}" "<ファイル>"
    ```
-   終了コードが 3（Python が無い、openpyxl を入れられない）のときは、出力のメッセージをそのまま伝え、**Excel を CSV に保存してもらう**（`.csv` は Read で読める）。初回は venv と openpyxl を入れるため、少し時間がかかる。シートが複数あるときは、どれを取り込むか聞く（`hidden` は除く）。
+   終了コードが 3 のときは、出力のメッセージを利用者に伝える。メッセージが環境の作成の確認（「--yes を付けて実行します」）なら、**利用者の承認を得てから**、同じコマンドの末尾に `--yes` を付けて実行する（承認なしに `--yes` を付けない）。承認されない、または Python が無い・openpyxl を入れられないときは、**Excel を CSV に保存してもらう**（`.csv` は Read で読める）。シートが複数あるときは、どれを取り込むか聞く（`hidden` は除く）。
 3. **列の対応を決める。** まず `node "${CLAUDE_PLUGIN_ROOT}/tools/intake.js" mapping-get ".pj-lens/data.json" <projectId>` で保存済みの対応を確認する。無ければ、見出しと内容から、列の意味（`group` 大項目・`subgroup` 中項目・`title` 件名・`due` 期限・`start` 開始・`status` 状態・`predecessors` 先行・`memo` メモ・`importance` 重要度）を判断する。**対応表（Excel の列 → 項目）を利用者に見せて承認を得て**、承認された対応を `{"title": "作業名", "due": "期限", ...}`（項目 → Excel の列見出し）の JSON にして `mapping-set ".pj-lens/data.json" <projectId> "<mapping.json>"` で保存する。次回は、保存済みの対応を見せて確認するだけでよい。
 4. **行を正規化する。** WBS の形式は固定でない。階層は、列（大項目・中項目の列）、結合セル（展開済み）、インデント（`indents`）、番号（1.1.2 など）のいずれかで表されている。次の規則で `rows.json`（`[{group, subgroup, title, due, start, status, importance, memo, predecessorKeys}]`）を作る。
    - **末尾の行（子を持たない行）をタスク**にする。その直上の2段を大項目・中項目にし、それより上の段は大項目の前に `/` で連結する。階層が1〜2段しかなければ、足りない分は省く。子を持つ行（親）はタスクにしない。
