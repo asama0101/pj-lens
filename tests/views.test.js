@@ -1,21 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { addDays, diffDays } from "../src/core/dates.js";
-import { renderProjects } from "../src/ui/views/project.js";
-import { renderGantt } from "../src/ui/views/gantt.js";
-import { renderPrio } from "../src/ui/views/prio.js";
-import { renderSettings } from "../src/ui/views/settings.js";
-import { renderInboxBar } from "../src/ui/views/inboxpanel.js";
-import { ruleMeetingCounts } from "../src/core/rules.js";
-import { renderSchedule, snapStart } from "../src/ui/views/schedule.js";
-import { taskActual } from "../src/core/sessions.js";
-import { buildReport } from "../src/ui/views/report.js";
-import { reportPeriod } from "../src/core/reportspec.js";
+import { addDays, diffDays } from "../plugins/pj-lens/src/core/dates.js";
+import { renderProjects } from "../plugins/pj-lens/src/ui/views/project.js";
+import { renderGantt } from "../plugins/pj-lens/src/ui/views/gantt.js";
+import { renderPrio } from "../plugins/pj-lens/src/ui/views/prio.js";
+import { renderSettings } from "../plugins/pj-lens/src/ui/views/settings.js";
+import { renderInboxBar } from "../plugins/pj-lens/src/ui/views/inboxpanel.js";
+import { ruleMeetingCounts } from "../plugins/pj-lens/src/core/rules.js";
+import { renderSchedule, snapStart } from "../plugins/pj-lens/src/ui/views/schedule.js";
+import { taskActual } from "../plugins/pj-lens/src/core/sessions.js";
+import { buildReport } from "../plugins/pj-lens/src/ui/views/report.js";
+import { reportPeriod } from "../plugins/pj-lens/src/core/reportspec.js";
 
 const buildReportHtml = (d) => buildReport(d, "2026-10-20", "", { period: reportPeriod("custom", "2026-10-20", { start: "2026-10-01", end: "2026-10-31" }) });
 
-const load = () => JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
+const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
 const TODAY = "2026-10-20";
 const count = (html, re) => (html.match(re) ?? []).length;
 const gantt = (d, ids, extra = {}) => renderGantt(d, ids, TODAY, { window: "m6", ...extra });

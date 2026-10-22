@@ -5,10 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { init, MARKER } from "../tools/init.js";
-import { validate } from "../src/core/schema.js";
+import { init, MARKER } from "../plugins/pj-lens/tools/init.js";
+import { validate } from "../plugins/pj-lens/src/core/schema.js";
 
-const REPO = fileURLToPath(new URL("../", import.meta.url));
+const REPO = fileURLToPath(new URL("../plugins/pj-lens/", import.meta.url));
 const base = mkdtempSync(join(tmpdir(), "pjlens-init-"));
 after(() => rmSync(base, { recursive: true, force: true }));
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_PREFS, loadPrefs, savePrefs, loadInboxDraft, saveInboxDraft } from "../src/ui/prefs.js";
+import { DEFAULT_PREFS, loadPrefs, savePrefs, loadInboxDraft, saveInboxDraft } from "../plugins/pj-lens/src/ui/prefs.js";
 
 const fake = (init = {}) => {
   const m = new Map(Object.entries(init));
@@ -29,7 +29,7 @@ test("savePrefs→loadPrefs で往復でき、setItem が例外を投げても�
 });
 
 // ---- レポートの選択(期間・プロジェクト)の保存 ----
-import { DEFAULT_REPORT_PREFS, loadReportPrefs, saveReportPrefs } from "../src/ui/prefs.js";
+import { DEFAULT_REPORT_PREFS, loadReportPrefs, saveReportPrefs } from "../plugins/pj-lens/src/ui/prefs.js";
 
 test("loadReportPrefs: 保存が無い・壊れている・不正な値のときは既定（今週・全プロジェクト）", () => {
   assert.deepEqual(DEFAULT_REPORT_PREFS, { kind: "thisWeek", start: "", end: "", projectIds: null });

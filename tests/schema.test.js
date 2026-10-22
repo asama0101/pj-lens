@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { addDays, diffDays, toMin, toHHMM, weekday } from "../src/core/dates.js";
-import { validate } from "../src/core/schema.js";
+import { addDays, diffDays, toMin, toHHMM, weekday } from "../plugins/pj-lens/src/core/dates.js";
+import { validate } from "../plugins/pj-lens/src/core/schema.js";
 
-const load = () => JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
+const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
 const NOW = { date: "2026-10-20", time: "12:00" };
 const v = (d) => validate(d, NOW);
 const task = (d, id) => d.tasks.find((t) => t.id === id);

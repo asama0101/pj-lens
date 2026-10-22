@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeImpact } from "../src/core/impact.js";
+import { computeImpact } from "../plugins/pj-lens/src/core/impact.js";
 
 const mk = (tasks, projectDue = "2026-12-31") => ({
   projects: [{ id: "P", due: projectDue }],
@@ -56,7 +56,7 @@ test("存在しない taskId は例外", () => {
 });
 
 // ---- 前倒しの詰め・適用（Task 5） ----
-import { applyReplan, needsReplan } from "../src/core/impact.js";
+import { applyReplan, needsReplan } from "../plugins/pj-lens/src/core/impact.js";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -118,14 +118,14 @@ test("tools/impact.js --compress が結果を変える", () => {
   try {
     const f = join(dir, "data.json");
     writeFileSync(f, JSON.stringify(chain()));
-    const run = (...a) => JSON.parse(spawnSync(process.execPath, [fileURLToPath(new URL("../tools/impact.js", import.meta.url)), f, "T1", "-3", ...a], { encoding: "utf8" }).stdout);
+    const run = (...a) => JSON.parse(spawnSync(process.execPath, [fileURLToPath(new URL("../plugins/pj-lens/tools/impact.js", import.meta.url)), f, "T1", "-3", ...a], { encoding: "utf8" }).stdout);
     assert.equal(run().changes.length, 1);
     assert.equal(run("--compress").changes.length, 3);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 // ---- 最終レビューの修正: 確認パネルを出している間の別の編集を消さない ----
-import { commitReplan } from "../src/core/impact.js";
+import { commitReplan } from "../plugins/pj-lens/src/core/impact.js";
 
 test("commitReplan: 確認中に別の編集が入っても、最新のデータに対して計算し、その編集を消さない", () => {
   const first = { ...chain(), changeLog: [] };

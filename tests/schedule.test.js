@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freeSlots, rankTasks, addMeeting, updateMeeting, deleteMeeting, syncMcpEvents } from "../src/core/schedule.js";
+import { freeSlots, rankTasks, addMeeting, updateMeeting, deleteMeeting, syncMcpEvents } from "../plugins/pj-lens/src/core/schedule.js";
 
 const WD = { start: "09:00", end: "18:00" };
 const ev = (start, end, extra = {}) => ({ id: `${start}${end}`, date: "2026-10-20", start, end, title: "会議", source: "manual", skip: false, externalId: null, ...extra });
@@ -121,14 +121,14 @@ test("syncMcpEvents: 消した会議の ID を使い回さず、同じ externalI
 });
 
 test("updateTask 相当: Waiting で待ち先なしでも、他の項目の変更は通る（M11）", async () => {
-  const { updateTask } = await import("../src/ui/edit.js");
+  const { updateTask } = await import("../plugins/pj-lens/src/ui/edit.js");
   const d = { projects: [{ id: "P" }], tasks: [{ id: "P1", projectId: "P", title: "t", due: "2026-10-30", status: "Waiting", waitingOn: null, predecessors: [], sessions: [] }] };
   assert.equal(updateTask(d, "P1", { memo: "x" }, "2026-10-20").tasks[0].memo, "x");
   assert.throws(() => updateTask(d, "P1", { status: "Waiting" }, "2026-10-20"));
 });
 
 // ---- 会議の確認とプロジェクト（Task 3） ----
-import { meetingKind, confirmMeeting } from "../src/core/schedule.js";
+import { meetingKind, confirmMeeting } from "../plugins/pj-lens/src/core/schedule.js";
 
 test("meetingKind: skip→skipped / confirmed→actual / 過去→unconfirmed / 未来→planned（終了ちょうどは過去）", () => {
   const now = { date: "2026-10-20", time: "12:00" };

@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { markApplied } from "../src/core/inbox.js";
+import { markApplied } from "../plugins/pj-lens/src/core/inbox.js";
 
-const REPO = fileURLToPath(new URL("../", import.meta.url));
+const REPO = fileURLToPath(new URL("../plugins/pj-lens/", import.meta.url));
 const base = mkdtempSync(join(tmpdir(), "pjl-inbox-"));
 after(() => rmSync(base, { recursive: true, force: true }));
 

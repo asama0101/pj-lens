@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { validate } from "../src/core/schema.js";
-import { planOps, applyProposal, summarizeSections } from "../src/ui/inboxops.js";
+import { validate } from "../plugins/pj-lens/src/core/schema.js";
+import { planOps, applyProposal, summarizeSections } from "../plugins/pj-lens/src/ui/inboxops.js";
 
-const load = () => JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
+const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
 const TODAY = "2026-10-21";
 const task = (d, id) => d.tasks.find((t) => t.id === id);
 const dueRows = (p) => p.sections.find((s) => s.kind === "due")?.rows ?? [];

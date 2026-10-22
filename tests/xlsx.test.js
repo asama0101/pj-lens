@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { pickPython, venvPython, ensureEnv } from "../tools/xlsx.js";
+import { pickPython, venvPython, ensureEnv } from "../plugins/pj-lens/tools/xlsx.js";
 
-const REPO = fileURLToPath(new URL("../", import.meta.url));
+const REPO = fileURLToPath(new URL("../plugins/pj-lens/", import.meta.url));
 const ok = (stdout = "") => ({ status: 0, stdout, stderr: "" });
 const ng = { status: 1, stdout: "", stderr: "error" };
 
@@ -87,7 +87,7 @@ test("requirements.txt: openpyxl を == で固定している", () => {
 test("統合: fixtures/wbs-merged.xlsx を読むと結合セルが展開され、日付が YYYY-MM-DD になる（Python 3 が無い環境だけ skip）", (t) => {
   const real = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8" });
   if (!pickPython(real)) return t.skip("Python 3 が見つかりません");
-  const fixture = join(REPO, "tests/fixtures/wbs-merged.xlsx");
+  const fixture = fileURLToPath(new URL("fixtures/wbs-merged.xlsx", import.meta.url));
   assert.ok(existsSync(fixture), "fixture がありません");
   const dataDir = join(tmpdir(), "pjlens-test-xlsx"); // 2回目以降は venv を使い回す
   const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), dataDir, fixture, "--yes"], { encoding: "utf8", timeout: 300000 });
@@ -104,7 +104,7 @@ test("統合: fixtures/wbs-merged.xlsx を読むと結合セルが展開され�
   assert.deepEqual(out.sheets[1].rows[2], ["要件", null], "文字列は空白を除いて返す");
 });
 
-import { realRun } from "../tools/xlsx.js";
+import { realRun } from "../plugins/pj-lens/tools/xlsx.js";
 
 test("realRun: 1MB を超える標準出力でも切れずに受け取れる（横に長い WBS の JSON を想定）", () => {
   const r = realRun(process.execPath, ["-e", "process.stdout.write('x'.repeat(5 * 1024 * 1024))"]);
@@ -116,7 +116,7 @@ test("統合: 非表示の行・列は読み取らず、件数を hiddenRows・h
   const real = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8" });
   if (!pickPython(real)) return t.skip("Python 3 が見つかりません");
   const dataDir = join(tmpdir(), "pjlens-test-xlsx");
-  const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), dataDir, join(REPO, "tests/fixtures/wbs-merged.xlsx"), "--yes"], { encoding: "utf8", timeout: 300000 });
+  const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), dataDir, fileURLToPath(new URL("fixtures/wbs-merged.xlsx", import.meta.url)), "--yes"], { encoding: "utf8", timeout: 300000 });
   assert.equal(r.status, 0, r.stderr);
   const sh = JSON.parse(r.stdout).sheets[2];
   const flat = sh.rows.flat();

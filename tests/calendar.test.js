@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planCalendarSync, applyCalendarSync } from "../src/import/calendar.js";
+import { planCalendarSync, applyCalendarSync } from "../plugins/pj-lens/src/import/calendar.js";
 
 const D = "2026-10-20";
 const range = { start: "2026-10-19", end: "2026-10-25" };

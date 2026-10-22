@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { groupLabels, groupSections, groupNames } from "../src/core/groups.js";
+import { groupLabels, groupSections, groupNames } from "../plugins/pj-lens/src/core/groups.js";
 
 const t = (id, group, subgroup) => ({ id, group, subgroup });
 

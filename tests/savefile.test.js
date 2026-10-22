@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { saveHtmlFile } from "../src/ui/savefile.js";
+import { saveHtmlFile } from "../plugins/pj-lens/src/ui/savefile.js";
 
 const fakeWindow = () => {
   const log = { clicked: [], revoked: [], picker: 0 };

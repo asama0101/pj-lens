@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildReport as build } from "../src/ui/views/report.js";
-import { reportPeriod, reportFileName } from "../src/core/reportspec.js";
+import { buildReport as build } from "../plugins/pj-lens/src/ui/views/report.js";
+import { reportPeriod, reportFileName } from "../plugins/pj-lens/src/core/reportspec.js";
 
 const buildReport = (d, t, opts) => build(d, t, "", opts);
 
-const load = () => JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
+const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
 const TODAY = "2026-10-20";
 const MEETING_TITLES = ["NW運用定例", "ベンダーX 打合せ", "部内会議"];
 

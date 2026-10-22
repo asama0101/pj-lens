@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { reportPeriod, reportFileName, periodReport, progressAsOf } from "../src/core/reportspec.js";
+import { reportPeriod, reportFileName, periodReport, progressAsOf } from "../plugins/pj-lens/src/core/reportspec.js";
 
 const TODAY = "2026-10-21"; // 水曜。今週 10/19〜10/25、先週 10/12〜10/18
 

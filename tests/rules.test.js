@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule, renameProjectRule, ruleMeetingCounts } from "../src/core/rules.js";
+import { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule, renameProjectRule, ruleMeetingCounts } from "../plugins/pj-lens/src/core/rules.js";
 
 const ev = (id, title, extra = {}) => ({ id, date: "2026-10-20", start: "10:00", end: "11:00", title, source: "mcp", skip: false, externalId: id, ...extra });
 const data = (events, rules = [], projects = ["A", "B"]) => ({

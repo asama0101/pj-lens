@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 
-const root = new URL("../", import.meta.url);
+const root = new URL("../plugins/pj-lens/", import.meta.url);
 const read = (p) => readFileSync(new URL(p, root), "utf8");
 
 for (const name of ["replan", "intake"]) {

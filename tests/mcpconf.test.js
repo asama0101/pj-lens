@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { validateMcpConfig, readMcpConfig, setMcpRole, clearMcpRole, ROLES } from "../src/import/mcpconf.js";
+import { validateMcpConfig, readMcpConfig, setMcpRole, clearMcpRole, ROLES } from "../plugins/pj-lens/src/import/mcpconf.js";
 
-const REPO = fileURLToPath(new URL("../", import.meta.url));
+const REPO = fileURLToPath(new URL("../plugins/pj-lens/", import.meta.url));
 const base = mkdtempSync(join(tmpdir(), "pjl-mcp-"));
 after(() => rmSync(base, { recursive: true, force: true }));
 let n = 0;

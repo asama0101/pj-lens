@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { validate } from "../src/core/schema.js";
+import { validate } from "../plugins/pj-lens/src/core/schema.js";
 import {
   updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveTaskDates, moveProjectDates, moveMilestone,
   addTaskQuick, predecessorCandidates, addTask, deleteTask, addProject, deleteProject,
-} from "../src/ui/edit.js";
+} from "../plugins/pj-lens/src/ui/edit.js";
 
-const load = () => JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
+const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
 const TODAY = "2026-10-20";
 const task = (d, id) => d.tasks.find((t) => t.id === id);
 const proj = (d, id) => d.projects.find((p) => p.id === id);

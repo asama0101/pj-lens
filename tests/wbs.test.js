@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { wbsKey, planWbsImport, applyWbsImport, getWbsMapping, setWbsMapping } from "../src/import/wbs.js";
-import { validate } from "../src/core/schema.js";
+import { wbsKey, planWbsImport, applyWbsImport, getWbsMapping, setWbsMapping } from "../plugins/pj-lens/src/import/wbs.js";
+import { validate } from "../plugins/pj-lens/src/core/schema.js";
 
 const empty = () => ({ version: 1, settings: {}, projects: [{ id: "A", name: "更改", type: "更改", status: "進行中", start: "2026-10-01", due: "2027-03-31", milestones: [] }], tasks: [], events: [], changeLog: [] });
 const rows = () => [

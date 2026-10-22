@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, futurePlanned } from "../src/core/sessions.js";
+import { sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, futurePlanned } from "../plugins/pj-lens/src/core/sessions.js";
 
-const load = () => JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
+const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
 const NOW = { date: "2026-10-20", time: "12:00" }; // 火曜
 const task = (d, id) => d.tasks.find((t) => t.id === id);
 const sess = (d, id) => d.tasks.flatMap((t) => t.sessions).find((s) => s.id === id);

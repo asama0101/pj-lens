@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createStore } from "../src/ui/store.js";
+import { createStore } from "../plugins/pj-lens/src/ui/store.js";
 
 // 偽のファイルハンドル（File System Access API の必要部分だけ）
 function fakeHandle(initial) {

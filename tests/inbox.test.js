@@ -4,7 +4,7 @@ import {
   MAX_REQUESTS, MAX_TEXT, MAX_THREAD, WATCH_FRESH_MS,
   submitRequest, pruneRequests, claimRequest, askQuestion, replyToRequest, setProposal, rejectRequest,
   markApplied, markFailed, retryRequest, touchWatching, isWatching, getRequest,
-} from "../src/core/inbox.js";
+} from "../plugins/pj-lens/src/core/inbox.js";
 
 const NOW = "2026-10-21T10:00:00.000Z";
 const later = (s) => new Date(Date.parse(NOW) + s * 1000).toISOString();

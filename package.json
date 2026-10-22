@@ -1,10 +1,9 @@
 {
-  "name": "pj-lens",
-  "version": "0.4.0",
+  "name": "pj-lens-dev",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "build": "node tools/build.js"
+    "build": "node plugins/pj-lens/tools/build.js"
   }
 }

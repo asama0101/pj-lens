@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { projectHours, workload, periodRange } from "../src/core/workload.js";
+import { projectHours, workload, periodRange } from "../plugins/pj-lens/src/core/workload.js";
 
 const sess = (id, date, start, end, kind = "actual") => ({ id, date, start, end, kind });
 const task = (id, projectId, sessions = []) => ({ id, projectId, title: id, due: "2026-12-31", status: "To Do", sessions });

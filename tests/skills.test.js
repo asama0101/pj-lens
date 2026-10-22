@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const read = (name) => readFileSync(new URL(`../skills/${name}/SKILL.md`, import.meta.url), "utf8");
+const read = (name) => readFileSync(new URL(`../plugins/pj-lens/skills/${name}/SKILL.md`, import.meta.url), "utf8");
 const front = (text) => /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
 const NAMES = ["init", "replan", "intake", "mcp", "watch", "inbox"];
 
@@ -65,9 +65,9 @@ for (const [name, script] of [["init", "init.js"]]) {
 
 test("エージェントとコマンドの本文に、リポジトリ直下の src/ を指す記述がない", async () => {
   const { readdirSync } = await import("node:fs");
-  const files = [...NAMES.map((n) => `skills/${n}/SKILL.md`), ...readdirSync(new URL("../agents/", import.meta.url)).map((f) => `agents/${f}`)];
+  const files = [...NAMES.map((n) => `skills/${n}/SKILL.md`), ...readdirSync(new URL("../plugins/pj-lens/agents/", import.meta.url)).map((f) => `agents/${f}`)];
   for (const f of files) {
-    const text = readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
+    const text = readFileSync(new URL(`../plugins/pj-lens/${f}`, import.meta.url), "utf8");
     assert.doesNotMatch(text, /(^|[`\s(])src\//m, `${f} に src/ の直接参照があります（\${CLAUDE_PLUGIN_ROOT} から組み立てる）`);
   }
 });

@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { addDays, weekday } from "../src/core/dates.js";
-import { taskStart, ganttRows, ganttLayout, timeTicks, projectProgress, taskFlags, projectFlags } from "../src/core/metrics.js";
+import { addDays, weekday } from "../plugins/pj-lens/src/core/dates.js";
+import { taskStart, ganttRows, ganttLayout, timeTicks, projectProgress, taskFlags, projectFlags } from "../plugins/pj-lens/src/core/metrics.js";
 
-const load = () => JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
+const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
 const TODAY = "2026-10-20";
 const range = (start, days) => ({ start, end: addDays(start, days - 1) });
 const mk = (tasks, extra = {}) => ({

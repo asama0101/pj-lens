@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { processedMessageIds, lastMailDate, planMailImport, applyMailImport } from "../src/import/mail.js";
+import { processedMessageIds, lastMailDate, planMailImport, applyMailImport } from "../plugins/pj-lens/src/import/mail.js";
 
 const T = (id, due, preds = [], status = "In Progress") => ({ id, projectId: "P", title: id, due, start: null, status, memo: "", predecessors: preds, waitingOn: null, importance: null, doneAt: null, sessions: [] });
 const mk = () => ({

@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { computeImpact } from "../src/core/impact.js";
-import { renderReplanPanel } from "../src/ui/views/replan.js";
-import { renderProjects } from "../src/ui/views/project.js";
+import { computeImpact } from "../plugins/pj-lens/src/core/impact.js";
+import { renderReplanPanel } from "../plugins/pj-lens/src/ui/views/replan.js";
+import { renderProjects } from "../plugins/pj-lens/src/ui/views/project.js";
 
 const T = (id, due, preds = [], title = id) => ({ id, projectId: "P", title, due, start: null, status: "To Do", memo: "", predecessors: preds, waitingOn: null, importance: null, doneAt: null, sessions: [] });
 const mk = (projectDue = "2026-12-31") => ({
@@ -43,7 +43,7 @@ test("renderReplanPanel: 件名・理由の入力はエスケープされる", (
 });
 
 test("renderProjects: pendingReplan があればパネルが cols の前に出る。無ければ出ない", () => {
-  const d = JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
+  const d = JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
   const p = { taskId: "A3", delta: 5, impact: computeImpact(d, "A3", 5), compress: false, cause: "その他", reason: "" };
   const withP = renderProjects(d, "2026-10-20", { filter: "A", view: "list", pendingReplan: p });
   assert.ok(withP.includes('aria-label="日程変更の確認"'));

@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { renderWorkload } from "../src/ui/views/workload.js";
-import { renderProjects } from "../src/ui/views/project.js";
-import { renderGantt } from "../src/ui/views/gantt.js";
-import { projectHours } from "../src/core/workload.js";
+import { renderWorkload } from "../plugins/pj-lens/src/ui/views/workload.js";
+import { renderProjects } from "../plugins/pj-lens/src/ui/views/project.js";
+import { renderGantt } from "../plugins/pj-lens/src/ui/views/gantt.js";
+import { projectHours } from "../plugins/pj-lens/src/core/workload.js";
 
 const D = "2026-10-20";
 const sess = (id, date, start, end, kind = "actual") => ({ id, date, start, end, kind });
@@ -61,7 +61,7 @@ test("renderWorkload: 内訳の横棒は合計に比例し、操作用の属性�
 });
 
 test("プロジェクトの見出しが『稼働 …（タスク …・会議 …）』になる（リストとガント）", () => {
-  const d = JSON.parse(readFileSync(new URL("../data/sample.json", import.meta.url), "utf8"));
+  const d = JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
   d.events.find((e) => e.id === "m2").confirmed = true; // A に付いた会議 1h を確認済みにする
   const h = projectHours(d, "A");
   const want = `稼働 ${(h.task + h.meeting).toFixed(1)}h（タスク ${h.task.toFixed(1)}h・会議 ${h.meeting.toFixed(1)}h）`;
@@ -70,7 +70,7 @@ test("プロジェクトの見出しが『稼働 …（タスク …・会議 �
   assert.ok(renderGantt(d, ["A"], D, {}).includes(want), "ガント");
 });
 
-import { shiftWorkloadDate } from "../src/ui/views/workload.js";
+import { shiftWorkloadDate } from "../plugins/pj-lens/src/ui/views/workload.js";
 
 test("shiftWorkloadDate: 週は7日、月は1か月（年またぎ・月末の日付でもずれない）", () => {
   assert.equal(shiftWorkloadDate("week", "2026-10-20", 1), "2026-10-27");

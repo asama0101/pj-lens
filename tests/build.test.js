@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { build } from "../tools/build.js";
+import { build } from "../plugins/pj-lens/tools/build.js";
 
 test("build: 1 ファイルにまとまり、import/export・外部 URL・外部スクリプトが残らない", () => {
   const dir = mkdtempSync(join(tmpdir(), "nwdash-build-"));
@@ -26,7 +26,7 @@ test("build: 1 ファイルにまとまり、import/export・外部 URL・外部
 });
 
 test("wrapModule: 対応しない import/export の形や、先に並んでいない名前の import は例外にする", async () => {
-  const { wrapModule } = await import("../tools/build.js");
+  const { wrapModule } = await import("../plugins/pj-lens/tools/build.js");
   const known = new Set(["a"]);
   assert.doesNotThrow(() => wrapModule("x.js", 'import { a } from "./a.js";\nexport const b = a;', new Set(known)));
   for (const bad of ['import "./side.js";', "export { a };", "export default 1;", "export const { p, q } = o;", 'import * as ns from "./a.js";', 'import { a as z } from "./a.js";', 'import { nope } from "./a.js";', "export const a = 1;"]) {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderReportPanel } from "../src/ui/views/reportpanel.js";
+import { renderReportPanel } from "../plugins/pj-lens/src/ui/views/reportpanel.js";
 
 const TODAY = "2026-10-21";
 const data = () => ({ projects: [{ id: "A", name: "コアSW更改" }, { id: "B", name: "<b>回線</b>" }, { id: "C", name: "VPN" }] });
@@ -42,7 +42,7 @@ test("設定パネル: プロジェクトを1つも選ばないと生成でき�
   assert.match(h, /role="alert"[^>]*>保存できません/);
 });
 
-import { renderReportPreview } from "../src/ui/views/reportpanel.js";
+import { renderReportPreview } from "../plugins/pj-lens/src/ui/views/reportpanel.js";
 
 test("renderReportPreview: 日付を打っている途中でも入力欄を作り直さずに更新できる、ファイル名／理由だけの部分", () => {
   const ok = renderReportPreview(data(), st({ kind: "custom", start: "2026-10-01", end: "2026-10-15" }), TODAY);

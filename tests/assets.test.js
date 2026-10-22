@@ -4,10 +4,10 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { build, MODULES } from "../tools/build.js";
-import { MARKER } from "../tools/init.js";
+import { build, MODULES } from "../plugins/pj-lens/tools/build.js";
+import { MARKER } from "../plugins/pj-lens/tools/init.js";
 
-const ASSET = new URL("../assets/pj-lens.html", import.meta.url);
+const ASSET = new URL("../plugins/pj-lens/assets/pj-lens.html", import.meta.url);
 
 test("同梱の完成版ダッシュボードがあり、pj-lens の目印を含む", () => {
   assert.ok(existsSync(ASSET), "assets/pj-lens.html がありません（npm run build）");
@@ -28,7 +28,7 @@ test("ソースが CRLF（autocrlf の clone）でも、同じビルド結果に
   const dir = mkdtempSync(join(tmpdir(), "pjlens-crlf-"));
   try {
     const root = join(dir, "repo");
-    const repo = fileURLToPath(new URL("../", import.meta.url));
+    const repo = fileURLToPath(new URL("../plugins/pj-lens/", import.meta.url));
     for (const f of ["src/ui/index.html", "src/ui/theme.css", ...MODULES]) {
       mkdirSync(dirname(join(root, f)), { recursive: true });
       writeFileSync(join(root, f), readFileSync(join(repo, f), "utf8").replace(/\r?\n/g, "\r\n"));

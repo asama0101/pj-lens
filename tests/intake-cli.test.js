@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const REPO = fileURLToPath(new URL("../", import.meta.url));
+const REPO = fileURLToPath(new URL("../plugins/pj-lens/", import.meta.url));
 const base = mkdtempSync(join(tmpdir(), "pjl-intake-"));
 after(() => rmSync(base, { recursive: true, force: true }));
 
