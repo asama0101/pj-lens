@@ -17,6 +17,7 @@ desktop.ini
 .idea/
 *.log
 
-# 開発の記録（ローカルのみ。SPEC・計画・デザイン案）
-docs/
+# 開発の記録（ローカルのみ。SPEC・計画・デザイン案）。docs/development.md だけ共有する
+docs/*
+!docs/development.md
 grill-specs/
