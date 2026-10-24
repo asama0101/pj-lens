@@ -65,7 +65,7 @@ test("docs/development.md に変更履歴があり、廃止したコマンドと
   for (const w of ["daily-planner", "/pj-lens:report", "tools/rank.js", "tools/free.js", "tools/report.js"]) assert.ok(doc.includes(w), w);
 });
 
-test("レポート(PDF)を廃止した: 画面にPDFボタンも印刷起動もなく、READMEは廃止を書いている", () => {
+test("レポート(PDF)を廃止した: 画面にPDFボタンも印刷起動もなく、docs/development.md は廃止を書いている", () => {
   const html = readFileSync(new URL("assets/pj-lens.html", root), "utf8");
   assert.ok(!html.includes('data-report="pdf"') && !html.includes("setTimeout(print"));
   assert.ok(html.includes('data-report="html"'));

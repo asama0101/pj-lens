@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { today } from "../core/dates.js";
 
 const FILE = "pj-lens-mcp.json";
-/** 保存形式の版。形式を変える版では上げ、README に移行手順を書く。schema_version の無い既存ファイルは 1 として読む */
+/** 保存形式の版。形式を変える版では上げ、docs/development.md に移行手順を書く。schema_version の無い既存ファイルは 1 として読む */
 export const SCHEMA_VERSION = 1;
 
 /** 役割ごとの必須項目: メールは検索と本文取得、予定表は期間の取得 */
@@ -28,7 +28,7 @@ export function readMcpConfig(dir) {
   if (!existsSync(p)) return {};
   const cfg = JSON.parse(readFileSync(p, "utf8"));
   if (cfg.schema_version !== undefined && cfg.schema_version !== SCHEMA_VERSION) {
-    throw new Error(`pj-lens-mcp.json の schema_version ${cfg.schema_version} には対応していません（対応: ${SCHEMA_VERSION}）。README の移行手順を見てください`);
+    throw new Error(`pj-lens-mcp.json の schema_version ${cfg.schema_version} には対応していません（対応: ${SCHEMA_VERSION}）。docs/development.md の移行手順を見てください`);
   }
   return cfg;
 }
