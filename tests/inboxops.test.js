@@ -278,3 +278,7 @@ test("planOps(addTask businessDays): 手動の休み・日本の祝日を飛ば�
 test("planOps(addTask): 廃止した days は、due と一緒でも例外（businessDays に変わった）", () => {
   assert.throws(() => planOps(load(), [addOp("t1", { due: "2026-12-10", days: 3 })], { today: TODAY }), /businessDays/);
 });
+
+test("planOps(addTask): days を書いたときの例外は、businessDays で指定する旨を伝える（変わったという言い方をしない）", () => {
+  assert.throws(() => planOps(load(), [addOp("t1", { due: "2026-12-10", days: 3 })], { today: TODAY }), /days は使えません.*businessDays/);
+});

@@ -146,7 +146,7 @@ export function validate(data, now = nowLocal()) {
   }
   const listOf = (v, ok) => Array.isArray(v) && v.every((x) => x && typeof x === "object" && isDate(x.date) && ok(x));
   if (st.holidays != null && !listOf(st.holidays, (x) => HOLIDAY_KINDS.includes(x.kind))) {
-    warn(`settings.holidays: { date, kind } の配列にしてください（kind は ${HOLIDAY_KINDS.join("・")}。前版の文字列の配列など、形の違う要素は画面から消せないので、data.json から直接直してください）`);
+    warn(`settings.holidays: { date, kind } の配列にしてください（kind は ${HOLIDAY_KINDS.join("・")}。文字列の配列など、形の違う要素は画面から消せないので、data.json から直接直してください）`);
   }
   if (st.workdays != null && !listOf(st.workdays, () => true)) {
     warn("settings.workdays: { date } の配列にしてください（形の違う要素は、data.json から直接直してください）");

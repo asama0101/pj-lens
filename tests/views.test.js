@@ -854,3 +854,9 @@ test("設定タブ: 会議の件名（reportShowMeetingTitles）の入力は出�
   assert.ok(!setv(load()).includes("reportShowMeetingTitles"));
   assert.ok(!setv(load()).includes("会議の件名"));
 });
+
+test("受信箱の提案カード: 営業日の列の値もエスケープする（手で書き換えた data.json でも HTML を差し込めない）", () => {
+  const rows = [{ ref: "t1", title: "x", projectId: "A", group: null, subgroup: null, due: "2026-11-03", businessDays: "<img src=x onerror=alert(1)>", start: null, predecessors: [] }];
+  const html = ib(withInbox([reqOf("R1", "proposed", { proposal: { ...PROPOSAL, sections: [{ kind: "add", rows }] } })]), { open: true });
+  assert.ok(!html.includes("<img src=x"));
+});

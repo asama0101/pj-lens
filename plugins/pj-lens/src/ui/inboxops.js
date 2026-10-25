@@ -53,7 +53,7 @@ function simulate(data, ops, today) {
   for (const o of adds) {
     const ref = String(o.ref ?? "").trim();
     if (!ref) throw new Error("addTask には ref が必要です");
-    if (o.days !== undefined) throw new Error(`addTask（${ref}）の days は businessDays（営業日）に変わりました`);
+    if (o.days !== undefined) throw new Error(`addTask（${ref}）には days は使えません。営業日は businessDays で指定してください`);
     const hasDue = o.due !== undefined, hasDays = o.businessDays !== undefined;
     if (hasDue === hasDays) throw new Error(`addTask（${ref}）には due か businessDays のどちらか一方が必要です`);
   }
