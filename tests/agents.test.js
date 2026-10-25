@@ -49,21 +49,14 @@ test("replan: 前倒しのとき後続を詰めるか聞き、--compress を使�
   assert.ok(t.includes("--compress") && t.includes("詰め"));
 });
 
-test("intake: WBS・メール・予定表・規則の4つの手順と、承認・MCP の指定・判断できないものの扱いがある", () => {
+test("intake: WBS・予定表・規則の3つの手順と、承認・MCP の指定がある", () => {
   const t = read("agents/intake.md");
   for (const w of [
     '${CLAUDE_PLUGIN_ROOT}/tools/intake.js', '${CLAUDE_PLUGIN_ROOT}/tools/xlsx.js', '${CLAUDE_PLUGIN_DATA}/pj-lens-mcp.json',
-    "wbs-plan", "wbs-apply", "mail-plan", "mail-apply", "calendar-plan", "calendar-apply", "rules-set", "rules-apply", "mapping-get", "mapping-set", "processed",
-    "承認", "判断できない", "/pj-lens:mcp", "使った MCP", "CSV",
+    "wbs-plan", "wbs-apply", "calendar-plan", "calendar-apply", "rules-set", "rules-apply", "mapping-get", "mapping-set",
+    "承認", "/pj-lens:mcp", "使った MCP", "CSV",
   ]) assert.ok(t.includes(w), w);
   assert.doesNotMatch(t, /\.mcp\.json/);
-});
-
-test("intake(mail): 期間の既定は『前回処理した日から』（その日を含む）。処理済みは messageId で除く", () => {
-  const t = read("agents/intake.md");
-  assert.ok(t.includes("前回処理した日から"));
-  assert.ok(!t.includes("の翌日から"));
-  assert.ok(t.includes("1通に複数のタスク"));
 });
 
 test("intake(文章): 書き込みは受信箱の submit --working → propose → approve。仮日程・行番号で直す手順があり、直接の追記と重要度の推定は無い", () => {
@@ -74,10 +67,9 @@ test("intake(文章): 書き込みは受信箱の submit --working → propose �
   assert.match(t, /待ち先.*報告/);
 });
 
-test("intake(wbs・mail): 列の対応と変更案を一緒に見せて承認 1 回。同じタスクの報告が複数通あれば最新だけ", () => {
+test("intake(wbs): 列の対応と変更案を一緒に見せて承認 1 回", () => {
   const t = read("agents/intake.md");
   assert.match(t, /対応表.*変更案/);
-  assert.match(t, /同じタスク.*最新/);
 });
 
 test("inbox: addTask は businessDays（due と排他）で営業日を書き、期限が無いときは聞き返さず仮で置く。行番号で直す", () => {
@@ -118,15 +110,6 @@ test("inbox: 仮に置いた期限がプロジェクトの期間（projects[].st
   const line = t.split("\n").find((l) => l.includes("projects[].start"));
   assert.ok(line, "プロジェクトの期間の確認がある");
   for (const w of ["収まる", "警告", "--summary"]) assert.ok(line.includes(w), w);
-});
-
-test("intake(mail): 同じタスクの古い報告には、taskId: null と relatedTaskId を付ける（そのタスクの変更履歴に残る）", () => {
-  const t = read("agents/intake.md");
-  assert.ok(t.includes("relatedTaskId"));
-  const list = t.split("\n").find((l) => l.includes("messageId, taskId, summary"));
-  assert.ok(list.includes("relatedTaskId"), "items.json の項目の一覧にある");
-  const old = t.split("\n").find((l) => l.includes("最新の1通") && l.includes("relatedTaskId"));
-  assert.ok(old && old.includes("taskId: null"), "古い報告の行");
 });
 
 test("inbox: moveDue と businessDays の addTask は同じ依頼にしない。エラーが出たら、期限の移動だけを提案し、登録は承認後にもう一度依頼してもらう", () => {

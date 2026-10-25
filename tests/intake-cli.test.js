@@ -73,20 +73,6 @@ test("wbs-apply: 先行が循環する rows では終了コード1で data.json 
   assert.equal(w.read(), before);
 });
 
-test("mail-plan は読み取り専用、mail-apply 後の processed に messageId が入る", () => {
-  const w = work(); const before = w.read();
-  const items = w.put("items.json", [{ messageId: "msg-1", taskId: "A5", summary: "手順書の作成を延長", due: "2027-01-15" }]);
-  const p = run("mail-plan", w.data, items);
-  assert.equal(p.status, 0, p.err);
-  assert.deepEqual(p.out.changes[0].set, { due: "2027-01-15" });
-  assert.equal(w.read(), before);
-  assert.equal(run("mail-apply", w.data, items).status, 0);
-  assert.equal(w.json().tasks.find((t) => t.id === "A5").due, "2027-01-15");
-  const pr = run("processed", w.data);
-  assert.deepEqual(pr.out.messageIds, ["msg-1"]);
-  assert.equal(run("mail-plan", w.data, items).out.skipped.length, 1);
-});
-
 test("calendar-apply: 会議が追加され、規則でプロジェクトが付く。calendar-plan は書かない", () => {
   const w = work();
   const fetched = w.put("fetched.json", [{ externalId: "ext-new", title: "ベンダーX 週次", date: "2026-10-22", start: "15:00", end: "16:00" }]);
@@ -137,16 +123,4 @@ test("引数が足りないと終了コード2と使い方を出す", () => {
   assert.equal(r.status, 2);
   assert.match(r.err, /使い方/);
   assert.equal(run("unknown-cmd", "x").status, 2);
-});
-
-test("mail-apply: relatedTaskId つきの古い報告が、そのタスクに紐づく superseded の記録になり、processed に入る", () => {
-  const w = work();
-  const items = w.put("items.json", [
-    { messageId: "new", taskId: "A5", summary: "手順書の作成を延長", due: "2027-01-15" },
-    { messageId: "old", taskId: null, relatedTaskId: "A5", summary: "年内に完了予定" },
-  ]);
-  assert.equal(run("mail-apply", w.data, items).status, 0);
-  const rec = w.json().changeLog.find((c) => c.messageIds?.[0] === "old");
-  assert.deepEqual([rec.taskIds, rec.superseded, rec.deltaDays, rec.source], [["A5"], true, 0, "mail"]);
-  assert.deepEqual(run("processed", w.data).out.messageIds.sort(), ["new", "old"]);
 });

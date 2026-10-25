@@ -811,9 +811,7 @@ function validate(data, now = nowLocal()) {
     for (const id of c.taskIds ?? []) if (!taskIds.has(id)) warn(`changeLog: 存在しないタスク ${id}`);
     if (!Number.isInteger(c.deltaDays)) err("changeLog: deltaDays が整数ではありません");
     if (c.cause != null && !CAUSES.includes(c.cause)) err(`changeLog: 不明な原因 "${c.cause}"`);
-    if (c.source != null && !["wbs", "mail", "calendar", "inbox"].includes(c.source)) err(`changeLog: 不明な source "${c.source}"`);
-    if (c.superseded != null && typeof c.superseded !== "boolean") err("changeLog: superseded は真偽値にしてください");
-    if (c.messageIds != null && (!Array.isArray(c.messageIds) || c.messageIds.some((x) => typeof x !== "string"))) err("changeLog: messageIds は文字列の配列にしてください");
+    if (c.source != null && !["wbs", "calendar", "inbox"].includes(c.source)) err(`changeLog: 不明な source "${c.source}"`);
   }
 
   return { errors, warnings };
@@ -1148,16 +1146,16 @@ function needsReplan(impact) {
 }
 
 /**
- * impact の変更を due に反映し、changeLog に日程変更の記録を足す。extra は記録に足す項目(source・messageIds など)
+ * impact の変更を due に反映し、changeLog に日程変更の記録を足す
  */
-function applyReplan(data, impact, { reason, cause, deltaDays, at, extra = {} }) {
+function applyReplan(data, impact, { reason, cause, deltaDays, at }) {
   if (!String(reason ?? "").trim()) throw new Error("理由を入力してください");
   if (!CAUSES.includes(cause)) throw new Error(`原因は ${CAUSES.join("・")} のいずれかにしてください`);
   const to = new Map(impact.changes.map((c) => [c.taskId, c.newDue]));
   return {
     ...data,
     tasks: data.tasks.map((t) => (to.has(t.id) ? { ...t, due: to.get(t.id) } : t)),
-    changeLog: [...(data.changeLog ?? []), { at, taskIds: impact.changes.map((c) => c.taskId), reason: String(reason).trim(), cause, deltaDays, ...extra }],
+    changeLog: [...(data.changeLog ?? []), { at, taskIds: impact.changes.map((c) => c.taskId), reason: String(reason).trim(), cause, deltaDays }],
   };
 }
 
@@ -1165,10 +1163,10 @@ function applyReplan(data, impact, { reason, cause, deltaDays, at, extra = {} })
  * 確認のあとの反映。利用者の編集(edit: data → data)を、いまの最新のデータに対してやり直し、後続の影響もいまのデータで計算し直す。
  * 確認パネルを出している間に入った別の編集を消さないため、パネルを出した時点のスナップショットは使わない
  */
-function commitReplan(data, edit, taskId, deltaDays, { compress = false, reason, cause, at, extra }) {
+function commitReplan(data, edit, taskId, deltaDays, { compress = false, reason, cause, at }) {
   const base = edit(data);
   const impact = computeImpact(data, taskId, deltaDays, { compress });
-  return applyReplan(base, impact, { reason, cause, deltaDays, at, extra });
+  return applyReplan(base, impact, { reason, cause, deltaDays, at });
 }
 
 return { computeImpact, needsReplan, applyReplan, commitReplan };
@@ -3194,7 +3192,7 @@ return { renderWorkload, shiftWorkloadDate };
 
 /* src/ui/views/settings.js */
 const { settingsInputValues, renderSettings } = (() => {
-// 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名）と、日本の祝日（表示のみ）・休み（手動）・営業日として扱う日と、キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
+// 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名）と、日本の祝日（表示のみ）・休み（手動）・営業日として扱う日と、キーワード規則（会議名。編集できる）と、WBS の取り込み記録（表示のみ）。
 
 
 
@@ -3289,8 +3287,8 @@ function renderSettings(data, today, opts = {}) {
     ${nationalSec}
     ${holidaySec}
     ${workdaySec}
-    <section class="panel" aria-labelledby="h-rules"><h2 id="h-rules" style="margin-top:0">キーワード規則（会議名・メールの件名に共通）</h2>
-      <p class="note" style="margin:0 0 10px">件名にキーワードを含む会議を、そのプロジェクトに付けます。メールの取り込みの対象にも使います（上の規則が先に当たります）。手動で付けた会議は、規則を変えても変わりません。変更はその場でファイルに保存されます。</p>
+    <section class="panel" aria-labelledby="h-rules"><h2 id="h-rules" style="margin-top:0">キーワード規則（会議名）</h2>
+      <p class="note" style="margin:0 0 10px">件名にキーワードを含む会議を、そのプロジェクトに付けます。上の規則が先に当たります。手動で付けた会議は、規則を変えても変わりません。変更はその場でファイルに保存されます。</p>
       ${opts.ruleError ? `<p class="note err" role="alert" style="margin:0 0 10px">${esc(opts.ruleError)}</p>` : ""}
       <div class="tscroll"><table class="tbl edit"><thead><tr><th>キーワード</th><th>プロジェクト</th><th>付いている会議</th><th></th></tr></thead><tbody>${ruleRows}${empty}${addRow}</tbody></table></div>
     </section>
@@ -3472,8 +3470,8 @@ function renderList(data, p, today, opts) {
   }).join("");
 
   const projTaskIds = new Set(tasks.map((t) => t.id));
-  const log = (data.changeLog ?? []).filter((l) => l.source == null || Number(l.deltaDays) !== 0 || l.superseded === true).filter((l) => (l.taskIds ?? []).some((id) => projTaskIds.has(id)))
-    .map((l) => `<li><span class="d">${fmtMD(l.at)}</span><span><span class="pill">${esc(l.cause ?? "—")}</span> ${esc(l.reason)} <span class="mono muted">(${esc((l.taskIds ?? []).join(", "))}${l.superseded === true ? "" : `・${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日`})</span></span></li>`).join("")
+  const log = (data.changeLog ?? []).filter((l) => l.source == null || Number(l.deltaDays) !== 0).filter((l) => (l.taskIds ?? []).some((id) => projTaskIds.has(id)))
+    .map((l) => `<li><span class="d">${fmtMD(l.at)}</span><span><span class="pill">${esc(l.cause ?? "—")}</span> ${esc(l.reason)} <span class="mono muted">(${esc((l.taskIds ?? []).join(", "))}・${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日)</span></span></li>`).join("")
     || `<li class="muted">変更履歴はありません。</li>`;
 
   const ms = (p.milestones ?? []).map((m, i) => `<div class="msrow"><input class="in" data-mf="name" data-pid="${esc(p.id)}" data-i="${i}" value="${esc(m.name)}" aria-label="マイルストーン名"><input class="in sm" type="date" data-mf="date" data-pid="${esc(p.id)}" data-i="${i}" value="${esc(m.date)}" aria-label="マイルストーンの日付"><button class="btn" data-msdel="${esc(p.id)}|${i}" aria-label="${esc(m.name)} を削除">削除</button></div>`).join("")
@@ -3493,7 +3491,7 @@ function renderList(data, p, today, opts) {
     <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="note">変更はその場でファイルに保存されます。後続の日程をまとめて見直すときは、Claude Code の replan に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>
     <div class="mslist">${ms}<div><button class="btn" data-msadd="${esc(p.id)}">＋ マイルストーンを追加</button> <span class="note">ガントに◆で表示されます。</span></div></div>
-    <h2 style="margin:18px 0 2px;font-size:13px">日程変更の履歴</h2><p class="note" style="margin:0 0 8px">日程が動いたとき、いつ・何が・なぜ動いたか(原因: ベンダー／社内／自分)の記録です。新しい報告に置き換えられた古いメール報告は、日程の変更がなくても、要点だけを残します。Claude Code の replan が日程を更新したときだけ記録され、画面での日付変更は記録されません。</p><ul class="log">${log}</ul>
+    <h2 style="margin:18px 0 2px;font-size:13px">日程変更の履歴</h2><p class="note" style="margin:0 0 8px">日程が動いたとき、いつ・何が・なぜ動いたか(原因: ベンダー／社内／自分)の記録です。Claude Code の replan が日程を更新したときだけ記録され、画面での日付変更は記録されません。</p><ul class="log">${log}</ul>
     <div style="margin-top:18px">${delProj}</div></section>`;
 }
 
@@ -3590,8 +3588,8 @@ function detail(data, p, today, period, row) {
     return `<tr>${cell(`<span class="mono">${esc(t.id)}</span>`)}${cell(esc(t.title))}${cell(statusDotHtml(t, late))}${cell(`<span class="mono">${fmtMD(taskStart(data, t.id))}〜${fmtMD(t.due)}</span>`)}${cell(esc((t.predecessors ?? []).join(", ")) || "—")}${cell(t.waitingOn ? `${esc(t.waitingOn.party)}（${esc(t.waitingOn.since.slice(5).replace("-", "/"))}〜）` : "—")}${cell(a.count ? `<span class="mono">${hm(a.hours)}・${a.count}回</span>` : "—")}</tr>`;
   }).join("");
   const ids = new Set(tasks.map((t) => t.id));
-  const log = (data.changeLog ?? []).filter((l) => l.source == null || Number(l.deltaDays) !== 0 || l.superseded === true).filter((l) => l.at >= period.start && l.at <= period.end).filter((l) => (l.taskIds ?? []).some((id) => ids.has(id)))
-    .map((l) => `<tr>${cell(`<span class="mono">${fmtMD(l.at)}</span>`)}${cell(esc((l.taskIds ?? []).join(", ")))}${cell(l.superseded === true ? "—" : `<span class="mono">${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日</span>`)}${cell(esc(l.cause ?? "—"))}${cell(esc(l.reason))}</tr>`).join("");
+  const log = (data.changeLog ?? []).filter((l) => l.source == null || Number(l.deltaDays) !== 0).filter((l) => l.at >= period.start && l.at <= period.end).filter((l) => (l.taskIds ?? []).some((id) => ids.has(id)))
+    .map((l) => `<tr>${cell(`<span class="mono">${fmtMD(l.at)}</span>`)}${cell(esc((l.taskIds ?? []).join(", ")))}${cell(`<span class="mono">${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日</span>`)}${cell(esc(l.cause ?? "—"))}${cell(esc(l.reason))}</tr>`).join("");
   // ガントの見出しにプロジェクト名と概要が出るので、タスクがあるときは重ねて出さない
   const heading = tasks.length ? "" : `<h3>${esc(p.name)}</h3><div class="sub">${esc(p.type)} ・ ${esc(p.status)} ・ ${fmtMD(p.start)}〜${fmtMD(p.due)}</div>`;
   return `<section class="proj">${heading}

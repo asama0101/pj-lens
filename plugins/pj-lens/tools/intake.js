@@ -1,18 +1,15 @@
 // 使い方: node tools/intake.js <コマンド> <data.json> ...   （コマンドの一覧は引数なしで実行すると出る）
-// 取り込み（WBS・メール・予定表）と、会議のプロジェクト規則、WBS の列の対応を扱う。結果は JSON で標準出力へ。
-// *-plan・processed・*-list・*-get は data.json を書かない。*-apply・*-set・*-remove は検証に通ったときだけ書く。
+// 取り込み（WBS・予定表）と、会議のプロジェクト規則、WBS の列の対応を扱う。結果は JSON で標準出力へ。
+// *-plan・*-list・*-get は data.json を書かない。*-apply・*-set・*-remove は検証に通ったときだけ書く。
 import { readFileSync, writeFileSync } from "node:fs";
 import { validate } from "../src/core/schema.js";
 import { today, isDate } from "../src/core/dates.js";
 import { assignMeetingProjects, setProjectRule, removeProjectRule } from "../src/core/rules.js";
 import { planWbsImport, applyWbsImport, getWbsMapping, setWbsMapping } from "../src/import/wbs.js";
-import { planMailImport, applyMailImport, processedMessageIds, lastMailDate } from "../src/import/mail.js";
 import { planCalendarSync, applyCalendarSync } from "../src/import/calendar.js";
 
 const USAGE = `使い方: node tools/intake.js <コマンド> <data.json> ...
   wbs-plan | wbs-apply   <data.json> <projectId> <rows.json> [--source <取り込んだファイル名>]   (--source は wbs-apply の取り込み記録用)
-  mail-plan | mail-apply <data.json> <items.json> [--compress]
-  processed              <data.json>
   calendar-plan | calendar-apply <data.json> <fetched.json> <開始日> <終了日>
   rules-list | rules-apply <data.json>
   rules-set              <data.json> <keyword> <projectId>
@@ -39,13 +36,6 @@ const COMMANDS = {
     save(path, applyWbsImport(d, pid, plan, { today: today(), source: o.source }));
     out({ ok: true, summary: { added: plan.add.length, updated: plan.update.length }, rejected: plan.rejected, warnings: plan.warnings });
   }],
-  "mail-plan": [2, (d, [, items], o) => out(planMailImport(d, readJson(items), { today: today(), compress: o.compress }))],
-  "mail-apply": [2, (d, [path, items], o) => {
-    const plan = planMailImport(d, readJson(items), { today: today(), compress: o.compress });
-    save(path, applyMailImport(d, plan, { today: today() }));
-    out({ ok: true, summary: { changes: plan.changes.length, noop: plan.noop.length, skipped: plan.skipped.length, rejected: plan.rejected.length }, rejected: plan.rejected });
-  }],
-  processed: [1, (d) => out({ messageIds: processedMessageIds(d), lastMailDate: lastMailDate(d) })],
   "calendar-plan": [4, (d, [, f, s, e]) => {
     const { added, updated, removed } = planCalendarSync(d, readJson(f), { start: s, end: e });
     out({ added, updated, removed });
@@ -65,8 +55,8 @@ const COMMANDS = {
 
 const argv = process.argv.slice(2);
 const si = argv.indexOf("--source"); // wbs-apply の取り込み記録に残す、取り込んだファイル名
-const opts = { compress: argv.includes("--compress"), source: si >= 0 ? argv[si + 1] ?? null : null };
-const [cmd, ...args] = argv.filter((a, i) => a !== "--compress" && a !== "--source" && !(si >= 0 && i === si + 1));
+const opts = { source: si >= 0 ? argv[si + 1] ?? null : null };
+const [cmd, ...args] = argv.filter((a, i) => a !== "--source" && !(si >= 0 && i === si + 1));
 const spec = COMMANDS[cmd];
 if (!spec || args.length < spec[0]) usage();
 if (cmd.startsWith("calendar-") && !(isDate(args[2]) && isDate(args[3]))) usage();

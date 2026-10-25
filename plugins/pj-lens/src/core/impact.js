@@ -83,16 +83,16 @@ export function needsReplan(impact) {
 }
 
 /**
- * impact の変更を due に反映し、changeLog に日程変更の記録を足す。extra は記録に足す項目(source・messageIds など)
+ * impact の変更を due に反映し、changeLog に日程変更の記録を足す
  */
-export function applyReplan(data, impact, { reason, cause, deltaDays, at, extra = {} }) {
+export function applyReplan(data, impact, { reason, cause, deltaDays, at }) {
   if (!String(reason ?? "").trim()) throw new Error("理由を入力してください");
   if (!CAUSES.includes(cause)) throw new Error(`原因は ${CAUSES.join("・")} のいずれかにしてください`);
   const to = new Map(impact.changes.map((c) => [c.taskId, c.newDue]));
   return {
     ...data,
     tasks: data.tasks.map((t) => (to.has(t.id) ? { ...t, due: to.get(t.id) } : t)),
-    changeLog: [...(data.changeLog ?? []), { at, taskIds: impact.changes.map((c) => c.taskId), reason: String(reason).trim(), cause, deltaDays, ...extra }],
+    changeLog: [...(data.changeLog ?? []), { at, taskIds: impact.changes.map((c) => c.taskId), reason: String(reason).trim(), cause, deltaDays }],
   };
 }
 
@@ -100,8 +100,8 @@ export function applyReplan(data, impact, { reason, cause, deltaDays, at, extra 
  * 確認のあとの反映。利用者の編集(edit: data → data)を、いまの最新のデータに対してやり直し、後続の影響もいまのデータで計算し直す。
  * 確認パネルを出している間に入った別の編集を消さないため、パネルを出した時点のスナップショットは使わない
  */
-export function commitReplan(data, edit, taskId, deltaDays, { compress = false, reason, cause, at, extra }) {
+export function commitReplan(data, edit, taskId, deltaDays, { compress = false, reason, cause, at }) {
   const base = edit(data);
   const impact = computeImpact(data, taskId, deltaDays, { compress });
-  return applyReplan(base, impact, { reason, cause, deltaDays, at, extra });
+  return applyReplan(base, impact, { reason, cause, deltaDays, at });
 }

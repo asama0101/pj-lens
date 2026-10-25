@@ -491,27 +491,27 @@ test("サマリー: 未確認の会議も件数に入り（内訳つき）、0 �
 });
 
 // ---- 見送った Minor の修正: 日程変更の履歴に、取り込みの記録を出さない ----
-test("日程変更の履歴: 取り込み（source があり、日数が 0）の記録は出さず、メールによる期限の変更（日数あり）は出す", () => {
+test("日程変更の履歴: 取り込み（source があり、日数が 0）の記録は出さず、取り込みによる期限の変更（日数あり）は出す", () => {
   const d = load();
   d.changeLog.push(
     { at: "2026-10-20", taskIds: ["A4"], reason: "WBS 取り込み: 追加 3 件", cause: null, deltaDays: 0, source: "wbs" },
-    { at: "2026-10-20", taskIds: ["A4"], reason: "メール報告: 着手", cause: null, deltaDays: 0, source: "mail", messageIds: ["m1"] },
-    { at: "2026-10-20", taskIds: ["A4"], reason: "メール報告: 納期延期", cause: "ベンダー", deltaDays: 5, source: "mail", messageIds: ["m2"] },
+    { at: "2026-10-20", taskIds: ["A4"], reason: "受信箱: 着手", cause: null, deltaDays: 0, source: "inbox" },
+    { at: "2026-10-20", taskIds: ["A4"], reason: "受信箱: 納期延期", cause: "ベンダー", deltaDays: 5, source: "inbox" },
   );
   for (const html of [renderProjects(d, TODAY, { filter: "A", view: "list" }), buildReportHtml(d)]) {
     assert.ok(html.includes("ベンダーX の納期回答が遅れたため"));
-    assert.ok(html.includes("メール報告: 納期延期"));
-    assert.ok(!html.includes("WBS 取り込み: 追加 3 件") && !html.includes("メール報告: 着手"));
+    assert.ok(html.includes("受信箱: 納期延期"));
+    assert.ok(!html.includes("WBS 取り込み: 追加 3 件") && !html.includes("受信箱: 着手"));
   }
 });
 
 // ---- 設定タブ ----
 const setv = (d, o = {}) => renderSettings(d, TODAY, o);
 
-test("設定: キーワード規則の一覧（キーワード・プロジェクトの選択・件数・削除）と追加の行、会議名とメールに共通の旨", () => {
+test("設定: キーワード規則の一覧（キーワード・プロジェクトの選択・件数・削除）と追加の行、会議名の旨", () => {
   const d = load();
   const html = setv(d);
-  assert.ok(html.includes("会議名・メールの件名に共通"));
+  assert.ok(html.includes("キーワード規則（会議名）"));
   assert.ok(html.includes('data-rkw="ベンダーX"') && html.includes('value="ベンダーX"'));
   assert.ok(html.includes('data-rpj="ベンダーX"') && /<option value="A" selected>/.test(html));
   assert.ok(html.includes('data-rdel="ベンダーX"'));
@@ -888,28 +888,4 @@ test("renderSchedule(day): 日本の祝日の日表示にも注意が出る。�
   d.settings = { ...d.settings, nationalHolidays: { fetchedAt: "2026-10-20", source: "u", dates: [{ date: "2026-11-03", name: "文化の日" }] } };
   assert.ok(renderSchedule(d, TODAY, { view: "day", date: "2026-11-03", now: NOW, showPrio: false }).includes("この日は休みです"));
   assert.ok(!renderSchedule(d, TODAY, { view: "week", date: "2026-11-03", now: NOW, showPrio: false }).includes("この日は休みです"));
-});
-
-// ---- 置き換えられた古いメール報告（superseded）の履歴 ----
-test("変更履歴: 置き換えられた古いメール報告（superseded）は、そのタスクのプロジェクトの画面とレポートに出る（日数は出さない）。通常の取り込みの記録・どのプロジェクトにも紐づかない記録・他のプロジェクトには出ない", () => {
-  const d = load();
-  d.changeLog.push(
-    { at: "2026-10-20", taskIds: ["A4"], reason: "メール報告（新しい報告に置き換え済み）: 10/12 に着手予定", cause: null, deltaDays: 0, source: "mail", messageIds: ["old"], superseded: true },
-    { at: "2026-10-20", taskIds: ["A4"], reason: "メール報告: 着手", cause: null, deltaDays: 0, source: "mail", messageIds: ["m1"] },
-    { at: "2026-10-20", taskIds: [], reason: "メール報告（新しい報告に置き換え済み）: 紐づかない", cause: null, deltaDays: 0, source: "mail", messageIds: ["x"], superseded: true },
-    { at: "2026-10-20", taskIds: ["B2"], reason: "メール報告（新しい報告に置き換え済み）: B の古い報告", cause: null, deltaDays: 0, source: "mail", messageIds: ["y"], superseded: true },
-  );
-  const screenA = renderProjects(d, TODAY, { filter: "A", view: "list" });
-  const reportA = buildReport(d, TODAY, "", { projectIds: ["A"], period: reportPeriod("custom", TODAY, { start: "2026-10-01", end: "2026-10-31" }) });
-  for (const html of [screenA, reportA]) {
-    assert.ok(html.includes("10/12 に着手予定"));
-    assert.ok(!html.includes("メール報告: 着手"), "通常の取り込みの記録は出さない");
-    assert.ok(!html.includes("紐づかない"), "どのプロジェクトにも紐づかない記録は出さない");
-    assert.ok(!html.includes("B の古い報告"), "他のプロジェクトの記録は出さない");
-  }
-  const li = screenA.match(/<li><span class="d">[^<]*<\/span><span>(?:(?!<\/li>).)*10\/12 に着手予定(?:(?!<\/li>).)*<\/li>/s)[0];
-  assert.ok(!/[+-]?0日/.test(li), "動いた日数を出さない");
-  const row = reportA.match(/<tr>(?:(?!<\/tr>).)*10\/12 に着手予定(?:(?!<\/tr>).)*<\/tr>/s)[0];
-  assert.ok(row.includes("—") && !/0日/.test(row), "レポートの動いた日数は「—」");
-  assert.ok(renderProjects(d, TODAY, { filter: "B", view: "list" }).includes("B の古い報告"));
 });

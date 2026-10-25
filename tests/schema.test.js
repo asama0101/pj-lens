@@ -129,12 +129,12 @@ test("wbsMappings のキーが存在しないプロジェクト、値が文字�
   assert.deepEqual(v(ok).errors, []);
 });
 
-test("changeLog の source が wbs/mail/calendar 以外なら error、messageIds が文字列配列でなければ error", () => {
+test("changeLog の source が wbs/calendar/inbox 以外なら error", () => {
   const a = load(); a.changeLog.push({ at: "2026-10-20", taskIds: [], reason: "x", cause: null, deltaDays: 0, source: "fax" });
   assert.ok(hit(v(a).errors, "source"));
-  const b = load(); b.changeLog.push({ at: "2026-10-20", taskIds: [], reason: "x", cause: null, deltaDays: 0, source: "mail", messageIds: [1] });
-  assert.ok(hit(v(b).errors, "messageIds"));
-  const ok = load(); ok.changeLog.push({ at: "2026-10-20", taskIds: [], reason: "x", cause: null, deltaDays: 0, source: "mail", messageIds: ["m-1"] });
+  const m = load(); m.changeLog.push({ at: "2026-10-20", taskIds: [], reason: "x", cause: null, deltaDays: 0, source: "mail" });
+  assert.ok(hit(v(m).errors, "source"));
+  const ok = load(); ok.changeLog.push({ at: "2026-10-20", taskIds: [], reason: "x", cause: null, deltaDays: 0, source: "wbs" });
   assert.deepEqual(v(ok).errors, []);
 });
 
@@ -257,16 +257,4 @@ test("警告: 終了済みのタスクに残る予定枠の警告は、まだ開
   const w = validate(d, now).warnings.filter((m) => m.includes("未来の予定枠"));
   assert.equal(w.length, 1, w.join(" / "));
   assert.ok(w[0].includes("S91") && !w[0].includes("S90"));
-});
-
-test("changeLog の superseded は真偽値（未指定・null も可）。それ以外は error", () => {
-  const entry = (extra) => ({ at: "2026-10-20", taskIds: [], reason: "x", cause: null, deltaDays: 0, source: "mail", messageIds: ["m"], ...extra });
-  for (const ok of [{ superseded: true }, { superseded: false }, { superseded: null }, {}]) {
-    const d = load(); d.changeLog.push(entry(ok));
-    assert.deepEqual(v(d).errors, [], JSON.stringify(ok));
-  }
-  for (const bad of ["yes", 1, {}]) {
-    const d = load(); d.changeLog.push(entry({ superseded: bad }));
-    assert.ok(v(d).errors.some((m) => m.includes("superseded")), JSON.stringify(bad));
-  }
 });

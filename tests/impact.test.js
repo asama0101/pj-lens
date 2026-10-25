@@ -96,8 +96,6 @@ test("applyReplan: due が更新され、changeLog に1件増える。原デー�
   assert.equal(n.tasks.find((t) => t.id === "T2").due, "2026-10-15");
   assert.deepEqual(n.changeLog, [{ at: "2026-10-20", taskIds: ["T1", "T2"], reason: "ベンダー都合", cause: "ベンダー", deltaDays: 5 }]);
   assert.equal(JSON.stringify(d), before);
-  const x = applyReplan(d, impact, { reason: "メール報告", cause: "ベンダー", deltaDays: 5, at: "2026-10-20", extra: { source: "mail", messageIds: ["m1"] } });
-  assert.deepEqual([x.changeLog[0].source, x.changeLog[0].messageIds], ["mail", ["m1"]]);
 });
 
 test("applyReplan: 理由が空、原因が不正なら例外", () => {

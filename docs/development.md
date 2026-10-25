@@ -29,7 +29,7 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 
 - **1 人で使う前提**: 複数人が同じ `data.json` を同時に編集する用途は想定しない。保存前に更新日時を比べて上書きを止めるが、ロックや統合はしない。共有にはレポートを使う。
 - **`replan`・`intake` のスキルに `disable-model-invocation` を付けていません**（外している）。理由は、自然な言い方（「A3 が 5 日遅れた」など）で起動するのが主な入口で、データを書くのは変更案を見せて承認を得たあとだけだから。いずれも、変更案を示して承認を得てからデータを書き換え、書き込み後に検証（`validate`）を実行する。書き込みは検証に通ったときだけで、通らなければ何も書かない。`init` と `mcp` は、自分のスクリプトだけを事前に許可している。
-- **MCP を同梱しない**: メール・予定表の MCP（Outlook など）は、利用者が Claude Code に用意したものを使う（`.mcp.json` はない）。指定は `/pj-lens:mcp` で `${CLAUDE_PLUGIN_DATA}`（`~/.claude/plugins/data/` の下）の `pj-lens-mcp.json` に保存し、`data.json` には入れない。このファイルには `schema_version`（現在 1）を入れる。`schema_version` の無い既存のファイルは 1 として読む。保存形式を変える版では、この節に移行手順を書く。
+- **MCP を同梱しない**: 予定表の MCP（Outlook など）は、利用者が Claude Code に用意したものを使う（`.mcp.json` はない）。指定は `/pj-lens:mcp` で `${CLAUDE_PLUGIN_DATA}`（`~/.claude/plugins/data/` の下）の `pj-lens-mcp.json` に保存し、`data.json` には入れない。このファイルには `schema_version`（現在 1）を入れる。`schema_version` の無い既存のファイルは 1 として読む。保存形式を変える版では、この節に移行手順を書く。
 - **PDF 生成ライブラリを入れない**: レポート(PDF)を廃止した。PDF が要るときは、保存した HTML をブラウザで開いて印刷画面から「PDF として保存」を選ぶ。
 - **外部パッケージを使わない**: ローカルサーバー・常駐プロセス・データベースも使わない。Excel の取り込みだけ、専用の venv の `openpyxl` を使う。
 - **専用の venv**: 版とハッシュを `requirements.txt` で固定し、`pip install --require-hashes -r requirements.txt` で入れる（ハッシュは PyPI の配布ファイルから `pip hash` で求めた値）。作る前に、場所と内容を示して承認を求める。
@@ -94,14 +94,14 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 | `tasks` | `id`、`projectId`、`title`、`due`、`start`、`status`、`memo`、`predecessors`、`waitingOn`、`importance`（`high`／`mid`／`low`／`null`）、`doneAt`、`sessions`（作業枠。`id`、`date`、`start`、`end`、`kind`＝`planned`／`actual`）、`group`（大項目）、`subgroup`（中項目）、`wbsKey`（WBS 上の項目名の連結。再取り込みの照合用）。`waitingOn` は `party`、`since`。大項目・中項目は表示と絞り込み用の文字列で、親の期限や進捗は集計しない |
 | `events` | 会議。`id`、`date`、`start`、`end`、`title`、`source`（`manual`／`mcp`）、`skip`、`externalId`、`projectId`、`projectBy`（`rule`／`manual`）、`confirmed`（過ぎたあと確認すると稼働に数える） |
 | `inbox` | 任意。HTML から Claude Code への依頼の受信箱。`watching`（`at`: Claude Code が見ている印の日時。30 秒ごとに更新）、`requests`（最新 20 件。`id`＝`R1` など、`at`、`projectId`、`status`＝`pending`／`working`／`question`／`proposed`／`applied`／`rejected`／`failed`、`thread`＝`role`（`user`／`claude`）・`at`・`text` のやりとり、`proposal`＝`summary`・`reason`・`cause`・`ops`（`moveDue`／`addPred`／`removePred`／`addTask`）・`sections`・`warnings`・`base`、`result`＝`at`・`by`（`html`／`claude`）・`summary`） |
-| `changeLog` | 日程変更と取り込みの履歴。`at`、`taskIds`、`reason`、`cause`、`deltaDays`。取り込みの記録には、`source`（`wbs`／`mail`／`calendar`／`inbox`）と、メールの `messageIds` が付く。新しい報告に置き換えられた古いメール報告には `superseded: true`（そのタスクの `taskIds` つき。画面とレポートの変更履歴に出る） |
+| `changeLog` | 日程変更と取り込みの履歴。`at`、`taskIds`、`reason`、`cause`、`deltaDays`。取り込みの記録には、`source`（`wbs`／`calendar`／`inbox`）が付く |
 
 ## 取り込み（intake）
 
 どれも「読み取り → 変更案の表 → 利用者の承認 → 書き込み」の順で、承認の前はタスクを変えない（文章の取り込みは、承認前に `data.json` の受信箱へ依頼と提案を書くが、タスクは承認後の `approve` まで変わらない）。
 
 - 文章（メール・議事録・メモ）の取り込みは、書き込みを受信箱の経路に乗せる（`submit --working` → `propose` → `approve`。「HTML からの依頼（inbox）」を参照）。期限が書かれていないタスクは、Claude が先行と `businessDays` で仮に置き、日付の足し算は `propose` が行う。行番号で直して再提案し、承認後に登録する。重要度は受信箱の登録が受けないので入れない。待ち先（`Waiting`）は、取り込みでは設定せず、報告だけする。
-- WBS の取り込みは、列の対応と変更案を一緒に見せて承認を 1 回にする（承認後に `mapping-set` → `wbs-apply`）。進捗メールは、同じタスクの報告が複数通あれば最新の 1 通だけを `items` に入れ、古いものは `taskId: null` と `relatedTaskId`（そのタスクの ID）にする。反映はせず処理済みにして、`applyMailImport` が `superseded: true` の記録（`taskIds: [relatedTaskId]`、`deltaDays: 0`）を足す。プロジェクト画面とレポートの変更履歴は、`source` があり日数が 0 の記録を出さないが、`superseded` の記録だけは出す（日数は出さない）。`relatedTaskId` が無い `taskId: null` は、従来どおり `taskIds: []` の記録（画面には出ない）。
+- WBS の取り込みは、列の対応と変更案を一緒に見せて承認を 1 回にする（承認後に `mapping-set` → `wbs-apply`）。プロジェクト画面とレポートの変更履歴は、`source` があり日数が 0 の記録を出さない。
 
 ### Excel の WBS
 
@@ -112,12 +112,9 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 - `tools/xlsx.js` のサブコマンド: `doctor`（診断のみ。何も変更せず、使う Python のパスと置き場を表示）、`setup`（`--yes` なしは作成先と内容を表示して終了コード 3、`--yes` で作成）。終了コードは 0 成功・1 実行時のエラー・2 引数・設定のエラー（置き場が決まらないなど）・3 専用環境が使えない（未作成・版のずれ・壊れている・承認待ち・Python が無い）。3 のときは、利用者に確認して `setup --yes` を実行する。
 - 置き場の優先順: 環境変数 `PJ_LENS_HOME` → 引数（`--data "${CLAUDE_PLUGIN_DATA}"`、従来の先頭の位置引数でもよい）→ なければ終了コード 2。`tools/mcpconf.js` も同じ。
 
-### メール・予定表
+### 予定表
 
-- メールは、件名にキーワードを含むものだけを対象にする。キーワードは `settings.projectRules` か、依頼で指定する。本文は定型でなくてよい。どのタスクの報告か決められないものは変更案に入れず、「判断できない」として一覧で見せる。変更案には、根拠にした本文の短い引用を添える。
-- 処理したメールは `changeLog` に記録し、同じメールを二度反映しない。期間の既定は、前回処理した日（その日を含む）から今日まで（初回は 14 日）。1 通のメールに複数のタスクの報告があっても、全部反映できる。
-- 期限の変更は、日程変更と同じ計算で、後続への影響も合わせて見せる。
-- メールと予定表が同じ Microsoft 365 系でも区別できるよう、取り込みの結果に使った MCP 名を出す。
+- 取り込みの結果に、使った MCP 名を出す。
 
 ## HTML からの依頼（inbox）
 
@@ -161,7 +158,7 @@ node tools/impact.js data/data.json A3 5 [--compress]  # A3 が 5 日遅れた�
 node tools/intake.js                                   # 取り込み・会議の規則・WBS の列の対応のコマンド一覧
 node tools/inbox.js                                    # 受信箱（HTML からの依頼）のコマンド一覧（wait・claim・propose・approve など）
 node tools/holidays.js <update|status> <data.json>     # 日本の祝日（内閣府の一覧）を取得して settings.nationalHolidays に保存／取得状況を表示
-node tools/mcpconf.js <保存先> show                    # メール・予定表の MCP の指定（保存先は PJ_LENS_HOME か --data でも指定できる）
+node tools/mcpconf.js <保存先> show                    # 予定表の MCP の指定（保存先は PJ_LENS_HOME か --data でも指定できる）
 node tools/xlsx.js doctor --data <保存先>              # Excel 用の環境の診断のみ（Python のパスと置き場を表示。使えなければ終了コード 3）
 node tools/xlsx.js setup [--yes] --data <保存先>       # 環境を作る（--yes なしは作成先と内容を表示して終了コード 3）
 node tools/xlsx.js --data <保存先> plan.xlsx           # Excel を JSON で読む（Python と venv を使う。環境が使えないときは終了コード 3）
@@ -171,7 +168,7 @@ node tools/xlsx.js --data <保存先> plan.xlsx           # Excel を JSON で�
 
 ### 次の版（未公開）
 
-- 追加: `/pj-lens:intake mail` で、同じタスクの報告が複数のメールにあるとき、古い報告の要点が、そのタスクの変更履歴（プロジェクト画面・レポート）に残ります（`relatedTaskId`、`changeLog` の `superseded`）。これまでは、古い報告は処理済みになるだけで、画面にもレポートにも出ませんでした。
+- 廃止: 進捗報告メールの取り込み（`/pj-lens:intake mail`）を廃止しました。`mail-plan`・`mail-apply`・`processed`、`/pj-lens:mcp` のメールの指定、`changeLog` の `messageIds`・`superseded` も無くなります（`source: "mail"` の記録は検証がエラーにします）。キーワード規則は、予定表の会議に使うので残します。
 - 変更: 同じ依頼に、期限の移動（`moveDue`）と営業日指定の登録（`businessDays`）を書くと、エラーになります（先行の期限が動いて、営業日が吸収されるため）。先に期限の移動を承認してから、登録を依頼してください。
 - 修正: 設定タブの勤務時間を、時・分を順に打っても入力が途切れないようにしました。打ち終わる（0.8 秒止まる）か入力欄を離れてから保存し、保存に成功しても画面を描き直しません。不正な値は通知して、入力欄だけを保存された値に戻します（フォーカスは保たれます）。
 - 修正: 受信箱の依頼（`inbox`）で仮に置いた期限が、プロジェクトの期間に収まるかを確かめ、収まらなければ提案の要約に警告を書くようにしました（`intake` と同じ指針）。

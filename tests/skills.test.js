@@ -74,7 +74,7 @@ test("エージェントとコマンドの本文に、リポジトリ直下の s
 
 test("intake: 取り込みの種類を引数のヒントに出す", () => {
   const hint = /^argument-hint: (.+)$/m.exec(front(read("intake")))?.[1] ?? "";
-  for (const w of ["wbs", "mail", "calendar", "rules"]) assert.ok(hint.includes(w), w);
+  for (const w of ["wbs", "calendar", "rules"]) assert.ok(hint.includes(w), w);
 });
 
 test("mcp: 副作用があるので自動起動しない。mcpconf.js だけを事前承認し、保存先は ${CLAUDE_PLUGIN_DATA} を引数で渡す", () => {
