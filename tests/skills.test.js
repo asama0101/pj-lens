@@ -87,3 +87,7 @@ test("mcp: 副作用があるので自動起動しない。mcpconf.js だけを�
   assert.ok(text.includes('"${CLAUDE_PLUGIN_DATA}"'));
   for (const w of ["show", "set", "試し", "サーバー名", "ツール名"]) assert.ok(text.includes(w), w);
 });
+
+test("mcp: 引数なしで終わる手順と矛盾する『指定のない役割』の文が無い", () => {
+  assert.ok(!read("mcp").includes("指定のない役割"));
+});

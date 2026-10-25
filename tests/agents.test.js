@@ -65,3 +65,35 @@ test("intake(mail): 期間の既定は『前回処理した日から』（その
   assert.ok(!t.includes("の翌日から"));
   assert.ok(t.includes("1通に複数のタスク"));
 });
+
+test("intake(文章): 書き込みは受信箱の submit --working → propose → approve。仮日程・行番号で直す手順があり、直接の追記と重要度の推定は無い", () => {
+  const t = read("agents/intake.md");
+  for (const w of ["tools/inbox.js", "submit", "--working", "propose", "approve", "行番号", "仮", "days", "もう一度"]) assert.ok(t.includes(w), w);
+  assert.doesNotMatch(t, /承認後に追記/);
+  assert.match(t, /重要度.*入れない/);
+  assert.match(t, /待ち先.*報告/);
+});
+
+test("intake(wbs・mail): 列の対応と変更案を一緒に見せて承認 1 回。同じタスクの報告が複数通あれば最新だけ", () => {
+  const t = read("agents/intake.md");
+  assert.match(t, /対応表.*変更案/);
+  assert.match(t, /同じタスク.*最新/);
+});
+
+test("inbox: addTask は days（due と排他）で日数を書き、期限が無いときは聞き返さず仮で置く。行番号で直す", () => {
+  const t = read("agents/inbox.md");
+  for (const w of ["days", "行番号", "仮", "もう一度"]) assert.ok(t.includes(w), w);
+  assert.doesNotMatch(t, /期限が書かれていない/);
+});
+
+test("replan: 原因が読み取れないときは『その他』にして聞き返さない", () => {
+  const t = read("agents/replan.md");
+  assert.match(t, /その他.*聞き返さ|聞き返さ.*その他/);
+});
+
+test("intake(文章): 承認前に許す書き込み（受信箱）の例外と、断ったときの reject が書かれ、共通ルールの『期限が文章にない』は聞き返しの例から外れている", () => {
+  const t = read("agents/intake.md");
+  assert.match(t, /submit --working.*承認の前に実行してよい/);
+  assert.match(t, /reject "\.pj-lens\/data\.json"/);
+  assert.doesNotMatch(t, /どのプロジェクトか、期限が文章にない/);
+});
