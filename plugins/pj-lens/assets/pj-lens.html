@@ -507,16 +507,24 @@ function addDays(date, n) {
   return `${pad(y, 4)}-${pad(m)}-${pad(d)}`;
 }
 
-/** baseDate の businessDays 営業日後（土日と holidays を除く。businessDays は 0 以上の整数。0 なら baseDate のまま） */
-function dueAfter(baseDate, businessDays, holidays = []) {
+/**
+ * baseDate の businessDays 営業日後。businessDays は 0 以上の整数で、0 なら baseDate のまま。
+ * cal.on（営業日の指定）の日は営業日。それ以外は、cal.off（休み）と土日を飛ばす。
+ */
+function dueAfter(baseDate, businessDays, cal = {}) {
   if (!Number.isInteger(businessDays) || businessDays < 0) throw new Error(`営業日は 0 以上の整数にしてください: ${businessDays}`);
-  if (!Array.isArray(holidays)) throw new Error("祝日は日付の配列にしてください（設定の holidays を直してください）");
-  const off = new Set(holidays.map((h) => (parse(h), h)));
+  const set = (key, label) => {
+    const list = cal?.[key] ?? [];
+    if (!Array.isArray(list) || !list.every(isDate)) throw new Error(`${label}は日付（YYYY-MM-DD）の配列にしてください`);
+    return new Set(list);
+  };
+  if (cal === null || typeof cal !== "object" || Array.isArray(cal)) throw new Error("休みと営業日の指定は { off, on } で渡してください");
+  const off = set("off", "休み"), on = set("on", "営業日の指定");
   let d = baseDate;
   parse(d);
   for (let n = 0; n < businessDays;) {
     d = addDays(d, 1);
-    if (!isWeekend(d) && !off.has(d)) n++;
+    if (on.has(d) || !(off.has(d) || isWeekend(d))) n++;
   }
   return d;
 }
@@ -558,8 +566,43 @@ function nowLocal() {
 return { isDate, isTime, addDays, dueAfter, diffDays, weekday, isWeekend, toMin, toHHMM, today, nowLocal };
 })();
 
+/* src/core/holidays.js */
+const { calendarOf, decodeHolidayCsv, parseHolidayCsv, pickRecent } = (() => {
+// 営業日の計算に使う休みと営業日の指定（settings から取り出す）と、内閣府の祝日一覧（CSV）の解析。ネットワークには触れない。
+
+
+const datesOf = (list) => (Array.isArray(list) ? list.filter((x) => isDate(x?.date)).map((x) => x.date) : []);
+
+/** settings → dueAfter の cal。休み = 手動の休み + 日本の祝日、営業日 = 営業日の指定。形が違う値は無視する（validate が注意を出す） */
+function calendarOf(settings) {
+  const st = settings ?? {};
+  return { off: [...datesOf(st.holidays), ...datesOf(st.nationalHolidays?.dates)], on: datesOf(st.workdays) };
+}
+
+/** 内閣府の祝日一覧（Shift_JIS）を文字列にする */
+const decodeHolidayCsv = (bytes) => new TextDecoder("shift_jis").decode(bytes);
+
+/** 「2026/1/1,元日」の行を { date, name } にして昇順で返す。ヘッダ・空行・日付でない行は飛ばす。有効な行が無ければ例外 */
+function parseHolidayCsv(text) {
+  const rows = [];
+  for (const line of String(text).split(/\r?\n/)) {
+    const m = /^(\d{4})\/(\d{1,2})\/(\d{1,2}),(.*)$/.exec(line.trim());
+    if (!m) continue;
+    const date = `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+    if (isDate(date)) rows.push({ date, name: m[4].trim() });
+  }
+  if (!rows.length) throw new Error("祝日の一覧を読み取れませんでした");
+  return rows.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** today の年の前年以降だけ残す（過去の全期間は保存しない） */
+const pickRecent = (rows, today) => rows.filter((r) => r.date.slice(0, 4) >= String(Number(today.slice(0, 4)) - 1));
+
+return { calendarOf, decodeHolidayCsv, parseHolidayCsv, pickRecent };
+})();
+
 /* src/core/schema.js */
-const { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, REQUEST_STATUS, OP_KINDS, validate } = (() => {
+const { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, HOLIDAY_KINDS, REQUEST_STATUS, OP_KINDS, validate } = (() => {
 // data.json の検証。errors は保存してはいけない不整合、warnings は保存を止めない注意。
 
 
@@ -568,6 +611,7 @@ const PROJECT_STATUS = ["計画中", "進行中", "保留", "完了", "中止"];
 const PROJECT_TYPE = ["増設", "更改", "改善", "不具合対処", "その他"];
 const IMPORTANCE = ["high", "mid", "low"];
 const CAUSES = ["ベンダー", "社内", "自分", "その他"];
+const HOLIDAY_KINDS = ["祝日", "有給", "その他"];
 const REQUEST_STATUS = ["pending", "working", "question", "proposed", "applied", "rejected", "failed"];
 const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask"];
 
@@ -705,8 +749,16 @@ function validate(data, now = nowLocal()) {
   if (st.reportShowMeetingTitles != null && typeof st.reportShowMeetingTitles !== "boolean") {
     warn("settings.reportShowMeetingTitles: true か false にしてください（既定の false で動きます）");
   }
-  if (st.holidays != null && !(Array.isArray(st.holidays) && st.holidays.every(isDate))) {
-    warn("settings.holidays: YYYY-MM-DD の配列にしてください（直すまで、営業日の計算で例外になります）");
+  const listOf = (v, ok) => Array.isArray(v) && v.every((x) => x && typeof x === "object" && isDate(x.date) && ok(x));
+  if (st.holidays != null && !listOf(st.holidays, (x) => HOLIDAY_KINDS.includes(x.kind))) {
+    warn(`settings.holidays: { date, kind } の配列にしてください（kind は ${HOLIDAY_KINDS.join("・")}。前版の文字列の配列など、形の違う要素は画面から消せないので、data.json から直接直してください）`);
+  }
+  if (st.workdays != null && !listOf(st.workdays, () => true)) {
+    warn("settings.workdays: { date } の配列にしてください（形の違う要素は、data.json から直接直してください）");
+  }
+  const nh = st.nationalHolidays;
+  if (nh != null && !(typeof nh === "object" && isDate(nh.fetchedAt) && listOf(nh.dates, () => true))) {
+    warn("settings.nationalHolidays: { fetchedAt, dates: [{ date }] } にしてください（/pj-lens:holidays で取り直せます）");
   }
   (st.projectRules ?? []).forEach((r, i) => {
     if (!String(r?.keyword ?? "").trim()) err(`settings.projectRules[${i}]: keyword が空です`);
@@ -759,7 +811,7 @@ function validate(data, now = nowLocal()) {
   return { errors, warnings };
 }
 
-return { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, REQUEST_STATUS, OP_KINDS, validate };
+return { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, HOLIDAY_KINDS, REQUEST_STATUS, OP_KINDS, validate };
 })();
 
 /* src/core/metrics.js */
@@ -1945,8 +1997,9 @@ return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills };
 })();
 
 /* src/ui/edit.js */
-const { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, removeHoliday, addProject, deleteProject } = (() => {
+const { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject } = (() => {
 // 画面からの編集（追加・削除・更新）。すべて不変更新で、不正な入力は例外にする（呼び出し側が理由を表示する）。
+
 
 
 
@@ -2205,21 +2258,63 @@ function updateSettings(data, patch) {
   return { ...data, settings: s };
 }
 
-/** 祝日（営業日の計算で飛ばす日）を足す。昇順・重複なしで保つ。実在しない日付は例外 */
-function addHoliday(data, date) {
-  if (!isDate(date)) throw new Error(`祝日は実在する日付（YYYY-MM-DD）にしてください: ${date}`);
-  const cur = Array.isArray(data.settings?.holidays) ? data.settings.holidays : [];
-  return { ...data, settings: { ...data.settings, holidays: [...new Set([...cur, date])].sort() } };
+// ---- 休み（settings.holidays）と営業日の指定（settings.workdays）。どちらも { date, ... } の配列で、日付の昇順。同じ日は置き換える ----
+const isEntry = (x) => x && typeof x === "object" && isDate(x.date);
+
+/** list に entry を足す（同じ日は置き換え、日付の昇順）。形の違う既存の要素は消さず、末尾に残す（validate が注意を出す） */
+function upsertByDate(list, entry) {
+  const cur = Array.isArray(list) ? list : [];
+  return [...cur.filter((x) => isEntry(x) && x.date !== entry.date), entry].sort((p, q) => p.date.localeCompare(q.date)).concat(cur.filter((x) => !isEntry(x)));
 }
 
-/** 祝日を外す。無い日付は何もしない。空になったらキーを消す */
-function removeHoliday(data, date) {
-  const cur = Array.isArray(data.settings?.holidays) ? data.settings.holidays : [];
-  const s = { ...data.settings };
-  const rest = cur.filter((h) => h !== date);
-  if (rest.length) s.holidays = rest; else delete s.holidays;
-  return { ...data, settings: s };
+function removeByDate(list, date) {
+  const rest = (Array.isArray(list) ? list : []).filter((x) => !(isEntry(x) && x.date === date));
+  return rest.length ? rest : undefined;
 }
+
+const withSetting = (data, key, value) => {
+  const s = { ...data.settings };
+  if (value === undefined) delete s[key]; else s[key] = value;
+  return { ...data, settings: s };
+};
+
+const entryOf = ({ date, note }, extra = {}) => {
+  if (!isDate(date)) throw new Error(`実在する日付（YYYY-MM-DD）にしてください: ${date}`);
+  const n = String(note ?? "").trim();
+  return { date, ...extra, ...(n ? { note: n } : {}) };
+};
+
+/** 休みを 1 日足す。区分は 祝日・有給・その他 */
+function addHoliday(data, { date, kind, note }) {
+  if (!HOLIDAY_KINDS.includes(kind)) throw new Error(`区分は ${HOLIDAY_KINDS.join("・")} のどれかにしてください`);
+  return withSetting(data, "holidays", upsertByDate(data.settings?.holidays, entryOf({ date, note }, { kind })));
+}
+
+/** from〜to（両端を含む）の各日から、土日と日本の祝日（取得済みのとき）を除いた日と、除いた日数。to < from と 366 日を超える期間は例外 */
+function holidayRangeDays(data, from, to) {
+  if (!isDate(from) || !isDate(to)) throw new Error(`実在する日付（YYYY-MM-DD）にしてください: ${isDate(from) ? to : from}`);
+  if (to < from) throw new Error("終了日は開始日以降にしてください");
+  if (diffDays(to, from) >= 366) throw new Error("期間は 366 日以内にしてください");
+  const national = new Set(calendarOf({ nationalHolidays: data.settings?.nationalHolidays }).off);
+  const days = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) if (!isWeekend(d) && !national.has(d)) days.push(d);
+  return { days, skipped: diffDays(to, from) + 1 - days.length };
+}
+
+/** 期間の休みを 1 日ずつ足す（土日と日本の祝日は除く）。除いた結果が 0 日なら例外 */
+function addHolidayRange(data, { from, to, kind, note }) {
+  const { days } = holidayRangeDays(data, from, to);
+  if (!days.length) throw new Error("期間内に休みにできる日がありません（土日と日本の祝日は除きます）");
+  return days.reduce((d, date) => addHoliday(d, { date, kind, note }), data);
+}
+
+/** 休みを外す。無い日は何もしない。空になったらキーを消す */
+const removeHoliday = (data, date) => withSetting(data, "holidays", removeByDate(data.settings?.holidays, date));
+
+/** 営業日として扱う日（土日・祝日・休みでも営業日として数える）を足す */
+const addWorkday = (data, { date, note }) => withSetting(data, "workdays", upsertByDate(data.settings?.workdays, entryOf({ date, note })));
+
+const removeWorkday = (data, date) => withSetting(data, "workdays", removeByDate(data.settings?.workdays, date));
 
 function addProject(data, { name, type = "その他" }, today = nowLocal().date) {
   const n = String(name ?? "").trim();
@@ -2251,7 +2346,7 @@ function deleteProject(data, projectId) {
   return { data: { ...data, settings, events, projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
 }
 
-return { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, removeHoliday, addProject, deleteProject };
+return { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject };
 })();
 
 /* src/ui/inboxops.js */
@@ -2260,6 +2355,7 @@ const { summarizeSections, planOps, applyProposal } = (() => {
 // 計画（planOps）は、操作を作業用のコピーに当てて、変更案の表・警告・適用前の確認用の値（base）を作る。データは変えない。
 // 適用（applyProposal）は、base が現在のデータと同じときだけ、同じ手順で操作を当てて、変更履歴を足す。
 // 当てる順: addTask → addPred・removePred → moveDue（それぞれ書かれた順）。後続の動きは computeImpact の規則に合わせる。
+
 
 
 
@@ -2322,7 +2418,7 @@ function simulate(data, ops, today) {
       const open = (o.predecessors ?? []).map((p) => (refDue.has(p) ? { due: refDue.get(p), status: "To Do" } : need(p))).filter((t) => !closed(t));
       const base = open.map((t) => t.due).reduce(max, "") || today;
       const ref = String(o.ref).trim();
-      dueOf.set(ref, dueAfter(base, o.businessDays, w.settings?.holidays ?? []));
+      dueOf.set(ref, dueAfter(base, o.businessDays, calendarOf(w.settings)));
       refDue.set(ref, dueOf.get(ref));
       pending.splice(pending.indexOf(o), 1);
     }
@@ -3045,7 +3141,7 @@ return { renderWorkload, shiftWorkloadDate };
 
 /* src/ui/views/settings.js */
 const { renderSettings } = (() => {
-// 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定）と、キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
+// 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定）と、日本の祝日（表示のみ）・休み（手動）・営業日として扱う日と、キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
 
 
 
@@ -3077,12 +3173,35 @@ function renderSettings(data, today, opts = {}) {
       </tbody></table></div>
     </section>`;
 
-  const holidays = (Array.isArray(st.holidays) ? st.holidays.filter(isDate) : []).slice().sort();
-  const holidayRows = holidays.map((h) => `<tr><td class="mono" data-l="日付">${esc(h)}</td><td data-l=""><button class="btn" data-hdel="${esc(h)}" aria-label="${esc(h)} を祝日から外す">削除</button></td></tr>`).join("");
-  const holidaySec = `<section class="panel" aria-labelledby="h-hol"><h2 id="h-hol" style="margin-top:0">祝日</h2>
-      <p class="note" style="margin:0 0 10px">営業日の計算で飛ばす日です（土日は常に飛ばします）。受信箱の登録（営業日からの期限）だけが使います。変更はその場でファイルに保存されます。</p>
+  // 休みと営業日の指定: 形が違う要素は出さず（validate の注意が節の上に出る）、日付の昇順で並べる
+  const entries = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === "object" && isDate(x.date)) : []).slice().sort((p, q) => p.date.localeCompare(q.date));
+  const noteTd = (x) => `<td class="muted" data-l="メモ">${x.note ? esc(x.note) : ""}</td>`;
+  const nh = st.nationalHolidays, nhDates = entries(nh?.dates);
+  const nhRows = nhDates.filter((x) => x.date >= today).slice(0, 12).map((x) => `<tr><td class="mono" data-l="日付">${esc(x.date)}</td><td data-l="名称">${esc(x.name ?? "")}</td></tr>`).join("");
+  const nationalSec = `<section class="panel" aria-labelledby="h-nat"><h2 id="h-nat" style="margin-top:0">日本の祝日</h2>
+      <p class="note" style="margin:0 0 10px">営業日の計算で飛ばす日です。内閣府の祝日一覧から、Claude Code が取得して保存します（更新は <span class="mono">/pj-lens:holidays</span>。この画面からは取得しません）。</p>
+      ${warnOf("nationalHolidays")}
+      ${nh && typeof nh === "object" && isDate(nh.fetchedAt) && nhDates.length
+        ? `<p style="margin:0 0 8px">取得日 <span class="mono">${esc(nh.fetchedAt)}</span>・<span class="mono">${nhDates.length} 件</span>（<span class="mono">${esc(nhDates[0].date)}〜${esc(nhDates.at(-1).date)}</span>）。今日以降の祝日:</p>
+         ${nhRows ? `<div class="tscroll"><table class="tbl"><tbody>${nhRows}</tbody></table></div>` : `<p class="muted" style="margin:0">今日以降の祝日は、取得した範囲にありません。<span class="mono">/pj-lens:holidays</span> で取り直してください。</p>`}`
+        : `<p class="muted" style="margin:0">まだ取得していません。Claude Code で <span class="mono">/pj-lens:holidays</span> を実行すると取得します。</p>`}
+    </section>`;
+
+  const kindOptions = (cur) => HOLIDAY_KINDS.concat(HOLIDAY_KINDS.includes(cur) || cur === undefined ? [] : [cur]).map((k) => `<option${k === (cur ?? HOLIDAY_KINDS[0]) ? " selected" : ""}>${esc(k)}</option>`).join("");
+  const holidayRows = entries(st.holidays).map((x) => `<tr><td class="mono" data-l="日付">${esc(x.date)}</td><td data-l="区分"><select class="in sm" data-hrowkind="${esc(x.date)}" aria-label="${esc(x.date)} の区分">${kindOptions(x.kind)}</select></td>${noteTd(x)}<td data-l=""><button class="btn" data-hdel="${esc(x.date)}" aria-label="${esc(x.date)} を休みから外す">削除</button></td></tr>`).join("");
+  const holidaySec = `<section class="panel" aria-labelledby="h-hol"><h2 id="h-hol" style="margin-top:0">休み（手動）</h2>
+      <p class="note" style="margin:0 0 10px">有給・会社独自の休みなどを登録します。営業日の計算で飛ばします（区分は整理用で、計算は同じです）。終了日を入れると期間として登録し、期間内の土日と日本の祝日は除きます。変更はその場でファイルに保存されます。</p>
       ${warnOf("holidays")}
-      <div class="tscroll"><table class="tbl edit"><tbody>${holidayRows || `<tr><td colspan="2" class="muted">祝日はありません。下の行から追加します。</td></tr>`}<tr><td data-l="日付"><input class="in" type="date" data-hnew aria-label="追加する祝日"></td><td data-l=""><button class="btn" data-hadd>＋ 追加</button></td></tr></tbody></table></div>
+      <div class="tscroll"><table class="tbl edit"><thead><tr><th>日付</th><th>区分</th><th>メモ</th><th></th></tr></thead><tbody>${holidayRows || `<tr><td colspan="4" class="muted">休みは登録されていません。下の行から追加します。</td></tr>`}
+        <tr><td data-l="日付"><input class="in" type="date" data-hnew aria-label="休みの開始日"> 〜 <input class="in" type="date" data-hto aria-label="休みの終了日（期間のとき）"></td><td data-l="区分"><select class="in sm" data-hkind aria-label="追加する休みの区分">${kindOptions()}</select></td><td data-l="メモ"><input class="in" data-hnote placeholder="メモ（任意）" aria-label="休みのメモ"></td><td data-l=""><button class="btn" data-hadd>＋ 追加</button></td></tr></tbody></table></div>
+    </section>`;
+
+  const workdayRows = entries(st.workdays).map((x) => `<tr><td class="mono" data-l="日付">${esc(x.date)}</td>${noteTd(x)}<td data-l=""><button class="btn" data-wdel="${esc(x.date)}" aria-label="${esc(x.date)} を営業日の指定から外す">削除</button></td></tr>`).join("");
+  const workdaySec = `<section class="panel" aria-labelledby="h-wrk"><h2 id="h-wrk" style="margin-top:0">営業日として扱う日</h2>
+      <p class="note" style="margin:0 0 10px">土日・祝日・休みでも、この日は営業日として数えます（休日出勤など）。変更はその場でファイルに保存されます。</p>
+      ${warnOf("workdays")}
+      <div class="tscroll"><table class="tbl edit"><thead><tr><th>日付</th><th>メモ</th><th></th></tr></thead><tbody>${workdayRows || `<tr><td colspan="3" class="muted">営業日の指定はありません。下の行から追加します。</td></tr>`}
+        <tr><td data-l="日付"><input class="in" type="date" data-wnew aria-label="営業日として扱う日"></td><td data-l="メモ"><input class="in" data-wnote placeholder="メモ（任意）" aria-label="営業日の指定のメモ"></td><td data-l=""><button class="btn" data-wadd>＋ 追加</button></td></tr></tbody></table></div>
     </section>`;
 
   const ruleRows = rules.map((r, i) => {
@@ -3109,7 +3228,9 @@ function renderSettings(data, today, opts = {}) {
 
   return `<div style="display:flex;flex-direction:column;gap:16px">
     ${basic}
+    ${nationalSec}
     ${holidaySec}
+    ${workdaySec}
     <section class="panel" aria-labelledby="h-rules"><h2 id="h-rules" style="margin-top:0">キーワード規則（会議名・メールの件名に共通）</h2>
       <p class="note" style="margin:0 0 10px">件名にキーワードを含む会議を、そのプロジェクトに付けます。メールの取り込みの対象にも使います（上の規則が先に当たります）。手動で付けた会議は、規則を変えても変わりません。変更はその場でファイルに保存されます。</p>
       ${opts.ruleError ? `<p class="note err" role="alert" style="margin:0 0 10px">${esc(opts.ruleError)}</p>` : ""}
@@ -3592,7 +3713,7 @@ function focusSelector(el) {
   if (d.rkw !== undefined) return `[data-rkw][data-ri="${CSS.escape(d.ri)}"]`;
   if (d.rpj !== undefined) return `[data-rpj][data-ri="${CSS.escape(d.ri)}"]`;
   if (d.rnew !== undefined) return "[data-rnew]";
-  if (d.hnew !== undefined) return "[data-hnew]";
+  for (const k of ["hnew", "hto", "hnote", "wnew", "wnote"]) if (d[k] !== undefined) return `[data-${k}]`;
   if (d.rnewpj !== undefined) return "[data-rnewpj]";
   if (d.waitparty) return q("data-waitparty", d.waitparty);
   if (d.rp) return q("data-rp", d.rp);
@@ -3786,12 +3907,30 @@ function addRule() {
   apply(edit, "規則を保存しました（同じキーワードは置き換えます）");
 }
 
-/** 設定タブの祝日の追加。エラーは通知だけにして、入力欄は描き直さない（打った日付を残す） */
+/** 設定タブの休みの追加（終了日があれば期間）。エラーは通知だけにして、入力欄は描き直さない（打った内容を残す） */
 function addHolidayFromInput() {
-  const date = view.querySelector("[data-hnew]")?.value ?? "";
-  const edit = (d) => addHoliday(d, date);
+  const val = (k) => view.querySelector(`[data-${k}]`)?.value ?? "";
+  const from = val("hnew"), to = val("hto"), kind = val("hkind"), note = val("hnote");
+  const range = to !== "";
+  let msg = "休みを追加しました";
+  const edit = (d) => (range ? addHolidayRange(d, { from, to, kind, note }) : addHoliday(d, { date: from, kind, note }));
+  try {
+    edit(S.data);
+    if (range) {
+      const { days, skipped } = holidayRangeDays(S.data, from, to);
+      const fetched = Array.isArray(S.data.settings?.nationalHolidays?.dates);
+      msg = `${days.length} 日を${kind}として登録しました${skipped ? `（${fetched ? "土日・祝日" : "土日"} ${skipped} 日は除外）` : ""}${fetched ? "" : "。日本の祝日は未取得のため、土日だけを除きました"}`;
+    }
+  } catch (e) { toast(e.message); return; }
+  apply(edit, msg);
+}
+
+/** 設定タブの営業日の指定の追加 */
+function addWorkdayFromInput() {
+  const date = view.querySelector("[data-wnew]")?.value ?? "", note = view.querySelector("[data-wnote]")?.value ?? "";
+  const edit = (d) => addWorkday(d, { date, note });
   try { edit(S.data); } catch (e) { toast(e.message); return; }
-  apply(edit, "祝日を追加しました");
+  apply(edit, "営業日の指定を追加しました");
 }
 
 /** 見出し行の「＋」の大項目・中項目（data-ag / data-asg）を、追加するタスクの置き場にする */
@@ -3904,8 +4043,11 @@ view.addEventListener("click", (e) => {
 
   if (q("[data-radd]")) { addRule(); return; }
   if (q("[data-hadd]")) { addHolidayFromInput(); return; }
+  if (q("[data-wadd]")) { addWorkdayFromInput(); return; }
   const hdel = q("[data-hdel]");
-  if (hdel) { apply((d) => removeHoliday(d, hdel.dataset.hdel), "祝日を外しました"); return; }
+  if (hdel) { apply((d) => removeHoliday(d, hdel.dataset.hdel), "休みを外しました"); return; }
+  const wdel = q("[data-wdel]");
+  if (wdel) { apply((d) => removeWorkday(d, wdel.dataset.wdel), "営業日の指定を外しました"); return; }
   const rmove = q("[data-rmove]");
   if (rmove) {
     const [kw, delta] = [rmove.dataset.rmove.slice(0, rmove.dataset.rmove.lastIndexOf("|")), Number(rmove.dataset.rmove.slice(rmove.dataset.rmove.lastIndexOf("|") + 1))];
@@ -4142,6 +4284,11 @@ function onChange(el) {
     return;
   }
   if (el.dataset.set !== undefined) { changeSetting(el); return; }
+  if (el.dataset.hrowkind !== undefined) {
+    const date = el.dataset.hrowkind, kind = el.value;
+    apply((d) => addHoliday(d, { date, kind, note: (d.settings?.holidays ?? []).find((h) => h?.date === date)?.note }), "区分を変更しました");
+    return;
+  }
   if (el.dataset.rkw !== undefined) { const old = el.dataset.rkw; ruleApply((d) => renameProjectRule(d, old, el.value), "キーワードを変更しました", { inPlace: true }); return; }
   if (el.dataset.rpj !== undefined) { const kw = el.dataset.rpj, pid = el.value; ruleApply((d) => setProjectRule(d, kw, pid), "プロジェクトを変更しました", { inPlace: true }); return; }
   if (el.dataset.groupfilter !== undefined) { S.group = el.value; S.resetScroll = true; render(); return; }
@@ -4362,7 +4509,8 @@ view.addEventListener("keydown", (e) => {
   // 日本語入力の変換確定の Enter(isComposing)では追加しない
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-gadd]")) { e.preventDefault(); submitGAdd(e.target); return; }
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-rnew]")) { e.preventDefault(); addRule(); return; }
-  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-hnew]")) { e.preventDefault(); addHolidayFromInput(); return; }
+  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-hnew],[data-hto],[data-hnote]")) { e.preventDefault(); addHolidayFromInput(); return; }
+  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-wnew],[data-wnote]")) { e.preventDefault(); addWorkdayFromInput(); return; }
   if (e.key === "Escape" && e.target.matches("[data-gadd]")) { S.addAt = null; render(); return; }
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-waitparty]")) { e.preventDefault(); submitWait(e.target.dataset.waitparty); return; }
   if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-pick]")) { e.preventDefault(); e.target.click(); }

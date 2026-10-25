@@ -1,6 +1,6 @@
-// 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定）と、キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
+// 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定）と、日本の祝日（表示のみ）・休み（手動）・営業日として扱う日と、キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
 import { ruleMeetingCounts } from "../../core/rules.js";
-import { validate } from "../../core/schema.js";
+import { validate, HOLIDAY_KINDS } from "../../core/schema.js";
 import { isDate, isTime, toMin } from "../../core/dates.js";
 import { groupLabels } from "../../core/groups.js";
 import { esc } from "../common.js";
@@ -30,12 +30,35 @@ export function renderSettings(data, today, opts = {}) {
       </tbody></table></div>
     </section>`;
 
-  const holidays = (Array.isArray(st.holidays) ? st.holidays.filter(isDate) : []).slice().sort();
-  const holidayRows = holidays.map((h) => `<tr><td class="mono" data-l="日付">${esc(h)}</td><td data-l=""><button class="btn" data-hdel="${esc(h)}" aria-label="${esc(h)} を祝日から外す">削除</button></td></tr>`).join("");
-  const holidaySec = `<section class="panel" aria-labelledby="h-hol"><h2 id="h-hol" style="margin-top:0">祝日</h2>
-      <p class="note" style="margin:0 0 10px">営業日の計算で飛ばす日です（土日は常に飛ばします）。受信箱の登録（営業日からの期限）だけが使います。変更はその場でファイルに保存されます。</p>
+  // 休みと営業日の指定: 形が違う要素は出さず（validate の注意が節の上に出る）、日付の昇順で並べる
+  const entries = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === "object" && isDate(x.date)) : []).slice().sort((p, q) => p.date.localeCompare(q.date));
+  const noteTd = (x) => `<td class="muted" data-l="メモ">${x.note ? esc(x.note) : ""}</td>`;
+  const nh = st.nationalHolidays, nhDates = entries(nh?.dates);
+  const nhRows = nhDates.filter((x) => x.date >= today).slice(0, 12).map((x) => `<tr><td class="mono" data-l="日付">${esc(x.date)}</td><td data-l="名称">${esc(x.name ?? "")}</td></tr>`).join("");
+  const nationalSec = `<section class="panel" aria-labelledby="h-nat"><h2 id="h-nat" style="margin-top:0">日本の祝日</h2>
+      <p class="note" style="margin:0 0 10px">営業日の計算で飛ばす日です。内閣府の祝日一覧から、Claude Code が取得して保存します（更新は <span class="mono">/pj-lens:holidays</span>。この画面からは取得しません）。</p>
+      ${warnOf("nationalHolidays")}
+      ${nh && typeof nh === "object" && isDate(nh.fetchedAt) && nhDates.length
+        ? `<p style="margin:0 0 8px">取得日 <span class="mono">${esc(nh.fetchedAt)}</span>・<span class="mono">${nhDates.length} 件</span>（<span class="mono">${esc(nhDates[0].date)}〜${esc(nhDates.at(-1).date)}</span>）。今日以降の祝日:</p>
+         ${nhRows ? `<div class="tscroll"><table class="tbl"><tbody>${nhRows}</tbody></table></div>` : `<p class="muted" style="margin:0">今日以降の祝日は、取得した範囲にありません。<span class="mono">/pj-lens:holidays</span> で取り直してください。</p>`}`
+        : `<p class="muted" style="margin:0">まだ取得していません。Claude Code で <span class="mono">/pj-lens:holidays</span> を実行すると取得します。</p>`}
+    </section>`;
+
+  const kindOptions = (cur) => HOLIDAY_KINDS.concat(HOLIDAY_KINDS.includes(cur) || cur === undefined ? [] : [cur]).map((k) => `<option${k === (cur ?? HOLIDAY_KINDS[0]) ? " selected" : ""}>${esc(k)}</option>`).join("");
+  const holidayRows = entries(st.holidays).map((x) => `<tr><td class="mono" data-l="日付">${esc(x.date)}</td><td data-l="区分"><select class="in sm" data-hrowkind="${esc(x.date)}" aria-label="${esc(x.date)} の区分">${kindOptions(x.kind)}</select></td>${noteTd(x)}<td data-l=""><button class="btn" data-hdel="${esc(x.date)}" aria-label="${esc(x.date)} を休みから外す">削除</button></td></tr>`).join("");
+  const holidaySec = `<section class="panel" aria-labelledby="h-hol"><h2 id="h-hol" style="margin-top:0">休み（手動）</h2>
+      <p class="note" style="margin:0 0 10px">有給・会社独自の休みなどを登録します。営業日の計算で飛ばします（区分は整理用で、計算は同じです）。終了日を入れると期間として登録し、期間内の土日と日本の祝日は除きます。変更はその場でファイルに保存されます。</p>
       ${warnOf("holidays")}
-      <div class="tscroll"><table class="tbl edit"><tbody>${holidayRows || `<tr><td colspan="2" class="muted">祝日はありません。下の行から追加します。</td></tr>`}<tr><td data-l="日付"><input class="in" type="date" data-hnew aria-label="追加する祝日"></td><td data-l=""><button class="btn" data-hadd>＋ 追加</button></td></tr></tbody></table></div>
+      <div class="tscroll"><table class="tbl edit"><thead><tr><th>日付</th><th>区分</th><th>メモ</th><th></th></tr></thead><tbody>${holidayRows || `<tr><td colspan="4" class="muted">休みは登録されていません。下の行から追加します。</td></tr>`}
+        <tr><td data-l="日付"><input class="in" type="date" data-hnew aria-label="休みの開始日"> 〜 <input class="in" type="date" data-hto aria-label="休みの終了日（期間のとき）"></td><td data-l="区分"><select class="in sm" data-hkind aria-label="追加する休みの区分">${kindOptions()}</select></td><td data-l="メモ"><input class="in" data-hnote placeholder="メモ（任意）" aria-label="休みのメモ"></td><td data-l=""><button class="btn" data-hadd>＋ 追加</button></td></tr></tbody></table></div>
+    </section>`;
+
+  const workdayRows = entries(st.workdays).map((x) => `<tr><td class="mono" data-l="日付">${esc(x.date)}</td>${noteTd(x)}<td data-l=""><button class="btn" data-wdel="${esc(x.date)}" aria-label="${esc(x.date)} を営業日の指定から外す">削除</button></td></tr>`).join("");
+  const workdaySec = `<section class="panel" aria-labelledby="h-wrk"><h2 id="h-wrk" style="margin-top:0">営業日として扱う日</h2>
+      <p class="note" style="margin:0 0 10px">土日・祝日・休みでも、この日は営業日として数えます（休日出勤など）。変更はその場でファイルに保存されます。</p>
+      ${warnOf("workdays")}
+      <div class="tscroll"><table class="tbl edit"><thead><tr><th>日付</th><th>メモ</th><th></th></tr></thead><tbody>${workdayRows || `<tr><td colspan="3" class="muted">営業日の指定はありません。下の行から追加します。</td></tr>`}
+        <tr><td data-l="日付"><input class="in" type="date" data-wnew aria-label="営業日として扱う日"></td><td data-l="メモ"><input class="in" data-wnote placeholder="メモ（任意）" aria-label="営業日の指定のメモ"></td><td data-l=""><button class="btn" data-wadd>＋ 追加</button></td></tr></tbody></table></div>
     </section>`;
 
   const ruleRows = rules.map((r, i) => {
@@ -62,7 +85,9 @@ export function renderSettings(data, today, opts = {}) {
 
   return `<div style="display:flex;flex-direction:column;gap:16px">
     ${basic}
+    ${nationalSec}
     ${holidaySec}
+    ${workdaySec}
     <section class="panel" aria-labelledby="h-rules"><h2 id="h-rules" style="margin-top:0">キーワード規則（会議名・メールの件名に共通）</h2>
       <p class="note" style="margin:0 0 10px">件名にキーワードを含む会議を、そのプロジェクトに付けます。メールの取り込みの対象にも使います（上の規則が先に当たります）。手動で付けた会議は、規則を変えても変わりません。変更はその場でファイルに保存されます。</p>
       ${opts.ruleError ? `<p class="note err" role="alert" style="margin:0 0 10px">${esc(opts.ruleError)}</p>` : ""}

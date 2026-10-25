@@ -762,17 +762,45 @@ test("設定タブ: 規則の↑↓。先頭の↑と末尾の↓は無効", () 
   for (const [kw, delta] of [["r1", 1], ["r2", -1], ["r2", 1], ["r3", -1]]) assert.ok(btn(kw, delta) && !btn(kw, delta).includes("disabled"), `${kw}|${delta}`);
 });
 
-test("設定: 祝日の節（追加の入力・登録済みの日付を昇順・各行の削除）。holidays が壊れていても描画でき、注意が出る", () => {
-  const d = load();
-  d.settings = { ...d.settings, holidays: ["2026-11-23", "2026-10-26"] };
-  const html = setv(d);
-  assert.ok(html.includes("祝日") && html.includes("data-hnew") && html.includes("data-hadd"));
-  assert.ok(html.indexOf('data-hdel="2026-10-26"') > 0 && html.indexOf('data-hdel="2026-10-26"') < html.indexOf('data-hdel="2026-11-23"'), "昇順");
+const NHOL = { fetchedAt: "2026-10-25", source: "u", dates: [{ date: "2026-01-01", name: "元日" }, { date: "2026-11-03", name: "文化の日" }, { date: "2026-11-23", name: "勤労感謝の日" }] };
+const withSet = (o) => { const d = load(); d.settings = { ...d.settings, ...o }; return d; };
+
+test("設定: 「日本の祝日」の節。未取得は案内、取得済みは取得日・件数・範囲と、今日以降の祝日だけ（読み取り専用）", () => {
   const none = setv(load());
-  assert.ok(none.includes("祝日はありません") && !none.includes("data-hdel"));
-  d.settings.holidays = "x";
-  const bad = setv(d);
-  assert.ok(bad.includes("settings.holidays:") && bad.includes("祝日はありません"));
+  assert.ok(none.includes("日本の祝日") && none.includes("まだ取得していません") && none.includes("/pj-lens:holidays"));
+  const html = setv(withSet({ nationalHolidays: NHOL }));
+  assert.ok(html.includes("2026-10-25") && html.includes("3 件") && html.includes("2026-01-01") && html.includes("2026-11-23"), "取得日・件数・範囲");
+  assert.ok(html.includes("文化の日") && html.includes("勤労感謝の日"));
+  assert.ok(!html.includes("元日"), "今日（10/20）より前は一覧に出さない");
+});
+
+test("設定: 「休み（手動）」の節。開始日・終了日・区分・メモの入力、登録済みを昇順で区分とメモつきに出し、区分の変更と削除ができる", () => {
+  const html = setv(withSet({ holidays: [{ date: "2026-11-23", kind: "祝日" }, { date: "2026-10-26", kind: "有給", note: "通院" }] }));
+  assert.ok(html.includes("休み（手動）"));
+  for (const a of ["data-hnew", "data-hto", "data-hkind", "data-hnote", "data-hadd"]) assert.ok(html.includes(a), a);
+  assert.deepEqual([...html.matchAll(/<option[^>]*>(祝日|有給|その他)<[/]option>/g)].slice(0, 3).map((m) => m[1]), ["祝日", "有給", "その他"], "追加の区分の選択肢");
+  const i = html.indexOf('data-hdel="2026-10-26"'), j = html.indexOf('data-hdel="2026-11-23"');
+  assert.ok(i > 0 && j > i, "昇順");
+  assert.match(html, /<select[^>]*data-hrowkind="2026-10-26"[^>]*>[^]*?<option selected>有給<[/]option>/);
+  assert.ok(html.includes("通院"));
+  assert.ok(setv(load()).includes("休みは登録されていません"));
+});
+
+test("設定: 「営業日として扱う日」の節。入力と一覧（昇順・削除）と説明", () => {
+  const html = setv(withSet({ workdays: [{ date: "2026-11-28", note: "休日出勤" }, { date: "2026-10-31" }] }));
+  assert.ok(html.includes("営業日として扱う日") && html.includes("営業日として数えます"));
+  for (const a of ["data-wnew", "data-wnote", "data-wadd"]) assert.ok(html.includes(a), a);
+  assert.ok(html.indexOf('data-wdel="2026-10-31"') > 0 && html.indexOf('data-wdel="2026-10-31"') < html.indexOf('data-wdel="2026-11-28"'));
+  assert.ok(html.includes("休日出勤"));
+});
+
+test("設定: 休み・営業日・日本の祝日の値が壊れていても描画でき、注意が出る（前版の文字列の配列を含む）", () => {
+  for (const o of [{ holidays: "x" }, { holidays: ["2026-10-26"] }, { holidays: [null, { date: 5 }] }, { workdays: [null] }, { workdays: "x" }, { nationalHolidays: 5 }, { nationalHolidays: { dates: "x" } }, { nationalHolidays: { fetchedAt: "2026-10-25", dates: [null] } }]) {
+    const d = withSet(o);
+    let html;
+    assert.doesNotThrow(() => { html = setv(d); }, JSON.stringify(o));
+    assert.ok(html.includes(`settings.${Object.keys(o)[0]}:`), JSON.stringify(o));
+  }
 });
 
 test("renderSchedule(week): 枠・会議のブロックの時刻は開始–終了（10:00-11:00 形式）", () => {

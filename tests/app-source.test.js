@@ -41,13 +41,15 @@ test("app.js: 設定タブの data-set は updateSettings で保存し（勤務�
   assert.match(fs, /d\.set/);
 });
 
-test("app.js: 祝日の追加・削除は addHoliday / removeHoliday で保存し、入力の Enter でも追加する。focusSelector も data-hnew を扱う", () => {
-  assert.match(src, /addHoliday\(/);
-  assert.match(src, /removeHoliday\(/);
-  assert.ok(src.includes("[data-hadd]") && src.includes("[data-hdel]"));
-  assert.match(src, /e\.key === "Enter" && !e\.isComposing && e\.target\.matches\("\[data-hnew\]"\)/);
-  const fs = src.slice(src.indexOf("function focusSelector"), src.indexOf("function focusSelector") + 1200);
-  assert.match(fs, /d\.hnew/);
+test("app.js: 休みの追加（期間を含む）・区分の変更・削除と、営業日の指定の追加・削除は edit.js の関数を通る。期間は除外した日数を通知し、Enter でも追加する。focusSelector も新しい入力を扱う", () => {
+  for (const f of ["addHoliday(", "addHolidayRange(", "holidayRangeDays(", "removeHoliday(", "addWorkday(", "removeWorkday("]) assert.ok(src.includes(f), f);
+  for (const a of ["[data-hadd]", "[data-hdel]", "dataset.hrowkind", "[data-wadd]", "[data-wdel]"]) assert.ok(src.includes(a), a);
+  assert.ok(src.includes('e.key === "Enter" && !e.isComposing && e.target.matches("[data-hnew],[data-hto],[data-hnote]")'));
+  assert.ok(src.includes('e.key === "Enter" && !e.isComposing && e.target.matches("[data-wnew],[data-wnote]")'));
+  assert.match(src, /除外/);
+  assert.match(src, /日本の祝日は未取得/);
+  const fs = src.slice(src.indexOf("function focusSelector"), src.indexOf("function focusSelector") + 1400);
+  for (const k of ["hnew", "hto", "hnote", "wnew", "wnote"]) assert.ok(fs.includes(`"${k}"`), k);
 });
 
 test("schedule.js: カレンダー上部の確認（doneAsk）は無い（今日のタスクのパネルに移した）", () => {
@@ -85,4 +87,11 @@ test("schedule.js: ブロックの時刻は esc して出す（toMin が先に�
   const sc = readFileSync(new URL("../plugins/pj-lens/src/ui/views/schedule.js", import.meta.url), "utf8");
   assert.match(sc, /\$\{esc\(m\.start\)\}-\$\{esc\(m\.end\)\}/);
   assert.match(sc, /\$\{esc\(s\.start\)\}-\$\{esc\(s\.end\)\}/);
+});
+
+test("app.js: 営業日の指定の追加は、入力欄の値を先に取り出してから edit に入れる（保存の競合で当て直されても日付が空にならない）。終了日を入れたら同じ日でも期間として扱う", () => {
+  const fn = src.slice(src.indexOf("function addWorkdayFromInput"), src.indexOf("function addWorkdayFromInput") + 600);
+  assert.match(fn, /const date = view\.querySelector\("\[data-wnew\]"\)/);
+  assert.match(fn, /const edit = \(d\) => addWorkday\(d, \{ date, note \}\)/);
+  assert.match(src, /const range = to !== "";/);
 });

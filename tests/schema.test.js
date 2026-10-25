@@ -219,11 +219,29 @@ test("settings: null は未設定として扱い（読む側は既定で動く�
   assert.ok(!w.includes("既定の 7 で動きます") && w.includes("遅延バッジ"), w);
 });
 
-test("settings.holidays: 日付の配列でないと注意（エラーにしない）。正しい配列・未設定・null は出ない", () => {
-  for (const value of ["2026-10-26", ["x"], ["2026-02-30"], [1], {}]) {
-    const d = withSettings({ holidays: value });
-    assert.equal(settingsWarn(d, "holidays").length, 1, JSON.stringify(value));
-    assert.deepEqual(v(d).errors, [], JSON.stringify(value));
+test("settings.holidays・workdays・nationalHolidays: 形が違うと注意（エラーにしない）。正しい形・未設定・null は出ない。前版の文字列の配列も注意", () => {
+  const H = { date: "2026-10-26", kind: "有給", note: "x" };
+  const bad = {
+    holidays: ["2026-10-26", [H, { date: "2026-02-30", kind: "祝日" }], [{ date: "2026-10-26", kind: "休暇" }], [null], "x", {}],
+    workdays: [["2026-10-26"], [{ date: "x" }], "x"],
+    nationalHolidays: [5, { fetchedAt: "x", dates: [] }, { fetchedAt: "2026-10-25", dates: "x" }, { fetchedAt: "2026-10-25", dates: [{ date: "x" }] }],
+  };
+  for (const [key, values] of Object.entries(bad)) {
+    for (const value of values) {
+      const d = withSettings({ [key]: value });
+      assert.equal(settingsWarn(d, key).length, 1, `${key}=${JSON.stringify(value)}`);
+      assert.deepEqual(v(d).errors, [], `${key}=${JSON.stringify(value)}`);
+    }
   }
-  for (const value of [["2026-10-26"], [], null]) assert.equal(settingsWarn(withSettings({ holidays: value }), "holidays").length, 0, JSON.stringify(value));
+  const ok = { holidays: [H, { date: "2026-11-23", kind: "祝日" }], workdays: [{ date: "2026-10-31" }], nationalHolidays: { fetchedAt: "2026-10-25", source: "u", dates: [{ date: "2026-11-03", name: "文化の日" }] } };
+  for (const key of Object.keys(ok)) {
+    assert.equal(settingsWarn(withSettings({ [key]: ok[key] }), key).length, 0, key);
+    for (const value of [[], null]) if (key !== "nationalHolidays") assert.equal(settingsWarn(withSettings({ [key]: value }), key).length, 0, key);
+    assert.equal(settingsWarn(withSettings({ [key]: null }), key).length, 0, key);
+  }
+});
+
+test("settings.holidays の注意は、形の違う要素を data.json から直接直す旨を添える（画面から消せないため）", () => {
+  const [w] = settingsWarn(withSettings({ holidays: ["2026-10-26"] }), "holidays");
+  assert.match(w, /data\.json/);
 });

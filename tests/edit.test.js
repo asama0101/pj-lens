@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { validate } from "../plugins/pj-lens/src/core/schema.js";
 import {
   updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveTaskDates, moveProjectDates, moveMilestone,
-  addTaskQuick, predecessorCandidates, addTask, deleteTask, addProject, deleteProject, addHoliday, removeHoliday,
+  addTaskQuick, predecessorCandidates, addTask, deleteTask, addProject, deleteProject,
+  addHoliday, addHolidayRange, holidayRangeDays, removeHoliday, addWorkday, removeWorkday,
 } from "../plugins/pj-lens/src/ui/edit.js";
 
 const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
@@ -226,25 +227,74 @@ test("updateSettings: 1 項目だけの patch は他の項目を保つ。labels 
   assert.ok(!("labels" in updateSettings({ ...d, settings: { labels: ["a"] } }, { labels: { group: "" } }).settings));
 });
 
-test("addHoliday・removeHoliday: 昇順・重複なしで保ち、他の設定を残す。日付でないものは例外。空になったらキーを消す", () => {
+// ---- 休みと営業日の指定 ----
+const NH = { fetchedAt: "2026-10-25", source: "u", dates: [{ date: "2026-11-03", name: "文化の日" }] };
+const hol = (d) => d.settings.holidays;
+
+test("addHoliday: 昇順・同日は置き換え・区分とメモを持つ。他の設定を保ち、検証に通る", () => {
   let d = { ...load(), settings: { waitingLongDays: 3 } };
-  d = addHoliday(d, "2026-11-23");
-  d = addHoliday(d, "2026-10-26");
-  d = addHoliday(d, "2026-11-23");
-  assert.deepEqual(d.settings, { waitingLongDays: 3, holidays: ["2026-10-26", "2026-11-23"] });
-  assert.throws(() => addHoliday(d, "x"), /日付/);
-  assert.throws(() => addHoliday(d, "2026-02-30"), /日付/);
-  assert.deepEqual(removeHoliday(d, "2026-10-26").settings.holidays, ["2026-11-23"]);
-  assert.deepEqual(removeHoliday(d, "2026-01-01").settings.holidays, ["2026-10-26", "2026-11-23"]);
-  assert.deepEqual(removeHoliday(removeHoliday(d, "2026-10-26"), "2026-11-23").settings, { waitingLongDays: 3 });
-  ok(d);
+  d = addHoliday(d, { date: "2026-11-23", kind: "祝日" });
+  d = addHoliday(d, { date: "2026-10-26", kind: "有給", note: " 通院 " });
+  d = addHoliday(d, { date: "2026-11-23", kind: "その他", note: "" });
+  assert.deepEqual(d.settings, { waitingLongDays: 3, holidays: [{ date: "2026-10-26", kind: "有給", note: "通院" }, { date: "2026-11-23", kind: "その他" }] });
+  assert.deepEqual(validate(d, { date: TODAY, time: "10:15" }).errors, []);
+  assert.deepEqual(validate(d, { date: TODAY, time: "10:15" }).warnings.filter((m) => m.startsWith("settings.")), []);
 });
 
-test("addHoliday: holidays が配列でない壊れたファイルでも、追加で正しい配列に直る", () => {
-  assert.deepEqual(addHoliday({ ...load(), settings: { holidays: "x" } }, "2026-10-26").settings.holidays, ["2026-10-26"]);
+test("addHoliday: 日付・区分が不正なら例外。配列でない壊れた既存値は空として足し、配列の中の不正な要素は消さずに残す", () => {
+  const d = load();
+  assert.throws(() => addHoliday(d, { date: "x", kind: "祝日" }), /日付/);
+  assert.throws(() => addHoliday(d, { date: "2026-02-30", kind: "祝日" }), /日付/);
+  assert.throws(() => addHoliday(d, { date: "2026-10-26", kind: "休暇" }), /区分/);
+  assert.deepEqual(hol(addHoliday({ ...d, settings: { holidays: "x" } }, { date: "2026-10-26", kind: "祝日" })), [{ date: "2026-10-26", kind: "祝日" }]);
+  const mixed = addHoliday({ ...d, settings: { holidays: ["2026/11/23", { date: "2026-12-01", kind: "祝日" }] } }, { date: "2026-11-03", kind: "有給" });
+  assert.deepEqual(hol(mixed), [{ date: "2026-11-03", kind: "有給" }, { date: "2026-12-01", kind: "祝日" }, "2026/11/23"]);
 });
 
-test("addHoliday: 既存の日付でない要素は消さない（手で書いた値を黙って捨てない）", () => {
-  const d = addHoliday({ ...load(), settings: { holidays: ["2026/11/23", "2026-12-01"] } }, "2026-11-03");
-  assert.deepEqual(d.settings.holidays, ["2026-11-03", "2026-12-01", "2026/11/23"]);
+test("holidayRangeDays: 期間の各日から土日と日本の祝日（取得済みのとき）を除く。不正な期間は例外", () => {
+  const d = { ...load(), settings: {} };
+  const r = holidayRangeDays(d, "2026-10-26", "2026-11-06"); // 月〜翌々金
+  assert.equal(r.days.length, 10);
+  assert.equal(r.skipped, 2);
+  assert.ok(!r.days.includes("2026-10-31") && !r.days.includes("2026-11-01"));
+  const withNH = holidayRangeDays({ ...d, settings: { nationalHolidays: NH } }, "2026-10-26", "2026-11-06");
+  assert.equal(withNH.days.length, 9);
+  assert.equal(withNH.skipped, 3);
+  assert.ok(!withNH.days.includes("2026-11-03"));
+  assert.deepEqual(holidayRangeDays(d, "2026-10-26", "2026-10-26"), { days: ["2026-10-26"], skipped: 0 });
+  assert.throws(() => holidayRangeDays(d, "2026-11-06", "2026-10-26"), /終了/);
+  assert.throws(() => holidayRangeDays(d, "2026-01-01", "2027-01-02"), /366/);
+  assert.doesNotThrow(() => holidayRangeDays(d, "2026-01-01", "2027-01-01"));
+  assert.throws(() => holidayRangeDays(d, "x", "2026-10-26"), /日付/);
+});
+
+test("addHolidayRange: 期間を 1 日ずつの休みにして足す。登録済みの日は区分を置き換え、重複しない。全部除外なら例外", () => {
+  let d = { ...load(), settings: { nationalHolidays: NH } };
+  d = addHoliday(d, { date: "2026-10-27", kind: "祝日" });
+  d = addHolidayRange(d, { from: "2026-10-26", to: "2026-11-03", kind: "有給", note: "夏休み" });
+  assert.deepEqual(hol(d).map((h) => h.date), ["2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29", "2026-10-30", "2026-11-02"]);
+  assert.ok(hol(d).every((h) => h.kind === "有給" && h.note === "夏休み"));
+  assert.throws(() => addHolidayRange(d, { from: "2026-10-31", to: "2026-11-01", kind: "有給" }), /休みにできる日がありません/);
+  assert.throws(() => addHolidayRange(d, { from: "2026-10-26", to: "2026-10-27", kind: "休暇" }), /区分/);
+  assert.deepEqual(validate(d, { date: TODAY, time: "10:15" }).errors, []);
+});
+
+test("removeHoliday: 無い日は変更なし。空になったらキーを消す", () => {
+  let d = addHolidayRange({ ...load(), settings: { waitingLongDays: 3 } }, { from: "2026-10-26", to: "2026-10-27", kind: "祝日" });
+  assert.deepEqual(hol(removeHoliday(d, "2026-01-01")).length, 2);
+  d = removeHoliday(removeHoliday(d, "2026-10-26"), "2026-10-27");
+  assert.deepEqual(d.settings, { waitingLongDays: 3 });
+});
+
+test("addWorkday・removeWorkday: 営業日の指定。昇順・同日は置き換え・メモ・不正は例外・空になったらキーを消す", () => {
+  let d = { ...load(), settings: { waitingLongDays: 3 } };
+  d = addWorkday(d, { date: "2026-11-28", note: "休日出勤" });
+  d = addWorkday(d, { date: "2026-10-31" });
+  d = addWorkday(d, { date: "2026-10-31", note: "試験" });
+  assert.deepEqual(d.settings.workdays, [{ date: "2026-10-31", note: "試験" }, { date: "2026-11-28", note: "休日出勤" }]);
+  assert.throws(() => addWorkday(d, { date: "x" }), /日付/);
+  assert.deepEqual(validate(d, { date: TODAY, time: "10:15" }).errors, []);
+  d = removeWorkday(removeWorkday(d, "2026-10-31"), "2026-11-28");
+  assert.deepEqual(d.settings, { waitingLongDays: 3 });
+  assert.deepEqual(removeWorkday(d, "2026-01-01").settings, { waitingLongDays: 3 });
 });

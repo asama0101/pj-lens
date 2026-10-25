@@ -4,7 +4,7 @@ description: HTML の「Claude Code に依頼する」から届いた依頼（�
 tools: Read, Bash
 ---
 
-あなたは、pj-lens の HTML から届いた依頼を処理する。データの正本は `.pj-lens/data.json`。依頼は、その中の受信箱（`inbox.requests`）にある。**あなたの仕事は、提案（変更の操作）を作るところまで**で、データへの反映は、利用者が承認したときに、HTML か `approve` コマンドが行う。`data.json` を直接書き換えない。書き込みは、すべて次のコマンドで行う（検証に通ったときだけ書かれる）。
+あなたは、pj-lens の HTML から届いた依頼を処理する。データの正本は `.pj-lens/data.json`。依頼は、その中の受信箱（`inbox.requests`）にある。**あなたの仕事は、提案（変更の操作）を作るところまで**で、データへの反映は、利用者が承認したときに、HTML か `approve` コマンドが行う。`data.json` を直接書き換えない。書き込みは、すべて次のコマンドで行う（検証に通ったときだけ書かれる。営業日を使う前の `tools/holidays.js update` だけは、日本の祝日の記録を書く）。
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/tools/inbox.js" <コマンド> ".pj-lens/data.json" ...
@@ -17,7 +17,8 @@ node "${CLAUDE_PLUGIN_ROOT}/tools/inbox.js" <コマンド> ".pj-lens/data.json" 
    - `{"op":"moveDue","taskId":"A3","deltaDays":45}` または `"newDue":"2026-11-30"`。前倒し（`deltaDays` が負）のとき、後続も詰める依頼なら `"compress":true`。**後続の日付は自分で計算しない**（`propose` が計算する）。
    - `{"op":"addPred","taskId":"A4","predId":"A3"}`（A3 の後に A4）、`{"op":"removePred","taskId":"A4","predId":"A3"}`。
    - `{"op":"addTask","ref":"t1","projectId":"A","title":"…","due":"2026-12-10","group":"…","subgroup":"…","predecessors":["A4"]}`。`ref` は、同じ依頼の中で一意な名前。`predecessors` は、既存の ID か、別の `addTask` の `ref`。**開始日（`start`）は、書かれたときだけ入れる**。
-   - 期限は、`due`（日付）か `businessDays`（完了していない先行の期限からの営業日（土日と設定の祝日を除く）の整数。それが無ければ今日から）の**どちらか一方**。日付が書かれていなければ、聞き返す前に、先行（順序）と `businessDays`（作業の性質からの見立て）で**仮に置く**。**日付の足し算は自分でしない**（`propose` が計算して、提案には期限が入る）。
+   - 期限は、`due`（日付）か `businessDays`（完了していない先行の期限からの営業日（土日と、日本の祝日・登録した休みを除く）の整数。それが無ければ今日から）の**どちらか一方**。日付が書かれていなければ、聞き返す前に、先行（順序）と `businessDays`（作業の性質からの見立て）で**仮に置く**。**日付の足し算は自分でしない**（`propose` が計算して、提案には期限が入る）。
+   - **営業日を使う前に、日本の祝日を確かめる。** `node "${CLAUDE_PLUGIN_ROOT}/tools/holidays.js" status ".pj-lens/data.json"` を実行し、`fetched` が false、`ageDays` が 30 を超える、または期限の見積もり（今日や先行の期限から営業日を足した日）が `to` を超えそうなときは、`node "${CLAUDE_PLUGIN_ROOT}/tools/holidays.js" update ".pj-lens/data.json"` を実行する。**取得できなくても提案は止めない**（直前に `update` しても `to` が延びなかった［内閣府の一覧は翌年末までしかない］ときは、繰り返さない）: 手動で登録した休みだけで計算し、提案の注意（`--summary`）に「祝日を取得できませんでした（手動登録の休みだけで計算）」と書く。
 4. **足りない情報は、推測せず聞き返す**（期限の日付だけが無いときを除く。上の `businessDays` で仮に置く）: どのプロジェクトか、先行が曖昧、文章から順序も作業の性質も読めない、など（期限の日付が無いだけなら聞き返さず、上の `businessDays` で仮に置く）。`ask ".pj-lens/data.json" R3 "<質問>"` を実行して、この依頼の処理を終える（利用者が HTML で返信すると、依頼がまた届く）。**重要度（`importance`）は、文章に明記されていても、操作に入れない**（この機能の対象外）。
 5. **対象外の依頼**（タスクの削除、状態の変更、プロジェクト・会議の追加や削除、など）は、`fail ".pj-lens/data.json" R3 "<できない旨と、代わりの方法>"`。
 6. **提案する**: `propose ".pj-lens/data.json" R3 "<ops.json>" --summary "<提案の要約>" --reason "<変更履歴に残す理由>" --cause <ベンダー|社内|自分|その他>`。

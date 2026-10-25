@@ -6,6 +6,7 @@ export const PROJECT_STATUS = ["計画中", "進行中", "保留", "完了", "�
 export const PROJECT_TYPE = ["増設", "更改", "改善", "不具合対処", "その他"];
 export const IMPORTANCE = ["high", "mid", "low"];
 export const CAUSES = ["ベンダー", "社内", "自分", "その他"];
+export const HOLIDAY_KINDS = ["祝日", "有給", "その他"];
 export const REQUEST_STATUS = ["pending", "working", "question", "proposed", "applied", "rejected", "failed"];
 export const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask"];
 
@@ -143,8 +144,16 @@ export function validate(data, now = nowLocal()) {
   if (st.reportShowMeetingTitles != null && typeof st.reportShowMeetingTitles !== "boolean") {
     warn("settings.reportShowMeetingTitles: true か false にしてください（既定の false で動きます）");
   }
-  if (st.holidays != null && !(Array.isArray(st.holidays) && st.holidays.every(isDate))) {
-    warn("settings.holidays: YYYY-MM-DD の配列にしてください（直すまで、営業日の計算で例外になります）");
+  const listOf = (v, ok) => Array.isArray(v) && v.every((x) => x && typeof x === "object" && isDate(x.date) && ok(x));
+  if (st.holidays != null && !listOf(st.holidays, (x) => HOLIDAY_KINDS.includes(x.kind))) {
+    warn(`settings.holidays: { date, kind } の配列にしてください（kind は ${HOLIDAY_KINDS.join("・")}。前版の文字列の配列など、形の違う要素は画面から消せないので、data.json から直接直してください）`);
+  }
+  if (st.workdays != null && !listOf(st.workdays, () => true)) {
+    warn("settings.workdays: { date } の配列にしてください（形の違う要素は、data.json から直接直してください）");
+  }
+  const nh = st.nationalHolidays;
+  if (nh != null && !(typeof nh === "object" && isDate(nh.fetchedAt) && listOf(nh.dates, () => true))) {
+    warn("settings.nationalHolidays: { fetchedAt, dates: [{ date }] } にしてください（/pj-lens:holidays で取り直せます）");
   }
   (st.projectRules ?? []).forEach((r, i) => {
     if (!String(r?.keyword ?? "").trim()) err(`settings.projectRules[${i}]: keyword が空です`);

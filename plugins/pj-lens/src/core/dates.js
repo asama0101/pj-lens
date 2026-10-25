@@ -53,16 +53,24 @@ export function addDays(date, n) {
   return `${pad(y, 4)}-${pad(m)}-${pad(d)}`;
 }
 
-/** baseDate の businessDays 営業日後（土日と holidays を除く。businessDays は 0 以上の整数。0 なら baseDate のまま） */
-export function dueAfter(baseDate, businessDays, holidays = []) {
+/**
+ * baseDate の businessDays 営業日後。businessDays は 0 以上の整数で、0 なら baseDate のまま。
+ * cal.on（営業日の指定）の日は営業日。それ以外は、cal.off（休み）と土日を飛ばす。
+ */
+export function dueAfter(baseDate, businessDays, cal = {}) {
   if (!Number.isInteger(businessDays) || businessDays < 0) throw new Error(`営業日は 0 以上の整数にしてください: ${businessDays}`);
-  if (!Array.isArray(holidays)) throw new Error("祝日は日付の配列にしてください（設定の holidays を直してください）");
-  const off = new Set(holidays.map((h) => (parse(h), h)));
+  const set = (key, label) => {
+    const list = cal?.[key] ?? [];
+    if (!Array.isArray(list) || !list.every(isDate)) throw new Error(`${label}は日付（YYYY-MM-DD）の配列にしてください`);
+    return new Set(list);
+  };
+  if (cal === null || typeof cal !== "object" || Array.isArray(cal)) throw new Error("休みと営業日の指定は { off, on } で渡してください");
+  const off = set("off", "休み"), on = set("on", "営業日の指定");
   let d = baseDate;
   parse(d);
   for (let n = 0; n < businessDays;) {
     d = addDays(d, 1);
-    if (!isWeekend(d) && !off.has(d)) n++;
+    if (on.has(d) || !(off.has(d) || isWeekend(d))) n++;
   }
   return d;
 }

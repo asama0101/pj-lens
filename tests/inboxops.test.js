@@ -265,13 +265,13 @@ test("planOps(addTask businessDays): 先行なしでも、提案の翌日以降�
   assert.equal(out.tasks.at(-1).due, "2026-11-04");
 });
 
-test("planOps(addTask businessDays): 設定の祝日を飛ばす。キー days は受け付けず例外", () => {
-  const d = load();
-  const base = planOps(d, [addOp("t1", { businessDays: 1, predecessors: ["A4"] })], { today: TODAY });
-  const due = addRows(base)[0].due; // A4 の期限（金）の次の営業日
-  assert.equal(due, "2026-11-30");
-  d.settings = { ...(d.settings ?? {}), holidays: [due] };
-  assert.equal(addRows(planOps(d, [addOp("t1", { businessDays: 1, predecessors: ["A4"] })], { today: TODAY }))[0].due, "2026-12-01");
+test("planOps(addTask businessDays): 手動の休み・日本の祝日を飛ばし、営業日の指定の土曜は数える。キー days は受け付けず例外", () => {
+  const due = (settings) => { const d = load(); d.settings = { ...(d.settings ?? {}), ...settings }; return addRows(planOps(d, [addOp("t1", { businessDays: 1, predecessors: ["A4"] })], { today: TODAY }))[0].due; };
+  assert.equal(due({}), "2026-11-30"); // A4 の期限（金 11/27）の次の営業日
+  assert.equal(due({ holidays: [{ date: "2026-11-30", kind: "有給" }] }), "2026-12-01");
+  assert.equal(due({ nationalHolidays: { fetchedAt: "2026-10-25", source: "u", dates: [{ date: "2026-11-30", name: "x" }] } }), "2026-12-01");
+  assert.equal(due({ workdays: [{ date: "2026-11-28" }] }), "2026-11-28", "土曜を営業日に指定");
+  assert.equal(due({ holidays: [{ date: "2026-11-30", kind: "祝日" }], workdays: [{ date: "2026-11-30" }] }), "2026-11-30", "営業日の指定が勝つ");
   assert.throws(() => planOps(load(), [addOp("t1", { days: 3 })], { today: TODAY }), /businessDays/);
 });
 

@@ -95,7 +95,7 @@ function focusSelector(el) {
   if (d.rkw !== undefined) return `[data-rkw][data-ri="${CSS.escape(d.ri)}"]`;
   if (d.rpj !== undefined) return `[data-rpj][data-ri="${CSS.escape(d.ri)}"]`;
   if (d.rnew !== undefined) return "[data-rnew]";
-  if (d.hnew !== undefined) return "[data-hnew]";
+  for (const k of ["hnew", "hto", "hnote", "wnew", "wnote"]) if (d[k] !== undefined) return `[data-${k}]`;
   if (d.rnewpj !== undefined) return "[data-rnewpj]";
   if (d.waitparty) return q("data-waitparty", d.waitparty);
   if (d.rp) return q("data-rp", d.rp);
@@ -289,12 +289,30 @@ function addRule() {
   apply(edit, "規則を保存しました（同じキーワードは置き換えます）");
 }
 
-/** 設定タブの祝日の追加。エラーは通知だけにして、入力欄は描き直さない（打った日付を残す） */
+/** 設定タブの休みの追加（終了日があれば期間）。エラーは通知だけにして、入力欄は描き直さない（打った内容を残す） */
 function addHolidayFromInput() {
-  const date = view.querySelector("[data-hnew]")?.value ?? "";
-  const edit = (d) => addHoliday(d, date);
+  const val = (k) => view.querySelector(`[data-${k}]`)?.value ?? "";
+  const from = val("hnew"), to = val("hto"), kind = val("hkind"), note = val("hnote");
+  const range = to !== "";
+  let msg = "休みを追加しました";
+  const edit = (d) => (range ? addHolidayRange(d, { from, to, kind, note }) : addHoliday(d, { date: from, kind, note }));
+  try {
+    edit(S.data);
+    if (range) {
+      const { days, skipped } = holidayRangeDays(S.data, from, to);
+      const fetched = Array.isArray(S.data.settings?.nationalHolidays?.dates);
+      msg = `${days.length} 日を${kind}として登録しました${skipped ? `（${fetched ? "土日・祝日" : "土日"} ${skipped} 日は除外）` : ""}${fetched ? "" : "。日本の祝日は未取得のため、土日だけを除きました"}`;
+    }
+  } catch (e) { toast(e.message); return; }
+  apply(edit, msg);
+}
+
+/** 設定タブの営業日の指定の追加 */
+function addWorkdayFromInput() {
+  const date = view.querySelector("[data-wnew]")?.value ?? "", note = view.querySelector("[data-wnote]")?.value ?? "";
+  const edit = (d) => addWorkday(d, { date, note });
   try { edit(S.data); } catch (e) { toast(e.message); return; }
-  apply(edit, "祝日を追加しました");
+  apply(edit, "営業日の指定を追加しました");
 }
 
 /** 見出し行の「＋」の大項目・中項目（data-ag / data-asg）を、追加するタスクの置き場にする */
@@ -407,8 +425,11 @@ view.addEventListener("click", (e) => {
 
   if (q("[data-radd]")) { addRule(); return; }
   if (q("[data-hadd]")) { addHolidayFromInput(); return; }
+  if (q("[data-wadd]")) { addWorkdayFromInput(); return; }
   const hdel = q("[data-hdel]");
-  if (hdel) { apply((d) => removeHoliday(d, hdel.dataset.hdel), "祝日を外しました"); return; }
+  if (hdel) { apply((d) => removeHoliday(d, hdel.dataset.hdel), "休みを外しました"); return; }
+  const wdel = q("[data-wdel]");
+  if (wdel) { apply((d) => removeWorkday(d, wdel.dataset.wdel), "営業日の指定を外しました"); return; }
   const rmove = q("[data-rmove]");
   if (rmove) {
     const [kw, delta] = [rmove.dataset.rmove.slice(0, rmove.dataset.rmove.lastIndexOf("|")), Number(rmove.dataset.rmove.slice(rmove.dataset.rmove.lastIndexOf("|") + 1))];
@@ -645,6 +666,11 @@ function onChange(el) {
     return;
   }
   if (el.dataset.set !== undefined) { changeSetting(el); return; }
+  if (el.dataset.hrowkind !== undefined) {
+    const date = el.dataset.hrowkind, kind = el.value;
+    apply((d) => addHoliday(d, { date, kind, note: (d.settings?.holidays ?? []).find((h) => h?.date === date)?.note }), "区分を変更しました");
+    return;
+  }
   if (el.dataset.rkw !== undefined) { const old = el.dataset.rkw; ruleApply((d) => renameProjectRule(d, old, el.value), "キーワードを変更しました", { inPlace: true }); return; }
   if (el.dataset.rpj !== undefined) { const kw = el.dataset.rpj, pid = el.value; ruleApply((d) => setProjectRule(d, kw, pid), "プロジェクトを変更しました", { inPlace: true }); return; }
   if (el.dataset.groupfilter !== undefined) { S.group = el.value; S.resetScroll = true; render(); return; }
@@ -865,7 +891,8 @@ view.addEventListener("keydown", (e) => {
   // 日本語入力の変換確定の Enter(isComposing)では追加しない
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-gadd]")) { e.preventDefault(); submitGAdd(e.target); return; }
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-rnew]")) { e.preventDefault(); addRule(); return; }
-  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-hnew]")) { e.preventDefault(); addHolidayFromInput(); return; }
+  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-hnew],[data-hto],[data-hnote]")) { e.preventDefault(); addHolidayFromInput(); return; }
+  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-wnew],[data-wnote]")) { e.preventDefault(); addWorkdayFromInput(); return; }
   if (e.key === "Escape" && e.target.matches("[data-gadd]")) { S.addAt = null; render(); return; }
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-waitparty]")) { e.preventDefault(); submitWait(e.target.dataset.waitparty); return; }
   if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-pick]")) { e.preventDefault(); e.target.click(); }

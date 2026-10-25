@@ -3,6 +3,7 @@
 // 適用（applyProposal）は、base が現在のデータと同じときだけ、同じ手順で操作を当てて、変更履歴を足す。
 // 当てる順: addTask → addPred・removePred → moveDue（それぞれ書かれた順）。後続の動きは computeImpact の規則に合わせる。
 import { diffDays, dueAfter } from "../core/dates.js";
+import { calendarOf } from "../core/holidays.js";
 import { computeImpact } from "../core/impact.js";
 import { CAUSES, OP_KINDS, validate } from "../core/schema.js";
 import { addTask, updateTask } from "./edit.js";
@@ -64,7 +65,7 @@ function simulate(data, ops, today) {
       const open = (o.predecessors ?? []).map((p) => (refDue.has(p) ? { due: refDue.get(p), status: "To Do" } : need(p))).filter((t) => !closed(t));
       const base = open.map((t) => t.due).reduce(max, "") || today;
       const ref = String(o.ref).trim();
-      dueOf.set(ref, dueAfter(base, o.businessDays, w.settings?.holidays ?? []));
+      dueOf.set(ref, dueAfter(base, o.businessDays, calendarOf(w.settings)));
       refDue.set(ref, dueOf.get(ref));
       pending.splice(pending.indexOf(o), 1);
     }

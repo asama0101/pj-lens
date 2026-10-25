@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const read = (name) => readFileSync(new URL(`../plugins/pj-lens/skills/${name}/SKILL.md`, import.meta.url), "utf8");
 const front = (text) => /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
-const NAMES = ["init", "replan", "intake", "mcp", "watch", "inbox"];
+const NAMES = ["init", "replan", "intake", "mcp", "watch", "inbox", "holidays"];
 
 for (const name of NAMES) {
   test(`コマンド ${name}: frontmatter と、リポジトリ直下を前提にしたパスがないこと`, () => {
@@ -90,4 +90,10 @@ test("mcp: 副作用があるので自動起動しない。mcpconf.js だけを�
 
 test("mcp: 引数なしで終わる手順と矛盾する『指定のない役割』の文が無い", () => {
   assert.ok(!read("mcp").includes("指定のない役割"));
+});
+
+test("holidays: 自動起動しない。holidays.js の update を実行し、失敗しても data.json は変わらない旨と、手動登録の休みだけで計算する旨を伝える", () => {
+  const text = read("holidays");
+  assert.match(front(text), /^disable-model-invocation: true$/m);
+  for (const w of ['node "${CLAUDE_PLUGIN_ROOT}/tools/holidays.js" update', ".pj-lens/data.json", "nationalHolidays", "手動で登録した休みだけ", "status"]) assert.ok(text.includes(w), w);
 });

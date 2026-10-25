@@ -10,6 +10,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // 依存の順（先に並べたモジュールの export は、後ろのモジュールから使える）
 export const MODULES = [
   "src/core/dates.js",
+  "src/core/holidays.js",
   "src/core/schema.js",
   "src/core/metrics.js",
   "src/core/sessions.js",

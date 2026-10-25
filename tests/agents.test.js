@@ -97,3 +97,18 @@ test("intake(文章): 承認前に許す書き込み（受信箱）の例外と�
   assert.match(t, /reject "\.pj-lens\/data\.json"/);
   assert.doesNotMatch(t, /どのプロジェクトか、期限が文章にない/);
 });
+
+test("intake・inbox: 営業日を使う前に holidays.js の status を見て update を実行する。取得できなくても提案は止めず、注意に書く", () => {
+  for (const name of ["agents/intake.md", "agents/inbox.md"]) {
+    const t = read(name);
+    for (const w of ["tools/holidays.js", "status", "update", "ageDays", "30", "取得できなくても提案は止めない", "祝日を取得できませんでした"]) assert.ok(t.includes(w), `${name}: ${w}`);
+  }
+});
+
+test("intake・inbox: 承認前の書き込み禁止の例外に holidays.js update（祝日の記録だけを書く）を挙げ、範囲が延びなかったときは繰り返さない", () => {
+  const intake = read("agents/intake.md");
+  assert.match(intake.split("\n").find((l) => l.includes("利用者の承認を得るまで")), /holidays\.js.*update/);
+  assert.match(read("agents/inbox.md").split("\n").find((l) => l.includes("書き込みは、すべて次のコマンド")), /holidays\.js/);
+  for (const name of ["agents/intake.md", "agents/inbox.md"]) assert.match(read(name), /延びなかった.*繰り返さない/, name);
+  for (const name of ["agents/intake.md", "agents/inbox.md"]) assert.doesNotMatch(read(name), /土日と設定の祝日/, name);
+});

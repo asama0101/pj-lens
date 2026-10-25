@@ -1,7 +1,8 @@
 // 画面からの編集（追加・削除・更新）。すべて不変更新で、不正な入力は例外にする（呼び出し側が理由を表示する）。
-import { addDays, isDate, isTime, toMin, nowLocal } from "../core/dates.js";
+import { addDays, diffDays, isDate, isTime, isWeekend, toMin, nowLocal } from "../core/dates.js";
+import { calendarOf } from "../core/holidays.js";
 import { taskStart } from "../core/metrics.js";
-import { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE } from "../core/schema.js";
+import { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, HOLIDAY_KINDS } from "../core/schema.js";
 
 const mapTask = (data, id, fn) => {
   if (!data.tasks.some((t) => t.id === id)) throw new Error(`タスク ${id} がありません`);
@@ -257,21 +258,63 @@ export function updateSettings(data, patch) {
   return { ...data, settings: s };
 }
 
-/** 祝日（営業日の計算で飛ばす日）を足す。昇順・重複なしで保つ。実在しない日付は例外 */
-export function addHoliday(data, date) {
-  if (!isDate(date)) throw new Error(`祝日は実在する日付（YYYY-MM-DD）にしてください: ${date}`);
-  const cur = Array.isArray(data.settings?.holidays) ? data.settings.holidays : [];
-  return { ...data, settings: { ...data.settings, holidays: [...new Set([...cur, date])].sort() } };
+// ---- 休み（settings.holidays）と営業日の指定（settings.workdays）。どちらも { date, ... } の配列で、日付の昇順。同じ日は置き換える ----
+const isEntry = (x) => x && typeof x === "object" && isDate(x.date);
+
+/** list に entry を足す（同じ日は置き換え、日付の昇順）。形の違う既存の要素は消さず、末尾に残す（validate が注意を出す） */
+function upsertByDate(list, entry) {
+  const cur = Array.isArray(list) ? list : [];
+  return [...cur.filter((x) => isEntry(x) && x.date !== entry.date), entry].sort((p, q) => p.date.localeCompare(q.date)).concat(cur.filter((x) => !isEntry(x)));
 }
 
-/** 祝日を外す。無い日付は何もしない。空になったらキーを消す */
-export function removeHoliday(data, date) {
-  const cur = Array.isArray(data.settings?.holidays) ? data.settings.holidays : [];
-  const s = { ...data.settings };
-  const rest = cur.filter((h) => h !== date);
-  if (rest.length) s.holidays = rest; else delete s.holidays;
-  return { ...data, settings: s };
+function removeByDate(list, date) {
+  const rest = (Array.isArray(list) ? list : []).filter((x) => !(isEntry(x) && x.date === date));
+  return rest.length ? rest : undefined;
 }
+
+const withSetting = (data, key, value) => {
+  const s = { ...data.settings };
+  if (value === undefined) delete s[key]; else s[key] = value;
+  return { ...data, settings: s };
+};
+
+const entryOf = ({ date, note }, extra = {}) => {
+  if (!isDate(date)) throw new Error(`実在する日付（YYYY-MM-DD）にしてください: ${date}`);
+  const n = String(note ?? "").trim();
+  return { date, ...extra, ...(n ? { note: n } : {}) };
+};
+
+/** 休みを 1 日足す。区分は 祝日・有給・その他 */
+export function addHoliday(data, { date, kind, note }) {
+  if (!HOLIDAY_KINDS.includes(kind)) throw new Error(`区分は ${HOLIDAY_KINDS.join("・")} のどれかにしてください`);
+  return withSetting(data, "holidays", upsertByDate(data.settings?.holidays, entryOf({ date, note }, { kind })));
+}
+
+/** from〜to（両端を含む）の各日から、土日と日本の祝日（取得済みのとき）を除いた日と、除いた日数。to < from と 366 日を超える期間は例外 */
+export function holidayRangeDays(data, from, to) {
+  if (!isDate(from) || !isDate(to)) throw new Error(`実在する日付（YYYY-MM-DD）にしてください: ${isDate(from) ? to : from}`);
+  if (to < from) throw new Error("終了日は開始日以降にしてください");
+  if (diffDays(to, from) >= 366) throw new Error("期間は 366 日以内にしてください");
+  const national = new Set(calendarOf({ nationalHolidays: data.settings?.nationalHolidays }).off);
+  const days = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) if (!isWeekend(d) && !national.has(d)) days.push(d);
+  return { days, skipped: diffDays(to, from) + 1 - days.length };
+}
+
+/** 期間の休みを 1 日ずつ足す（土日と日本の祝日は除く）。除いた結果が 0 日なら例外 */
+export function addHolidayRange(data, { from, to, kind, note }) {
+  const { days } = holidayRangeDays(data, from, to);
+  if (!days.length) throw new Error("期間内に休みにできる日がありません（土日と日本の祝日は除きます）");
+  return days.reduce((d, date) => addHoliday(d, { date, kind, note }), data);
+}
+
+/** 休みを外す。無い日は何もしない。空になったらキーを消す */
+export const removeHoliday = (data, date) => withSetting(data, "holidays", removeByDate(data.settings?.holidays, date));
+
+/** 営業日として扱う日（土日・祝日・休みでも営業日として数える）を足す */
+export const addWorkday = (data, { date, note }) => withSetting(data, "workdays", upsertByDate(data.settings?.workdays, entryOf({ date, note })));
+
+export const removeWorkday = (data, date) => withSetting(data, "workdays", removeByDate(data.settings?.workdays, date));
 
 export function addProject(data, { name, type = "その他" }, today = nowLocal().date) {
   const n = String(name ?? "").trim();
