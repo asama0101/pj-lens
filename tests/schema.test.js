@@ -245,3 +245,16 @@ test("settings.holidays の注意は、形の違う要素を data.json から直
   const [w] = settingsWarn(withSettings({ holidays: ["2026-10-26"] }), "holidays");
   assert.match(w, /data\.json/);
 });
+
+test("警告: 終了済みのタスクに残る予定枠の警告は、まだ開始していない枠だけ（進行中の枠は、完了時に残す仕様なので警告しない）", () => {
+  const d = load();
+  const A1 = task(d, "A1"); // Done
+  A1.sessions = [
+    { id: "S90", date: NOW.date, start: "10:00", end: "23:00", kind: "planned" }, // 開始済み・未終了（進行中）
+    { id: "S91", date: NOW.date, start: "23:00", end: "23:30", kind: "planned" }, // 開始前
+  ];
+  const now = { date: NOW.date, time: "12:00" };
+  const w = validate(d, now).warnings.filter((m) => m.includes("未来の予定枠"));
+  assert.equal(w.length, 1, w.join(" / "));
+  assert.ok(w[0].includes("S91") && !w[0].includes("S90"));
+});

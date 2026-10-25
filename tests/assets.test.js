@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import { build, MODULES } from "../plugins/pj-lens/tools/build.js";
 import { MARKER } from "../plugins/pj-lens/tools/init.js";
 
@@ -38,4 +39,10 @@ test("ソースが CRLF（autocrlf の clone）でも、同じビルド結果に
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test(".gitattributes: 完成版ダッシュボードは改行コードを変換しない設定が、このリポジトリのパスで効く（効かないと、autocrlf の環境で checkout のたびにビルド結果と食い違う）", (t) => {
+  const r = spawnSync("git", ["check-attr", "text", "--", "plugins/pj-lens/assets/pj-lens.html"], { cwd: fileURLToPath(new URL("../", import.meta.url)), encoding: "utf8" });
+  if (r.status !== 0) return t.skip("git で調べられません");
+  assert.match(r.stdout, /text: unset/);
 });

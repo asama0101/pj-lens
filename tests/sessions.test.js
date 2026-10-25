@@ -146,3 +146,15 @@ test("置けない日のエラーは、どこで指定するかを添える（�
   const e = addSession(load(), "A4", { date: "2026-10-24", start: "10:00", end: "11:00" }, NOW).error;
   assert.match(e, /設定タブ.*営業日として扱う日/);
 });
+
+test("futurePlanned: まだ開始していない予定の枠だけ。進行中（開始済みで未終了）の枠・終了した枠・実績は含めない", () => {
+  const d = load();
+  const A5 = task(d, "A5");
+  A5.sessions.push(
+    { id: "S20", date: "2026-10-20", start: "11:00", end: "13:00", kind: "planned" }, // NOW 12:00: 進行中
+    { id: "S21", date: "2026-10-20", start: "12:00", end: "13:00", kind: "planned" }, // ちょうど開始した枠も進行中
+    { id: "S22", date: "2026-10-20", start: "12:30", end: "13:30", kind: "planned" }, // 開始前
+    { id: "S23", date: "2026-10-20", start: "09:00", end: "10:00", kind: "planned" }, // 終了済み（未確認）
+  );
+  assert.deepEqual(futurePlanned(d, "A5", NOW), ["S3", "S22"]);
+});

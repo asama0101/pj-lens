@@ -1,2 +1,2 @@
 # 完成版ダッシュボードは改行コードを変換しない（ビルド結果との一致をテストするため）
-assets/pj-lens.html -text
+plugins/pj-lens/assets/pj-lens.html -text

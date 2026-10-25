@@ -135,3 +135,9 @@ test("app.js: 設定タブの入力（data-set）の保存に、会議の件名�
   const fn = src.slice(src.indexOf("function changeSetting"), src.indexOf("function changeSetting") + 900);
   assert.doesNotMatch(fn, /reportShowMeetingTitles/);
 });
+
+test("app.js: 「解除して完了にする」を押したとき、確認を出した時点の枠のうち、いまもまだ開始していないものだけを解除する（確認から確定の間に始まった枠を消さない）", () => {
+  const i = src.indexOf('const dk = q("[data-doneok]")');
+  const ok = src.slice(i, i + 400);
+  assert.match(ok, /pd\.future\.filter\(\(sid\) => futurePlanned\(S\.data, pd\.id, clock\(\)\)\.includes\(sid\)\)/);
+});

@@ -102,8 +102,8 @@ export function validate(data, now = nowLocal()) {
       if (!isDate(s.date) || !isTime(s.start) || !isTime(s.end)) { err(`${label}: 日付または時刻の形式が不正です`); continue; }
       if (toMin(s.end) <= toMin(s.start)) err(`${label}: 終了が開始以前です`);
       if (!["planned", "actual"].includes(s.kind)) err(`${label}: 不明な kind "${s.kind}"`);
-      const future = s.date > now.date || (s.date === now.date && s.end > now.time);
-      if (isDone(t) && s.kind === "planned" && future) warn(`タスク ${t.id}: ${t.status} なのに未来の予定枠 ${s.id} が残っています`);
+      const notStarted = s.date > now.date || (s.date === now.date && s.start > now.time); // 進行中の枠は、完了にしても残す（futurePlanned）
+      if (isDone(t) && s.kind === "planned" && notStarted) warn(`タスク ${t.id}: ${t.status} なのに未来の予定枠 ${s.id} が残っています`);
     }
   }
 

@@ -501,7 +501,11 @@ view.addEventListener("click", (e) => {
   if (q("[data-waitno]")) { S.pendingWait = null; render(); return; }
   if (q("[data-doneno]")) { S.pendingDone = null; render(); return; }
   const dk = q("[data-doneok]");
-  if (dk) { const pd = S.pendingDone; S.pendingDone = null; setStatus(pd.id, pd.status, pd.future); return; }
+  if (dk) {
+    const pd = S.pendingDone; S.pendingDone = null;
+    setStatus(pd.id, pd.status, pd.future.filter((sid) => futurePlanned(S.data, pd.id, clock()).includes(sid))); // 確認を出してから始まった枠は消さない
+    return;
+  }
 
   /* 稼働画面 */
   const wp = q("[data-wperiod]"); if (wp) { S.wperiod = wp.dataset.wperiod; render(); return; }

@@ -714,8 +714,8 @@ function validate(data, now = nowLocal()) {
       if (!isDate(s.date) || !isTime(s.start) || !isTime(s.end)) { err(`${label}: 日付または時刻の形式が不正です`); continue; }
       if (toMin(s.end) <= toMin(s.start)) err(`${label}: 終了が開始以前です`);
       if (!["planned", "actual"].includes(s.kind)) err(`${label}: 不明な kind "${s.kind}"`);
-      const future = s.date > now.date || (s.date === now.date && s.end > now.time);
-      if (isDone(t) && s.kind === "planned" && future) warn(`タスク ${t.id}: ${t.status} なのに未来の予定枠 ${s.id} が残っています`);
+      const notStarted = s.date > now.date || (s.date === now.date && s.start > now.time); // 進行中の枠は、完了にしても残す（futurePlanned）
+      if (isDone(t) && s.kind === "planned" && notStarted) warn(`タスク ${t.id}: ${t.status} なのに未来の予定枠 ${s.id} が残っています`);
     }
   }
 
@@ -1043,10 +1043,11 @@ function projectActualHours(data, projectId) {
   return data.tasks.filter((t) => t.projectId === projectId).reduce((h, t) => h + taskActual(data, t.id).hours, 0);
 }
 
-/** 未来の予定枠の ID（終了した枠や実績は含まない） */
+/** まだ開始していない予定枠の ID（進行中の枠・終了した枠・実績は含まない。完了にするとき解除する対象。進行中の枠は残り、終わったあとに実績にできる） */
 function futurePlanned(data, taskId, now) {
   const t = data.tasks.find((x) => x.id === taskId);
-  return (t?.sessions ?? []).filter((s) => s.kind === "planned" && !isPast(s, now)).map((s) => s.id);
+  const notStarted = (s) => s.date > now.date || (s.date === now.date && s.start > now.time);
+  return (t?.sessions ?? []).filter((s) => s.kind === "planned" && notStarted(s)).map((s) => s.id);
 }
 
 return { sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, futurePlanned };
@@ -4156,7 +4157,11 @@ view.addEventListener("click", (e) => {
   if (q("[data-waitno]")) { S.pendingWait = null; render(); return; }
   if (q("[data-doneno]")) { S.pendingDone = null; render(); return; }
   const dk = q("[data-doneok]");
-  if (dk) { const pd = S.pendingDone; S.pendingDone = null; setStatus(pd.id, pd.status, pd.future); return; }
+  if (dk) {
+    const pd = S.pendingDone; S.pendingDone = null;
+    setStatus(pd.id, pd.status, pd.future.filter((sid) => futurePlanned(S.data, pd.id, clock()).includes(sid))); // 確認を出してから始まった枠は消さない
+    return;
+  }
 
   /* 稼働画面 */
   const wp = q("[data-wperiod]"); if (wp) { S.wperiod = wp.dataset.wperiod; render(); return; }
