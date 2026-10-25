@@ -52,8 +52,8 @@ function detail(data, p, today, period, row) {
     return `<tr>${cell(`<span class="mono">${esc(t.id)}</span>`)}${cell(esc(t.title))}${cell(statusDotHtml(t, late))}${cell(`<span class="mono">${fmtMD(taskStart(data, t.id))}〜${fmtMD(t.due)}</span>`)}${cell(esc((t.predecessors ?? []).join(", ")) || "—")}${cell(t.waitingOn ? `${esc(t.waitingOn.party)}（${esc(t.waitingOn.since.slice(5).replace("-", "/"))}〜）` : "—")}${cell(a.count ? `<span class="mono">${hm(a.hours)}・${a.count}回</span>` : "—")}</tr>`;
   }).join("");
   const ids = new Set(tasks.map((t) => t.id));
-  const log = (data.changeLog ?? []).filter((l) => l.source == null || Number(l.deltaDays) !== 0).filter((l) => l.at >= period.start && l.at <= period.end).filter((l) => (l.taskIds ?? []).some((id) => ids.has(id)))
-    .map((l) => `<tr>${cell(`<span class="mono">${fmtMD(l.at)}</span>`)}${cell(esc((l.taskIds ?? []).join(", ")))}${cell(`<span class="mono">${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日</span>`)}${cell(esc(l.cause ?? "—"))}${cell(esc(l.reason))}</tr>`).join("");
+  const log = (data.changeLog ?? []).filter((l) => l.source == null || Number(l.deltaDays) !== 0 || l.superseded === true).filter((l) => l.at >= period.start && l.at <= period.end).filter((l) => (l.taskIds ?? []).some((id) => ids.has(id)))
+    .map((l) => `<tr>${cell(`<span class="mono">${fmtMD(l.at)}</span>`)}${cell(esc((l.taskIds ?? []).join(", ")))}${cell(l.superseded === true ? "—" : `<span class="mono">${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日</span>`)}${cell(esc(l.cause ?? "—"))}${cell(esc(l.reason))}</tr>`).join("");
   // ガントの見出しにプロジェクト名と概要が出るので、タスクがあるときは重ねて出さない
   const heading = tasks.length ? "" : `<h3>${esc(p.name)}</h3><div class="sub">${esc(p.type)} ・ ${esc(p.status)} ・ ${fmtMD(p.start)}〜${fmtMD(p.due)}</div>`;
   return `<section class="proj">${heading}

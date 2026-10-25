@@ -121,3 +121,65 @@ test("plan: キーが null（無い）でも、undefined と同じく『指定�
   assert.deepEqual(p.changes[0].set, { status: "Done" });
   assert.equal(p.changes[0].cause, "ベンダー");
 });
+
+// ---- 置き換えられた古い報告（relatedTaskId） ----
+test("plan: taskId なし＋relatedTaskId の古い報告は、noop に relatedTaskId を残す。ほかの項目は従来どおり", () => {
+  const p = plan(mk(), [
+    { messageId: "new", taskId: "T1", summary: "完了", status: "Done", doneAt: "2026-10-14" },
+    { messageId: "old", taskId: null, relatedTaskId: "T1", summary: "着手しました" },
+    { messageId: "chat", taskId: null, summary: "雑談" },
+  ]);
+  assert.equal(p.changes.length, 1);
+  assert.deepEqual(p.noop, [{ messageId: "old", summary: "着手しました", relatedTaskId: "T1" }, { messageId: "chat", summary: "雑談" }]);
+  assert.equal(p.rejected.length, 0);
+});
+
+test("plan: relatedTaskId が、存在しないタスク・taskId との併記・文字列でない値のときは rejected（理由つき）。処理済みは skipped", () => {
+  const d = mk();
+  d.changeLog.push({ at: "2026-10-01", taskIds: [], reason: "x", cause: null, deltaDays: 0, source: "mail", messageIds: ["done-1"] });
+  const p = plan(d, [
+    { messageId: "a", taskId: null, relatedTaskId: "ZZ", summary: "x" },
+    { messageId: "b", taskId: "T1", relatedTaskId: "T2", summary: "x", status: "Done" },
+    { messageId: "c", taskId: null, relatedTaskId: 5, summary: "x" },
+    { messageId: "d", taskId: null, relatedTaskId: "", summary: "x" },
+    { messageId: "done-1", taskId: null, relatedTaskId: "T1", summary: "x" },
+  ]);
+  assert.deepEqual(p.rejected.map((x) => x.messageId), ["a", "b", "c", "d"]);
+  assert.match(p.rejected[0].reason, /タスク ZZ がありません/);
+  assert.match(p.rejected[1].reason, /同時に指定できません/);
+  assert.match(p.rejected[2].reason, /文字列/);
+  assert.deepEqual(p.skipped.map((x) => x.messageId), ["done-1"]);
+  assert.equal(p.noop.length, 0);
+});
+
+test("apply: relatedTaskId つきの古い報告は、そのタスクに紐づく superseded の記録になり、処理済みになる。無いものは従来の記録", () => {
+  const d = mk();
+  const items = [
+    { messageId: "new", taskId: "T1", summary: "納期を延期", due: "2026-10-15" },
+    { messageId: "old", taskId: null, relatedTaskId: "T1", summary: "10/12 に着手予定" },
+    { messageId: "chat", taskId: null, summary: "雑談" },
+  ];
+  const n = applyMailImport(d, plan(d, items), { today: TODAY });
+  const old = n.changeLog.find((c) => c.messageIds?.[0] === "old");
+  assert.deepEqual(old, { at: TODAY, taskIds: ["T1"], reason: "メール報告（新しい報告に置き換え済み）: 10/12 に着手予定", cause: null, deltaDays: 0, source: "mail", messageIds: ["old"], superseded: true });
+  const chat = n.changeLog.find((c) => c.messageIds?.[0] === "chat");
+  assert.deepEqual([chat.taskIds, chat.reason, "superseded" in chat], [[], "メール報告（反映なし）: 雑談", false]);
+  assert.deepEqual(processedMessageIds(n).sort(), ["chat", "new", "old"]);
+  assert.equal(plan(n, items).skipped.length, 3);
+});
+
+test("plan・apply: 1 通の古いメールに、置き換えられた報告が複数のタスク分あっても、タスクごとに記録される（重複扱いにしない）。同じタスクの重複は弾く", () => {
+  const d = mk();
+  const items = [
+    { messageId: "old", taskId: null, relatedTaskId: "T1", summary: "T1 は着手予定" },
+    { messageId: "old", taskId: null, relatedTaskId: "T2", summary: "T2 は来週着手" },
+  ];
+  const p = plan(d, items);
+  assert.equal(p.rejected.length, 0, JSON.stringify(p.rejected));
+  assert.deepEqual(p.noop.map((x) => x.relatedTaskId), ["T1", "T2"]);
+  const n = applyMailImport(d, p, { today: TODAY });
+  assert.deepEqual(n.changeLog.filter((c) => c.superseded).map((c) => c.taskIds), [["T1"], ["T2"]]);
+  const dup = plan(d, [items[0], items[0]]);
+  assert.equal(dup.rejected.length, 1);
+  assert.match(dup.rejected[0].reason, /重複/);
+});

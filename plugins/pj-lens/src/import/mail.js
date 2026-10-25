@@ -30,8 +30,9 @@ function problem(item, task) {
 }
 
 /**
- * MailItem = {messageId, taskId|null, summary, due?, status?, doneAt?, cause?}
- * 戻り値: {compress, changes: {messageId, taskId, summary, cause, set, impact?}[], noop: {messageId, summary}[], skipped, rejected}
+ * MailItem = {messageId, taskId|null, summary, due?, status?, doneAt?, cause?, relatedTaskId?}
+ * relatedTaskId は、taskId が null（反映なし）の古い報告に付ける。「このタスクについての、新しい報告に置き換えられた報告」を表し、そのタスクの変更履歴に残す。
+ * 戻り値: {compress, changes: {messageId, taskId, summary, cause, set, impact?}[], noop: {messageId, summary, relatedTaskId?}[], skipped, rejected}
  */
 export function planMailImport(data, items, { today, compress = false } = {}) {
   void today;
@@ -45,10 +46,16 @@ export function planMailImport(data, items, { today, compress = false } = {}) {
     const item = Object.fromEntries(Object.entries(raw).filter(([k, v]) => v != null || k === "taskId"));
     const { messageId, taskId } = item;
     const summary = String(item.summary ?? "").trim();
-    const key = `${messageId}\u0000${taskId ?? ""}`;
+    const key = `${messageId}\u0000${taskId ?? ""}\u0000${item.relatedTaskId ?? ""}`; // 古い報告は、置き換え先のタスクごとに 1 件
     if (done.has(messageId)) { plan.skipped.push({ messageId, reason: "処理済み" }); continue; }
     if (seen.has(key)) { plan.rejected.push({ messageId, reason: "同じメール・同じタスクの報告が重複しています" }); continue; }
-    if (taskId == null) { seen.add(key); plan.noop.push({ messageId, summary }); continue; }
+    const related = item.relatedTaskId;
+    if (related !== undefined) {
+      if (taskId != null) { plan.rejected.push({ messageId, reason: "taskId と relatedTaskId は同時に指定できません" }); continue; }
+      if (typeof related !== "string" || !related.trim()) { plan.rejected.push({ messageId, reason: "relatedTaskId は文字列にしてください" }); continue; }
+      if (!byId.has(related)) { plan.rejected.push({ messageId, reason: `タスク ${related} がありません` }); continue; }
+    }
+    if (taskId == null) { seen.add(key); plan.noop.push({ messageId, summary, ...(related !== undefined && { relatedTaskId: related }) }); continue; }
     const task = byId.get(taskId);
     if (!task) { plan.rejected.push({ messageId, reason: `タスク ${taskId} がありません` }); continue; }
     const bad = problem(item, task);
@@ -92,7 +99,10 @@ export function applyMailImport(data, plan, { today }) {
     if (c.set.doneAt) d = { ...d, tasks: d.tasks.map((t) => (t.id === c.taskId ? { ...t, doneAt: c.set.doneAt } : t)) };
     if (!logged) log([c.taskId], reason, c.messageId);
   }
-  for (const n of plan.noop) log([], `メール報告（反映なし）: ${n.summary}`, n.messageId);
+  for (const n of plan.noop) {
+    if (n.relatedTaskId) d = { ...d, changeLog: [...d.changeLog, { at: today, taskIds: [n.relatedTaskId], reason: `メール報告（新しい報告に置き換え済み）: ${n.summary}`, cause: null, deltaDays: 0, source: "mail", messageIds: [n.messageId], superseded: true }] };
+    else log([], `メール報告（反映なし）: ${n.summary}`, n.messageId);
+  }
   const { errors } = validate(d);
   if (errors.length) throw new Error(errors.join(" / "));
   return d;

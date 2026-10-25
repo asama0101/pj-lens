@@ -119,3 +119,19 @@ test("inbox: 仮に置いた期限がプロジェクトの期間（projects[].st
   assert.ok(line, "プロジェクトの期間の確認がある");
   for (const w of ["収まる", "警告", "--summary"]) assert.ok(line.includes(w), w);
 });
+
+test("intake(mail): 同じタスクの古い報告には、taskId: null と relatedTaskId を付ける（そのタスクの変更履歴に残る）", () => {
+  const t = read("agents/intake.md");
+  assert.ok(t.includes("relatedTaskId"));
+  const list = t.split("\n").find((l) => l.includes("messageId, taskId, summary"));
+  assert.ok(list.includes("relatedTaskId"), "items.json の項目の一覧にある");
+  const old = t.split("\n").find((l) => l.includes("最新の1通") && l.includes("relatedTaskId"));
+  assert.ok(old && old.includes("taskId: null"), "古い報告の行");
+});
+
+test("inbox: moveDue と businessDays の addTask は同じ依頼にしない。エラーが出たら、期限の移動だけを提案し、登録は承認後にもう一度依頼してもらう", () => {
+  const t = read("agents/inbox.md");
+  const line = t.split("\n").find((l) => l.includes("moveDue") && l.includes("businessDays") && l.includes("同じ依頼"));
+  assert.ok(line, "併用できない旨");
+  for (const w of ["期限の移動だけ", "--summary", "承認後", "もう一度依頼"]) assert.ok(line.includes(w), w);
+});

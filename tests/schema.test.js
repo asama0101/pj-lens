@@ -258,3 +258,15 @@ test("警告: 終了済みのタスクに残る予定枠の警告は、まだ開
   assert.equal(w.length, 1, w.join(" / "));
   assert.ok(w[0].includes("S91") && !w[0].includes("S90"));
 });
+
+test("changeLog の superseded は真偽値（未指定・null も可）。それ以外は error", () => {
+  const entry = (extra) => ({ at: "2026-10-20", taskIds: [], reason: "x", cause: null, deltaDays: 0, source: "mail", messageIds: ["m"], ...extra });
+  for (const ok of [{ superseded: true }, { superseded: false }, { superseded: null }, {}]) {
+    const d = load(); d.changeLog.push(entry(ok));
+    assert.deepEqual(v(d).errors, [], JSON.stringify(ok));
+  }
+  for (const bad of ["yes", 1, {}]) {
+    const d = load(); d.changeLog.push(entry({ superseded: bad }));
+    assert.ok(v(d).errors.some((m) => m.includes("superseded")), JSON.stringify(bad));
+  }
+});

@@ -182,3 +182,14 @@ test("propose は、提案済みの依頼にもう一度できる（直した op
   assert.equal(run("approve", w.data, "R1").status, 0);
   assert.equal(w.json().tasks.find((x) => x.title === "再提案のタスク").due, "2026-12-02");
 });
+
+test("propose: moveDue と businessDays 指定の addTask の併用は、終了コード 1 で、データは変わらない", () => {
+  const w = work();
+  run("submit", w.data, "A", "x"); run("claim", w.data, "R1");
+  const before = w.read();
+  const ops = [{ op: "moveDue", taskId: "A4", deltaDays: 10 }, { op: "addTask", ref: "t1", projectId: "A", title: "併用", businessDays: 3, predecessors: ["A4"] }];
+  const r = run("propose", w.data, "R1", w.put("both.json", ops));
+  assert.equal(r.status, 1);
+  assert.match(r.err, /moveDue.*businessDays/);
+  assert.equal(w.read(), before);
+});

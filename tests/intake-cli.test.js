@@ -138,3 +138,15 @@ test("引数が足りないと終了コード2と使い方を出す", () => {
   assert.match(r.err, /使い方/);
   assert.equal(run("unknown-cmd", "x").status, 2);
 });
+
+test("mail-apply: relatedTaskId つきの古い報告が、そのタスクに紐づく superseded の記録になり、processed に入る", () => {
+  const w = work();
+  const items = w.put("items.json", [
+    { messageId: "new", taskId: "A5", summary: "手順書の作成を延長", due: "2027-01-15" },
+    { messageId: "old", taskId: null, relatedTaskId: "A5", summary: "年内に完了予定" },
+  ]);
+  assert.equal(run("mail-apply", w.data, items).status, 0);
+  const rec = w.json().changeLog.find((c) => c.messageIds?.[0] === "old");
+  assert.deepEqual([rec.taskIds, rec.superseded, rec.deltaDays, rec.source], [["A5"], true, 0, "mail"]);
+  assert.deepEqual(run("processed", w.data).out.messageIds.sort(), ["new", "old"]);
+});

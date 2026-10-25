@@ -889,3 +889,27 @@ test("renderSchedule(day): 日本の祝日の日表示にも注意が出る。�
   assert.ok(renderSchedule(d, TODAY, { view: "day", date: "2026-11-03", now: NOW, showPrio: false }).includes("この日は休みです"));
   assert.ok(!renderSchedule(d, TODAY, { view: "week", date: "2026-11-03", now: NOW, showPrio: false }).includes("この日は休みです"));
 });
+
+// ---- 置き換えられた古いメール報告（superseded）の履歴 ----
+test("変更履歴: 置き換えられた古いメール報告（superseded）は、そのタスクのプロジェクトの画面とレポートに出る（日数は出さない）。通常の取り込みの記録・どのプロジェクトにも紐づかない記録・他のプロジェクトには出ない", () => {
+  const d = load();
+  d.changeLog.push(
+    { at: "2026-10-20", taskIds: ["A4"], reason: "メール報告（新しい報告に置き換え済み）: 10/12 に着手予定", cause: null, deltaDays: 0, source: "mail", messageIds: ["old"], superseded: true },
+    { at: "2026-10-20", taskIds: ["A4"], reason: "メール報告: 着手", cause: null, deltaDays: 0, source: "mail", messageIds: ["m1"] },
+    { at: "2026-10-20", taskIds: [], reason: "メール報告（新しい報告に置き換え済み）: 紐づかない", cause: null, deltaDays: 0, source: "mail", messageIds: ["x"], superseded: true },
+    { at: "2026-10-20", taskIds: ["B2"], reason: "メール報告（新しい報告に置き換え済み）: B の古い報告", cause: null, deltaDays: 0, source: "mail", messageIds: ["y"], superseded: true },
+  );
+  const screenA = renderProjects(d, TODAY, { filter: "A", view: "list" });
+  const reportA = buildReport(d, TODAY, "", { projectIds: ["A"], period: reportPeriod("custom", TODAY, { start: "2026-10-01", end: "2026-10-31" }) });
+  for (const html of [screenA, reportA]) {
+    assert.ok(html.includes("10/12 に着手予定"));
+    assert.ok(!html.includes("メール報告: 着手"), "通常の取り込みの記録は出さない");
+    assert.ok(!html.includes("紐づかない"), "どのプロジェクトにも紐づかない記録は出さない");
+    assert.ok(!html.includes("B の古い報告"), "他のプロジェクトの記録は出さない");
+  }
+  const li = screenA.match(/<li><span class="d">[^<]*<\/span><span>(?:(?!<\/li>).)*10\/12 に着手予定(?:(?!<\/li>).)*<\/li>/s)[0];
+  assert.ok(!/[+-]?0日/.test(li), "動いた日数を出さない");
+  const row = reportA.match(/<tr>(?:(?!<\/tr>).)*10\/12 に着手予定(?:(?!<\/tr>).)*<\/tr>/s)[0];
+  assert.ok(row.includes("—") && !/0日/.test(row), "レポートの動いた日数は「—」");
+  assert.ok(renderProjects(d, TODAY, { filter: "B", view: "list" }).includes("B の古い報告"));
+});

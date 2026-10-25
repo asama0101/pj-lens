@@ -57,6 +57,10 @@ function simulate(data, ops, today) {
     const hasDue = o.due !== undefined, hasDays = o.businessDays !== undefined;
     if (hasDue === hasDays) throw new Error(`addTask（${ref}）には due か businessDays のどちらか一方が必要です`);
   }
+  // 期限を動かす操作と同じ依頼に営業日指定の登録があると、先行の期限が動いて営業日が吸収される。2 回に分けてもらう（addTask 自体の誤りを先に知らせる）
+  if (ops.some((o) => o.op === "moveDue") && pending.length) {
+    throw new Error("期限の移動（moveDue）と営業日指定の登録（businessDays）は、同じ依頼にできません。先に期限の移動を承認してから、登録を依頼してください");
+  }
   const refDue = new Map(adds.filter((o) => o.due !== undefined).map((o) => [String(o.ref).trim(), o.due]));
   while (pending.length) {
     const ready = pending.filter((o) => (o.predecessors ?? []).every((p) => !adds.some((x) => String(x.ref).trim() === p) || refDue.has(p)));

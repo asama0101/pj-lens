@@ -812,6 +812,7 @@ function validate(data, now = nowLocal()) {
     if (!Number.isInteger(c.deltaDays)) err("changeLog: deltaDays が整数ではありません");
     if (c.cause != null && !CAUSES.includes(c.cause)) err(`changeLog: 不明な原因 "${c.cause}"`);
     if (c.source != null && !["wbs", "mail", "calendar", "inbox"].includes(c.source)) err(`changeLog: 不明な source "${c.source}"`);
+    if (c.superseded != null && typeof c.superseded !== "boolean") err("changeLog: superseded は真偽値にしてください");
     if (c.messageIds != null && (!Array.isArray(c.messageIds) || c.messageIds.some((x) => typeof x !== "string"))) err("changeLog: messageIds は文字列の配列にしてください");
   }
 
@@ -2454,6 +2455,10 @@ function simulate(data, ops, today) {
     const hasDue = o.due !== undefined, hasDays = o.businessDays !== undefined;
     if (hasDue === hasDays) throw new Error(`addTask（${ref}）には due か businessDays のどちらか一方が必要です`);
   }
+  // 期限を動かす操作と同じ依頼に営業日指定の登録があると、先行の期限が動いて営業日が吸収される。2 回に分けてもらう（addTask 自体の誤りを先に知らせる）
+  if (ops.some((o) => o.op === "moveDue") && pending.length) {
+    throw new Error("期限の移動（moveDue）と営業日指定の登録（businessDays）は、同じ依頼にできません。先に期限の移動を承認してから、登録を依頼してください");
+  }
   const refDue = new Map(adds.filter((o) => o.due !== undefined).map((o) => [String(o.ref).trim(), o.due]));
   while (pending.length) {
     const ready = pending.filter((o) => (o.predecessors ?? []).every((p) => !adds.some((x) => String(x.ref).trim() === p) || refDue.has(p)));
@@ -3467,8 +3472,8 @@ function renderList(data, p, today, opts) {
   }).join("");
 
   const projTaskIds = new Set(tasks.map((t) => t.id));
-  const log = (data.changeLog ?? []).filter((l) => l.source == null || Number(l.deltaDays) !== 0).filter((l) => (l.taskIds ?? []).some((id) => projTaskIds.has(id)))
-    .map((l) => `<li><span class="d">${fmtMD(l.at)}</span><span><span class="pill">${esc(l.cause ?? "—")}</span> ${esc(l.reason)} <span class="mono muted">(${esc((l.taskIds ?? []).join(", "))}・${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日)</span></span></li>`).join("")
+  const log = (data.changeLog ?? []).filter((l) => l.source == null || Number(l.deltaDays) !== 0 || l.superseded === true).filter((l) => (l.taskIds ?? []).some((id) => projTaskIds.has(id)))
+    .map((l) => `<li><span class="d">${fmtMD(l.at)}</span><span><span class="pill">${esc(l.cause ?? "—")}</span> ${esc(l.reason)} <span class="mono muted">(${esc((l.taskIds ?? []).join(", "))}${l.superseded === true ? "" : `・${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日`})</span></span></li>`).join("")
     || `<li class="muted">変更履歴はありません。</li>`;
 
   const ms = (p.milestones ?? []).map((m, i) => `<div class="msrow"><input class="in" data-mf="name" data-pid="${esc(p.id)}" data-i="${i}" value="${esc(m.name)}" aria-label="マイルストーン名"><input class="in sm" type="date" data-mf="date" data-pid="${esc(p.id)}" data-i="${i}" value="${esc(m.date)}" aria-label="マイルストーンの日付"><button class="btn" data-msdel="${esc(p.id)}|${i}" aria-label="${esc(m.name)} を削除">削除</button></div>`).join("")
@@ -3488,7 +3493,7 @@ function renderList(data, p, today, opts) {
     <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="note">変更はその場でファイルに保存されます。後続の日程をまとめて見直すときは、Claude Code の replan に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>
     <div class="mslist">${ms}<div><button class="btn" data-msadd="${esc(p.id)}">＋ マイルストーンを追加</button> <span class="note">ガントに◆で表示されます。</span></div></div>
-    <h2 style="margin:18px 0 2px;font-size:13px">日程変更の履歴</h2><p class="note" style="margin:0 0 8px">日程が動いたとき、いつ・何が・なぜ動いたか(原因: ベンダー／社内／自分)の記録です。Claude Code の replan が日程を更新したときだけ記録され、画面での日付変更は記録されません。</p><ul class="log">${log}</ul>
+    <h2 style="margin:18px 0 2px;font-size:13px">日程変更の履歴</h2><p class="note" style="margin:0 0 8px">日程が動いたとき、いつ・何が・なぜ動いたか(原因: ベンダー／社内／自分)の記録です。新しい報告に置き換えられた古いメール報告は、日程の変更がなくても、要点だけを残します。Claude Code の replan が日程を更新したときだけ記録され、画面での日付変更は記録されません。</p><ul class="log">${log}</ul>
     <div style="margin-top:18px">${delProj}</div></section>`;
 }
 
@@ -3585,8 +3590,8 @@ function detail(data, p, today, period, row) {
     return `<tr>${cell(`<span class="mono">${esc(t.id)}</span>`)}${cell(esc(t.title))}${cell(statusDotHtml(t, late))}${cell(`<span class="mono">${fmtMD(taskStart(data, t.id))}〜${fmtMD(t.due)}</span>`)}${cell(esc((t.predecessors ?? []).join(", ")) || "—")}${cell(t.waitingOn ? `${esc(t.waitingOn.party)}（${esc(t.waitingOn.since.slice(5).replace("-", "/"))}〜）` : "—")}${cell(a.count ? `<span class="mono">${hm(a.hours)}・${a.count}回</span>` : "—")}</tr>`;
   }).join("");
   const ids = new Set(tasks.map((t) => t.id));
-  const log = (data.changeLog ?? []).filter((l) => l.source == null || Number(l.deltaDays) !== 0).filter((l) => l.at >= period.start && l.at <= period.end).filter((l) => (l.taskIds ?? []).some((id) => ids.has(id)))
-    .map((l) => `<tr>${cell(`<span class="mono">${fmtMD(l.at)}</span>`)}${cell(esc((l.taskIds ?? []).join(", ")))}${cell(`<span class="mono">${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日</span>`)}${cell(esc(l.cause ?? "—"))}${cell(esc(l.reason))}</tr>`).join("");
+  const log = (data.changeLog ?? []).filter((l) => l.source == null || Number(l.deltaDays) !== 0 || l.superseded === true).filter((l) => l.at >= period.start && l.at <= period.end).filter((l) => (l.taskIds ?? []).some((id) => ids.has(id)))
+    .map((l) => `<tr>${cell(`<span class="mono">${fmtMD(l.at)}</span>`)}${cell(esc((l.taskIds ?? []).join(", ")))}${cell(l.superseded === true ? "—" : `<span class="mono">${Number(l.deltaDays) > 0 ? "+" : ""}${Number(l.deltaDays)}日</span>`)}${cell(esc(l.cause ?? "—"))}${cell(esc(l.reason))}</tr>`).join("");
   // ガントの見出しにプロジェクト名と概要が出るので、タスクがあるときは重ねて出さない
   const heading = tasks.length ? "" : `<h3>${esc(p.name)}</h3><div class="sub">${esc(p.type)} ・ ${esc(p.status)} ・ ${fmtMD(p.start)}〜${fmtMD(p.due)}</div>`;
   return `<section class="proj">${heading}

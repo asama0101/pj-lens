@@ -282,3 +282,22 @@ test("planOps(addTask): 廃止した days は、due と一緒でも例外（busi
 test("planOps(addTask): days を書いたときの例外は、businessDays で指定する旨を伝える（変わったという言い方をしない）", () => {
   assert.throws(() => planOps(load(), [addOp("t1", { due: "2026-12-10", days: 3 })], { today: TODAY }), /days は使えません.*businessDays/);
 });
+
+// ---- moveDue と businessDays の addTask の併用はエラー ----
+test("planOps: moveDue と businessDays 指定の addTask を同じ依頼に書くと例外（データは変えない）。ほかの組み合わせは通る", () => {
+  const d = load();
+  const before = JSON.stringify(d);
+  const move = { op: "moveDue", taskId: "A4", deltaDays: 10 };
+  assert.throws(() => planOps(d, [move, addOp("t1", { businessDays: 3, predecessors: ["A4"] })], { today: TODAY }), /moveDue.*businessDays/);
+  assert.throws(() => planOps(d, [addOp("t1", { businessDays: 3 }), move], { today: TODAY }), /moveDue.*businessDays/, "書く順が逆でも");
+  assert.throws(() => planOps(d, [move, addOp("t1", { businessDays: 3 }), addOp("t2", { due: "2026-12-30" })], { today: TODAY }), /moveDue.*businessDays/);
+  assert.equal(JSON.stringify(d), before);
+  assert.doesNotThrow(() => planOps(d, [move, addOp("t1", { due: "2026-12-30", predecessors: ["A4"] })], { today: TODAY }), "moveDue と due 指定の addTask");
+  assert.doesNotThrow(() => planOps(d, [addOp("t1", { businessDays: 3, predecessors: ["A4"] })], { today: TODAY }), "businessDays の addTask だけ");
+  assert.doesNotThrow(() => planOps(d, [move], { today: TODAY }), "moveDue だけ");
+});
+
+test("planOps: moveDue があっても、addTask 自体の誤り（due と businessDays の両方）は、その誤りのまま知らせる", () => {
+  const ops = [{ op: "moveDue", taskId: "A4", deltaDays: 10 }, addOp("t1", { due: "2026-12-30", businessDays: 3 })];
+  assert.throws(() => planOps(load(), ops, { today: TODAY }), /due か businessDays のどちらか一方/);
+});
