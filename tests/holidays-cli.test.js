@@ -13,8 +13,15 @@ const CLI = join(REPO, "tools/holidays.js");
 const base = mkdtempSync(join(tmpdir(), "pjl-hol-"));
 after(() => rmSync(base, { recursive: true, force: true }));
 
-// 内閣府の一覧と同じ形（Shift_JIS）: 国民の祝日・休日月日,国民の祝日・休日名称 / 2026/10/12,スポーツの日 / 2026/11/3,文化の日
-const CSV_SJIS = Buffer.from("8d9196af82cc8f6a93fa81458b7893fa8c8e93fa2c8d9196af82cc8f6a93fa81458b7893fa96bc8fcc0d0a323032362f31302f31322c8358837c815b836382cc93fa0d0a323032362f31312f332c95b689bb82cc93fa0d0a", "hex");
+// 内閣府の一覧と同じ形（Shift_JIS）: 国民の祝日・休日月日,国民の祝日・休日名称 / <今年>/10/12,スポーツの日 / <今年>/11/3,文化の日
+// 取得は「今年の前年以降」だけを残すので、日付は実行した年から作る（固定の年だと、年が変わるとテストが落ちる）
+const YEAR = new Date().getFullYear();
+const sjis = (hex) => Buffer.from(hex, "hex");
+const CSV_SJIS = Buffer.concat([
+  sjis("8d9196af82cc8f6a93fa81458b7893fa8c8e93fa2c8d9196af82cc8f6a93fa81458b7893fa96bc8fcc0d0a"), // ヘッダ行（末尾は CRLF）
+  Buffer.from(`${YEAR}/10/12,`), sjis("8358837c815b836382cc93fa0d0a"), // スポーツの日
+  Buffer.from(`${YEAR}/11/3,`), sjis("95b689bb82cc93fa0d0a"), // 文化の日
+]);
 
 let n = 0;
 function work(settings) {
@@ -45,12 +52,12 @@ test("update: 一覧を取得して settings.nationalHolidays に書く。他の
   await s.close();
   assert.equal(r.status, 0, r.err);
   const d = w.json();
-  assert.deepEqual(d.settings.nationalHolidays.dates, [{ date: "2026-10-12", name: "スポーツの日" }, { date: "2026-11-03", name: "文化の日" }]);
+  assert.deepEqual(d.settings.nationalHolidays.dates, [{ date: `${YEAR}-10-12`, name: "スポーツの日" }, { date: `${YEAR}-11-03`, name: "文化の日" }]);
   assert.equal(d.settings.nationalHolidays.source, s.url);
   assert.match(d.settings.nationalHolidays.fetchedAt, /^\d{4}-\d{2}-\d{2}$/);
   assert.equal(d.settings.waitingLongDays, 5);
   assert.deepEqual(validate(d).errors, []);
-  assert.deepEqual([r.out.ok, r.out.count, r.out.from, r.out.to], [true, 2, "2026-10-12", "2026-11-03"]);
+  assert.deepEqual([r.out.ok, r.out.count, r.out.from, r.out.to], [true, 2, `${YEAR}-10-12`, `${YEAR}-11-03`]);
 });
 
 test("update: HTTP エラー・不正な本文・接続できないときは、終了コード 1 で data.json は変わらない", async () => {
@@ -84,7 +91,7 @@ test("status: 未取得と取得後（取得日・件数・範囲・経過日数
   await s.close();
   const st = await runAsync(["status", w.data]);
   assert.equal(st.out.fetched, true);
-  assert.deepEqual([st.out.count, st.out.from, st.out.to, st.out.ageDays], [2, "2026-10-12", "2026-11-03", 0]);
+  assert.deepEqual([st.out.count, st.out.from, st.out.to, st.out.ageDays], [2, `${YEAR}-10-12`, `${YEAR}-11-03`, 0]);
 });
 
 test("引数なしは使い方を出して終了コード 2", () => {

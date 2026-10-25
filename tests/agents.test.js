@@ -112,3 +112,10 @@ test("intake・inbox: 承認前の書き込み禁止の例外に holidays.js upd
   for (const name of ["agents/intake.md", "agents/inbox.md"]) assert.match(read(name), /延びなかった.*繰り返さない/, name);
   for (const name of ["agents/intake.md", "agents/inbox.md"]) assert.doesNotMatch(read(name), /土日と設定の祝日/, name);
 });
+
+test("inbox: 仮に置いた期限がプロジェクトの期間（projects[].start〜due）に収まるか確かめ、収まらなければ --summary に警告として書く（intake と共通の指針）", () => {
+  const t = read("agents/inbox.md");
+  const line = t.split("\n").find((l) => l.includes("projects[].start"));
+  assert.ok(line, "プロジェクトの期間の確認がある");
+  for (const w of ["収まる", "警告", "--summary"]) assert.ok(line.includes(w), w);
+});
