@@ -833,3 +833,21 @@ test("今日のタスクのパネルは、ヘッダーの日付ラベル用の�
   const { d } = withToday();
   assert.doesNotMatch(renderTodayTasks(d, TODAY), /class="panel today"/);
 });
+
+test("renderSchedule: 休みの日（土日・手動の休み・日本の祝日）は空き時間を出さず weekend 扱い。営業日の指定の日は空きを出す", () => {
+  const d = load();
+  d.settings = { ...d.settings, holidays: [{ date: "2026-10-22", kind: "有給" }], workdays: [{ date: "2026-10-24" }] };
+  const week = renderSchedule(d, TODAY, { view: "week", date: TODAY, now: NOW, showPrio: false });
+  const col = (date) => week.match(new RegExp(`<div class="col dz[^"]*" data-date="${date}"`))[0];
+  const head = (date) => week.match(new RegExp(`data-day="${date}"[^>]*>[^<]*<small class="mono">([^<]*)</small>`))[1];
+  assert.match(col("2026-10-22"), /weekend/); // 手動の休み（木）
+  assert.match(col("2026-10-25"), /weekend/); // 日曜
+  assert.doesNotMatch(col("2026-10-24"), /weekend/, "営業日の指定の土曜");
+  assert.equal(head("2026-10-22"), "—");
+  assert.equal(head("2026-10-25"), "—");
+  assert.match(head("2026-10-24"), /^空き /);
+  assert.match(head("2026-10-21"), /^空き /);
+  const day = (date) => renderSchedule(d, TODAY, { view: "day", date, now: NOW, showPrio: false });
+  assert.ok(!day("2026-10-22").includes('data-free='), "休みの日の日表示に空き枠は出ない");
+  assert.ok(day("2026-10-24").includes('data-free='), "営業日の指定の土曜には空き枠が出る");
+});

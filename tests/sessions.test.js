@@ -111,3 +111,38 @@ test("実績の枠を未来へ動かす・延ばすと予定に戻る（I3）", 
   assert.equal(sess(resizeSession(d2, "S9", "14:00", NOW).data, "S9").kind, "planned");
   assert.equal(sess(resizeSession(d2, "S9", "11:00", NOW).data, "S9").kind, "actual");
 });
+
+test("addSession・moveSession: 土日・手動の休み・日本の祝日には置けない。営業日として扱う日に指定した日には置ける", () => {
+  const d = load();
+  d.settings = {
+    ...d.settings,
+    holidays: [{ date: "2026-10-27", kind: "有給" }],
+    nationalHolidays: { fetchedAt: "2026-10-25", source: "u", dates: [{ date: "2026-11-03", name: "文化の日" }] },
+  };
+  const slot = (date) => ({ date, start: "10:00", end: "11:00" });
+  const add = (date, data = d) => addSession(data, "A4", slot(date), NOW);
+  assert.match(add("2026-10-24").error, /土日には置けません/);
+  assert.match(add("2026-10-27").error, /休みの日には置けません/);
+  assert.match(add("2026-11-03").error, /休みの日には置けません/);
+  assert.match(add("2026-10-27").error, /営業日として扱う日/, "置く方法を添える");
+  assert.equal(add("2026-10-29").error, undefined, "平日は置ける");
+  const w = { ...d, settings: { ...d.settings, workdays: [{ date: "2026-10-24" }, { date: "2026-10-27" }, { date: "2026-11-03" }] } };
+  for (const date of ["2026-10-24", "2026-10-27", "2026-11-03"]) assert.equal(add(date, w).error, undefined, date);
+  const moved = moveSession(w, "S5", { date: "2026-10-24", start: "10:00" }, NOW);
+  assert.equal(moved.error, undefined, "動かす先にも効く");
+  assert.match(moveSession(d, "S5", { date: "2026-10-27", start: "10:00" }, NOW).error, /休みの日には置けません/);
+});
+
+test("休みの日にすでにある枠は、同じ日の中なら伸縮も移動もできる（日付を変えて休みの日へ動かすことはできない）", () => {
+  const d = load();
+  d.settings = { ...d.settings, holidays: [{ date: "2026-10-22", kind: "有給" }] }; // S5 は 10-22 10:00-12:00
+  assert.equal(resizeSession(d, "S5", "12:30", NOW).error, undefined, "伸縮");
+  assert.equal(moveSession(d, "S5", { date: "2026-10-22", start: "13:00" }, NOW).error, undefined, "同じ日の中の移動");
+  assert.match(moveSession(d, "S4", { date: "2026-10-22", start: "13:00" }, NOW).error, /休みの日には置けません/, "別の日の枠を休みの日へ動かすのは不可");
+  assert.equal(moveSession(d, "S5", { date: "2026-10-23", start: "13:00" }, NOW).error, undefined, "休みの日から平日へは動かせる");
+});
+
+test("置けない日のエラーは、どこで指定するかを添える（設定タブ）", () => {
+  const e = addSession(load(), "A4", { date: "2026-10-24", start: "10:00", end: "11:00" }, NOW).error;
+  assert.match(e, /設定タブ.*営業日として扱う日/);
+});

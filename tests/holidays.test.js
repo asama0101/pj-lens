@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calendarOf, decodeHolidayCsv, parseHolidayCsv, pickRecent } from "../plugins/pj-lens/src/core/holidays.js";
+import { calendarOf, offDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent } from "../plugins/pj-lens/src/core/holidays.js";
 
 test("calendarOf: 手動の休みと日本の祝日が off、営業日の指定が on。未設定は空", () => {
   const s = {
@@ -37,4 +37,18 @@ test("decodeHolidayCsv: Shift_JIS のバイト列を読める（「元日」= 8C
 test("pickRecent: today の年の前年以降だけを返す", () => {
   const rows = [{ date: "2024-01-01", name: "a" }, { date: "2025-01-01", name: "b" }, { date: "2027-01-01", name: "c" }];
   assert.deepEqual(pickRecent(rows, "2026-10-25").map((r) => r.date), ["2025-01-01", "2027-01-01"]);
+});
+
+test("offDayChecker: 土日・休み・日本の祝日は休みの日。営業日の指定の日は、それらでも休みでない", () => {
+  const s = {
+    holidays: [{ date: "2026-10-27", kind: "有給" }, { date: "2026-10-28", kind: "祝日" }],
+    nationalHolidays: { fetchedAt: "2026-10-25", source: "u", dates: [{ date: "2026-11-03", name: "文化の日" }] },
+    workdays: [{ date: "2026-10-24" }, { date: "2026-10-28" }, { date: "2026-11-03" }],
+  };
+  const off = offDayChecker(s);
+  assert.deepEqual(["2026-10-26", "2026-10-29", "2026-11-02"].map(off), [false, false, false], "平日");
+  assert.deepEqual(["2026-10-25", "2026-10-27", "2026-11-07"].map(off), [true, true, true], "日曜・手動の休み・土曜");
+  assert.deepEqual(["2026-10-24", "2026-10-28", "2026-11-03"].map(off), [false, false, false], "営業日の指定が勝つ（土曜・手動の休み・日本の祝日）");
+  assert.equal(offDayChecker(undefined)("2026-10-24"), true);
+  assert.equal(offDayChecker({ holidays: "x", workdays: 5 })("2026-10-26"), false);
 });

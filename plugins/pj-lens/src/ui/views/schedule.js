@@ -1,7 +1,8 @@
 // スケジュール画面（週／日）。位置と高さは勤務時間に対する % で表し、カレンダーの高さは CSS で画面に追従させる。
-import { addDays, toMin, weekday, isWeekend } from "../../core/dates.js";
+import { addDays, toMin, weekday } from "../../core/dates.js";
 import { freeSlots, meetingKind } from "../../core/schedule.js";
 import { matchProject } from "../../core/rules.js";
+import { offDayChecker } from "../../core/holidays.js";
 import { sessionKind } from "../../core/sessions.js";
 import { esc, fmtMD, wdJa, STATUS_UI } from "../common.js";
 import { renderSide } from "./prio.js";
@@ -66,8 +67,8 @@ function sessionBlocks(data, d, full, g, ctx) {
 }
 
 /** 会議と配置済みの枠を除いた空き時間 */
-function freeOf(data, d, g) {
-  if (isWeekend(d)) return [];
+function freeOf(data, d, g, isOff) {
+  if (isOff(d)) return [];
   const busy = [...(data.events ?? []), ...allSessions(data)].filter((x) => x.date === d);
   return freeSlots(busy, d, g.wd);
 }
@@ -100,14 +101,15 @@ export function renderCalendar(data, today, opts) {
   const { view = "week", date = today } = opts;
   const ctx = { now: opts.now ?? { date: today, time: "00:00" }, selSess: opts.selSess ?? null, selMtg: opts.selMtg ?? null };
   const g = calendarGeometry(data);
+  const isOff = offDayChecker(data.settings);
   let cal;
   if (view === "week") {
     const days = [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(weekStartOf(date), i));
     const heads = days.map((d) => {
-      const free = freeOf(data, d, g).reduce((a, x) => a + toMin(x.end) - toMin(x.start), 0);
-      return `<button class="dh ${d === today ? "t" : ""}" data-day="${d}" aria-label="${fmtMD(d)}の1日表示">${fmtMD(d)}(${wdJa(d)})<small class="mono">${isWeekend(d) ? "—" : `空き ${(free / 60).toFixed(1)}h`}</small></button>`;
+      const free = freeOf(data, d, g, isOff).reduce((a, x) => a + toMin(x.end) - toMin(x.start), 0);
+      return `<button class="dh ${d === today ? "t" : ""}" data-day="${d}" aria-label="${fmtMD(d)}の1日表示">${fmtMD(d)}(${wdJa(d)})<small class="mono">${isOff(d) ? "—" : `空き ${(free / 60).toFixed(1)}h`}</small></button>`;
     }).join("");
-    const cols = days.map((d) => `<div class="col dz ${d === today ? "today" : ""} ${isWeekend(d) ? "weekend" : ""}" data-date="${d}">${meetingBlocks(data, d, false, g, ctx)}${sessionBlocks(data, d, false, g, ctx)}</div>`).join("");
+    const cols = days.map((d) => `<div class="col dz ${d === today ? "today" : ""} ${isOff(d) ? "weekend" : ""}" data-date="${d}">${meetingBlocks(data, d, false, g, ctx)}${sessionBlocks(data, d, false, g, ctx)}</div>`).join("");
     const dues = days.map((d) => {
       const due = data.tasks.filter((t) => t.due === d && t.status !== "Done" && t.status !== "Cancelled");
       return `<div class="duecell">${due.map((t) => `<div style="display:flex;gap:6px;align-items:baseline"><i class="dot ${STATUS_UI[t.status].dot}${t.due < today ? " is-late" : ""}"></i><span>${esc(t.title)}</span></div>`).join("") || '<span class="muted">—</span>'}</div>`;
@@ -115,7 +117,7 @@ export function renderCalendar(data, today, opts) {
     cal = `<div class="cal wk"><div class="week"><div></div>${heads}<div class="hrs">${hoursHtml(g)}</div>${cols}</div><div class="week" style="margin-top:8px"><div class="note" style="padding-top:6px">期限</div>${dues}</div></div>
       <p class="note" style="margin:8px 0 0">日付を押すと1日表示に切り替わります。枠をクリックして選び、「枠を削除」か Delete キーで削除できます。</p>`;
   } else {
-    const free = freeOf(data, date, g).filter((x) => toMin(x.end) - toMin(x.start) >= 20);
+    const free = freeOf(data, date, g, isOff).filter((x) => toMin(x.end) - toMin(x.start) >= 20);
     const fb = free.map((x) => `<button class="free" data-free="${toMin(x.start)}" style="top:calc(${g.pc(toMin(x.start)).toFixed(3)}% + 1px);height:calc(${(g.pc(toMin(x.end)) - g.pc(toMin(x.start))).toFixed(3)}% - 3px)" aria-label="空き ${x.start}から${x.end}">${x.start}-${x.end} 空き</button>`).join("");
     const nowLine = date === ctx.now.date && toMin(ctx.now.time) >= g.h0 && toMin(ctx.now.time) <= g.h0 + g.span ? `<span class="nowline" style="top:${g.tp(toMin(ctx.now.time))}" title="現在 ${ctx.now.time}"></span>` : "";
     cal = `<div class="cal"><div class="cal-grid">${hoursHtml(g)}<div class="cal-body dz" id="calbody" data-date="${date}">${meetingBlocks(data, date, true, g, ctx)}${sessionBlocks(data, date, true, g, ctx)}${fb}${nowLine}</div></div></div>`;

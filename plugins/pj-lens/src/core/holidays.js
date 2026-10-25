@@ -1,5 +1,5 @@
 // 営業日の計算に使う休みと営業日の指定（settings から取り出す）と、内閣府の祝日一覧（CSV）の解析。ネットワークには触れない。
-import { isDate } from "./dates.js";
+import { isDate, isWeekend } from "./dates.js";
 
 const datesOf = (list) => (Array.isArray(list) ? list.filter((x) => isDate(x?.date)).map((x) => x.date) : []);
 
@@ -7,6 +7,13 @@ const datesOf = (list) => (Array.isArray(list) ? list.filter((x) => isDate(x?.da
 export function calendarOf(settings) {
   const st = settings ?? {};
   return { off: [...datesOf(st.holidays), ...datesOf(st.nationalHolidays?.dates)], on: datesOf(st.workdays) };
+}
+
+/** 休みの日か（土日・休み・日本の祝日）。営業日の指定の日は、それらでも休みでない。スケジュールで枠を置けない日の判定に使う */
+export function offDayChecker(settings) {
+  const { off, on } = calendarOf(settings);
+  const offSet = new Set(off), onSet = new Set(on);
+  return (date) => !onSet.has(date) && (isWeekend(date) || offSet.has(date));
 }
 
 /** 内閣府の祝日一覧（Shift_JIS）を文字列にする */

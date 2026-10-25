@@ -567,7 +567,7 @@ return { isDate, isTime, addDays, dueAfter, diffDays, weekday, isWeekend, toMin,
 })();
 
 /* src/core/holidays.js */
-const { calendarOf, decodeHolidayCsv, parseHolidayCsv, pickRecent } = (() => {
+const { calendarOf, offDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent } = (() => {
 // 営業日の計算に使う休みと営業日の指定（settings から取り出す）と、内閣府の祝日一覧（CSV）の解析。ネットワークには触れない。
 
 
@@ -577,6 +577,13 @@ const datesOf = (list) => (Array.isArray(list) ? list.filter((x) => isDate(x?.da
 function calendarOf(settings) {
   const st = settings ?? {};
   return { off: [...datesOf(st.holidays), ...datesOf(st.nationalHolidays?.dates)], on: datesOf(st.workdays) };
+}
+
+/** 休みの日か（土日・休み・日本の祝日）。営業日の指定の日は、それらでも休みでない。スケジュールで枠を置けない日の判定に使う */
+function offDayChecker(settings) {
+  const { off, on } = calendarOf(settings);
+  const offSet = new Set(off), onSet = new Set(on);
+  return (date) => !onSet.has(date) && (isWeekend(date) || offSet.has(date));
 }
 
 /** 内閣府の祝日一覧（Shift_JIS）を文字列にする */
@@ -598,7 +605,7 @@ function parseHolidayCsv(text) {
 /** today の年の前年以降だけ残す（過去の全期間は保存しない） */
 const pickRecent = (rows, today) => rows.filter((r) => r.date.slice(0, 4) >= String(Number(today.slice(0, 4)) - 1));
 
-return { calendarOf, decodeHolidayCsv, parseHolidayCsv, pickRecent };
+return { calendarOf, offDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent };
 })();
 
 /* src/core/schema.js */
@@ -939,6 +946,7 @@ const { sessionKind, addSession, moveSession, resizeSession, confirmSession, rem
 // 作業枠（予定／実績）の規則。枠は「作業した時間の記録」で、タスクの状態は変えない。すべて不変更新。
 
 
+
 const MIN_LEN = 15;
 const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 
@@ -966,7 +974,9 @@ function check(data, slot, ignoreId) {
   if (e <= s) return { error: "終了は開始より後にしてください" };
   if (e - s < MIN_LEN) return { error: `枠は${MIN_LEN}分以上にしてください` };
   if (s < toMin(wd.start) || e > toMin(wd.end)) return { error: `勤務時間（${wd.start}〜${wd.end}）の中に置いてください` };
-  if (isWeekend(slot.date)) return { error: "土日には置けません" };
+  // 休みの日に置けないのは、新しく置く・別の日から動かすとき。休みの日にすでにある枠は、同じ日の中なら直せる
+  const stays = ignoreId && allSessions(data).some((x) => x.id === ignoreId && x.date === slot.date);
+  if (!stays && offDayChecker(data.settings)(slot.date)) return { error: `${isWeekend(slot.date) ? "土日" : "休みの日"}には置けません（設定タブの「営業日として扱う日」に指定すると置けます）` };
   const other = allSessions(data).find((x) => x.id !== ignoreId && clash(x, slot));
   if (other) return { error: `他の枠（${other.start}〜${other.end}）と重なっています` };
   const mtg = (data.events ?? []).find((m) => !m.skip && clash(m, slot));
@@ -2826,6 +2836,7 @@ const { snapStart, weekStartOf, calendarGeometry, renderCalendar, renderSchedule
 
 
 
+
 const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 const SLOT_STEP = 15;
 
@@ -2886,8 +2897,8 @@ function sessionBlocks(data, d, full, g, ctx) {
 }
 
 /** 会議と配置済みの枠を除いた空き時間 */
-function freeOf(data, d, g) {
-  if (isWeekend(d)) return [];
+function freeOf(data, d, g, isOff) {
+  if (isOff(d)) return [];
   const busy = [...(data.events ?? []), ...allSessions(data)].filter((x) => x.date === d);
   return freeSlots(busy, d, g.wd);
 }
@@ -2920,14 +2931,15 @@ function renderCalendar(data, today, opts) {
   const { view = "week", date = today } = opts;
   const ctx = { now: opts.now ?? { date: today, time: "00:00" }, selSess: opts.selSess ?? null, selMtg: opts.selMtg ?? null };
   const g = calendarGeometry(data);
+  const isOff = offDayChecker(data.settings);
   let cal;
   if (view === "week") {
     const days = [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(weekStartOf(date), i));
     const heads = days.map((d) => {
-      const free = freeOf(data, d, g).reduce((a, x) => a + toMin(x.end) - toMin(x.start), 0);
-      return `<button class="dh ${d === today ? "t" : ""}" data-day="${d}" aria-label="${fmtMD(d)}の1日表示">${fmtMD(d)}(${wdJa(d)})<small class="mono">${isWeekend(d) ? "—" : `空き ${(free / 60).toFixed(1)}h`}</small></button>`;
+      const free = freeOf(data, d, g, isOff).reduce((a, x) => a + toMin(x.end) - toMin(x.start), 0);
+      return `<button class="dh ${d === today ? "t" : ""}" data-day="${d}" aria-label="${fmtMD(d)}の1日表示">${fmtMD(d)}(${wdJa(d)})<small class="mono">${isOff(d) ? "—" : `空き ${(free / 60).toFixed(1)}h`}</small></button>`;
     }).join("");
-    const cols = days.map((d) => `<div class="col dz ${d === today ? "today" : ""} ${isWeekend(d) ? "weekend" : ""}" data-date="${d}">${meetingBlocks(data, d, false, g, ctx)}${sessionBlocks(data, d, false, g, ctx)}</div>`).join("");
+    const cols = days.map((d) => `<div class="col dz ${d === today ? "today" : ""} ${isOff(d) ? "weekend" : ""}" data-date="${d}">${meetingBlocks(data, d, false, g, ctx)}${sessionBlocks(data, d, false, g, ctx)}</div>`).join("");
     const dues = days.map((d) => {
       const due = data.tasks.filter((t) => t.due === d && t.status !== "Done" && t.status !== "Cancelled");
       return `<div class="duecell">${due.map((t) => `<div style="display:flex;gap:6px;align-items:baseline"><i class="dot ${STATUS_UI[t.status].dot}${t.due < today ? " is-late" : ""}"></i><span>${esc(t.title)}</span></div>`).join("") || '<span class="muted">—</span>'}</div>`;
@@ -2935,7 +2947,7 @@ function renderCalendar(data, today, opts) {
     cal = `<div class="cal wk"><div class="week"><div></div>${heads}<div class="hrs">${hoursHtml(g)}</div>${cols}</div><div class="week" style="margin-top:8px"><div class="note" style="padding-top:6px">期限</div>${dues}</div></div>
       <p class="note" style="margin:8px 0 0">日付を押すと1日表示に切り替わります。枠をクリックして選び、「枠を削除」か Delete キーで削除できます。</p>`;
   } else {
-    const free = freeOf(data, date, g).filter((x) => toMin(x.end) - toMin(x.start) >= 20);
+    const free = freeOf(data, date, g, isOff).filter((x) => toMin(x.end) - toMin(x.start) >= 20);
     const fb = free.map((x) => `<button class="free" data-free="${toMin(x.start)}" style="top:calc(${g.pc(toMin(x.start)).toFixed(3)}% + 1px);height:calc(${(g.pc(toMin(x.end)) - g.pc(toMin(x.start))).toFixed(3)}% - 3px)" aria-label="空き ${x.start}から${x.end}">${x.start}-${x.end} 空き</button>`).join("");
     const nowLine = date === ctx.now.date && toMin(ctx.now.time) >= g.h0 && toMin(ctx.now.time) <= g.h0 + g.span ? `<span class="nowline" style="top:${g.tp(toMin(ctx.now.time))}" title="現在 ${ctx.now.time}"></span>` : "";
     cal = `<div class="cal"><div class="cal-grid">${hoursHtml(g)}<div class="cal-body dz" id="calbody" data-date="${date}">${meetingBlocks(data, date, true, g, ctx)}${sessionBlocks(data, date, true, g, ctx)}${fb}${nowLine}</div></div></div>`;

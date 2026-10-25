@@ -1,5 +1,6 @@
 // 作業枠（予定／実績）の規則。枠は「作業した時間の記録」で、タスクの状態は変えない。すべて不変更新。
 import { toMin, toHHMM, isWeekend } from "./dates.js";
+import { offDayChecker } from "./holidays.js";
 
 const MIN_LEN = 15;
 const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
@@ -28,7 +29,9 @@ function check(data, slot, ignoreId) {
   if (e <= s) return { error: "終了は開始より後にしてください" };
   if (e - s < MIN_LEN) return { error: `枠は${MIN_LEN}分以上にしてください` };
   if (s < toMin(wd.start) || e > toMin(wd.end)) return { error: `勤務時間（${wd.start}〜${wd.end}）の中に置いてください` };
-  if (isWeekend(slot.date)) return { error: "土日には置けません" };
+  // 休みの日に置けないのは、新しく置く・別の日から動かすとき。休みの日にすでにある枠は、同じ日の中なら直せる
+  const stays = ignoreId && allSessions(data).some((x) => x.id === ignoreId && x.date === slot.date);
+  if (!stays && offDayChecker(data.settings)(slot.date)) return { error: `${isWeekend(slot.date) ? "土日" : "休みの日"}には置けません（設定タブの「営業日として扱う日」に指定すると置けます）` };
   const other = allSessions(data).find((x) => x.id !== ignoreId && clash(x, slot));
   if (other) return { error: `他の枠（${other.start}〜${other.end}）と重なっています` };
   const mtg = (data.events ?? []).find((m) => !m.skip && clash(m, slot));
