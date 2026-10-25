@@ -185,3 +185,43 @@ test("deleteProject: そのプロジェクトを指す会議のひも付け・�
   assert.equal(d.events[0].projectId, "A", "元のデータは変わらない");
   assert.equal(deleteProject({ ...d, settings: undefined }, "A").data.settings, undefined, "settings が無くても落ちない");
 });
+
+test("updateSettings: 勤務時間・待ち長期化・呼び名・会議件名の既定。他の設定は保つ。元のデータは変えない", async () => {
+  const { updateSettings } = await import("../plugins/pj-lens/src/ui/edit.js");
+  const d = load();
+  d.settings = { projectRules: [{ keyword: "ベンダーX", projectId: "A" }] };
+  const n = updateSettings(d, { workday: { start: "08:30", end: "17:30" }, waitingLongDays: 3, labels: { group: " フェーズ ", subgroup: "作業" }, reportShowMeetingTitles: true });
+  assert.deepEqual(n.settings, {
+    projectRules: [{ keyword: "ベンダーX", projectId: "A" }], workday: { start: "08:30", end: "17:30" }, waitingLongDays: 3,
+    labels: { group: "フェーズ", subgroup: "作業" }, reportShowMeetingTitles: true,
+  });
+  assert.deepEqual(d.settings, { projectRules: [{ keyword: "ベンダーX", projectId: "A" }] });
+  assert.deepEqual(validate(n).errors, []);
+});
+
+test("updateSettings: 不正な勤務時間（形式・開始 >= 終了）・待ち長期化・会議件名は例外", async () => {
+  const { updateSettings } = await import("../plugins/pj-lens/src/ui/edit.js");
+  const d = load();
+  for (const patch of [
+    { workday: { start: "9:00", end: "18:00" } }, { workday: { start: "18:00", end: "09:00" } }, { workday: { start: "09:00", end: "09:00" } }, { workday: { start: "", end: "" } },
+    { waitingLongDays: 0 }, { waitingLongDays: 1.5 }, { waitingLongDays: "3" },
+    { reportShowMeetingTitles: "true" },
+  ]) assert.throws(() => updateSettings(d, patch), /勤務時間|待ち長期化|会議の件名/, JSON.stringify(patch));
+});
+
+test("updateSettings: 呼び名を空にするとそのキーが消え、両方空なら labels ごと消える", async () => {
+  const { updateSettings } = await import("../plugins/pj-lens/src/ui/edit.js");
+  const d = { ...load(), settings: { labels: { group: "フェーズ", subgroup: "作業" } } };
+  const one = updateSettings(d, { labels: { group: "  " } });
+  assert.deepEqual(one.settings.labels, { subgroup: "作業" });
+  const both = updateSettings(one, { labels: { subgroup: "" } });
+  assert.ok(!("labels" in both.settings));
+});
+
+test("updateSettings: 1 項目だけの patch は他の項目を保つ。labels がオブジェクトでないファイルでも、ゴミのキーを残さない", async () => {
+  const { updateSettings } = await import("../plugins/pj-lens/src/ui/edit.js");
+  const d = { ...load(), settings: { workday: { start: "08:30", end: "17:30" }, waitingLongDays: 3, reportShowMeetingTitles: true } };
+  assert.deepEqual(updateSettings(d, { waitingLongDays: 5 }).settings, { workday: { start: "08:30", end: "17:30" }, waitingLongDays: 5, reportShowMeetingTitles: true });
+  assert.deepEqual(updateSettings({ ...d, settings: { labels: "xy" } }, { labels: { group: "G" } }).settings.labels, { group: "G" });
+  assert.ok(!("labels" in updateSettings({ ...d, settings: { labels: ["a"] } }, { labels: { group: "" } }).settings));
+});

@@ -674,3 +674,41 @@ test("renderSchedule: 日表示の作業枠に着手・完了。週表示には�
   assert.ok(ask.includes('data-doneok="A5"') && ask.includes("未来の予定の枠 1 件"));
   assert.ok(!day.includes("data-doneok"));
 });
+
+// ---- 設定タブ: 基本の設定と規則の並べ替え ----
+const setTag = (html, name) => (html.match(new RegExp(`<input[^>]*data-set="${name}"[^>]*>`)) ?? [""])[0];
+
+test("設定タブ: 基本の設定の入力。settings が無ければ既定値、あればその値（チェックも）", () => {
+  const none = load();
+  delete none.settings;
+  const html = setv(none);
+  assert.ok(setTag(html, "workday-start").includes('value="09:00"') && setTag(html, "workday-end").includes('value="18:00"'));
+  assert.ok(setTag(html, "waitingLongDays").includes('value="7"'));
+  assert.ok(setTag(html, "label-group").includes('value="大項目"') && setTag(html, "label-subgroup").includes('value="中項目"'));
+  assert.ok(!/checked/.test(setTag(html, "reportShowMeetingTitles")));
+  const set = load();
+  set.settings = { workday: { start: "08:30", end: "17:30" }, waitingLongDays: 3, labels: { group: "フェーズ" }, reportShowMeetingTitles: true };
+  const h2 = setv(set);
+  assert.ok(setTag(h2, "workday-start").includes('value="08:30"') && setTag(h2, "workday-end").includes('value="17:30"'));
+  assert.ok(setTag(h2, "waitingLongDays").includes('value="3"') && setTag(h2, "label-group").includes('value="フェーズ"') && setTag(h2, "label-subgroup").includes('value="中項目"'));
+  assert.ok(/checked/.test(setTag(h2, "reportShowMeetingTitles")));
+  assert.ok(!h2.includes("settings.workday:"), "正しい値に注意は出ない");
+});
+
+test("設定タブ: workday が不正なファイルでも描画でき、入力欄には既定値、横に注意の文言が出る", () => {
+  const d = load();
+  d.settings = { ...d.settings, workday: { start: "9:00", end: "18:00" }, waitingLongDays: "7" };
+  const html = setv(d);
+  assert.ok(setTag(html, "workday-start").includes('value="09:00"'));
+  assert.ok(setTag(html, "waitingLongDays").includes('value="7"'));
+  assert.ok(html.includes("settings.workday:") && html.includes("settings.waitingLongDays:"));
+});
+
+test("設定タブ: 規則の↑↓。先頭の↑と末尾の↓は無効", () => {
+  const d = load();
+  d.settings = { ...d.settings, projectRules: [{ keyword: "r1", projectId: "A" }, { keyword: "r2", projectId: "B" }, { keyword: "r3", projectId: "A" }] };
+  const html = setv(d);
+  const btn = (kw, delta) => html.match(new RegExp(`<button[^>]*data-rmove="${kw}\\|${delta}"[^>]*>`))?.[0] ?? "";
+  assert.ok(btn("r1", -1).includes("disabled") && btn("r3", 1).includes("disabled"));
+  for (const [kw, delta] of [["r1", 1], ["r2", -1], ["r2", 1], ["r3", -1]]) assert.ok(btn(kw, delta) && !btn(kw, delta).includes("disabled"), `${kw}|${delta}`);
+});

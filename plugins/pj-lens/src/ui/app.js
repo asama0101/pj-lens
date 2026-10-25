@@ -89,6 +89,7 @@ function focusSelector(el) {
   if (d.pf && d.pid) return q("data-pf", d.pf) + q("data-pid", d.pid);
   if (d.mf && d.pid) return q("data-mf", d.mf) + q("data-pid", d.pid) + q("data-i", d.i);
   if (d.gadd) return q("data-gadd", d.gadd);
+  if (d.set) return q("data-set", d.set);
   // 規則の欄は、書き換えるとキーワードが変わるので、行の位置（data-ri。書き換えても並びは変わらない）で探す
   if (d.rkw !== undefined) return `[data-rkw][data-ri="${CSS.escape(d.ri)}"]`;
   if (d.rpj !== undefined) return `[data-rpj][data-ri="${CSS.escape(d.ri)}"]`;
@@ -241,7 +242,7 @@ function ruleApply(edit, msg, { inPlace = false } = {}) {
   S.ruleError = "";
   if (!inPlace) return apply(edit, msg);
   if (!apply(edit, msg, { quiet: true })) return false;
-  view.querySelector(".note.err")?.remove();
+  view.querySelector(".note.err[role=alert]")?.remove();
   patchRuleRows();
   return true;
 }
@@ -265,6 +266,11 @@ function patchRuleRows() {
     const del = tr.querySelector("[data-rdel]");
     del.dataset.rdel = r.keyword;
     del.setAttribute("aria-label", `${r.keyword} の規則を削除`);
+    tr.querySelectorAll("[data-rmove]").forEach((b) => {
+      const delta = b.dataset.rmove.slice(b.dataset.rmove.lastIndexOf("|") + 1);
+      b.dataset.rmove = `${r.keyword}|${delta}`;
+      b.setAttribute("aria-label", `${r.keyword} を${delta === "-1" ? "上" : "下"}へ`);
+    });
     tr.querySelector("[data-rcount]").textContent = `${counts[i]} 件`;
   });
 }
@@ -272,7 +278,7 @@ function patchRuleRows() {
 /** 規則の追加。エラーは通知だけにして、入力欄は描き直さない（打った文字を残す） */
 function addRule() {
   S.ruleError = "";
-  view.querySelector(".note.err")?.remove();
+  view.querySelector(".note.err[role=alert]")?.remove();
   const kw = view.querySelector("[data-rnew]")?.value ?? "", pid = view.querySelector("[data-rnewpj]")?.value;
   if (!pid) { toast("先にプロジェクトを追加してください"); return; }
   const edit = (d) => setProjectRule(d, kw, pid);
@@ -389,6 +395,12 @@ view.addEventListener("click", (e) => {
   const now = clock();
 
   if (q("[data-radd]")) { addRule(); return; }
+  const rmove = q("[data-rmove]");
+  if (rmove) {
+    const [kw, delta] = [rmove.dataset.rmove.slice(0, rmove.dataset.rmove.lastIndexOf("|")), Number(rmove.dataset.rmove.slice(rmove.dataset.rmove.lastIndexOf("|") + 1))];
+    ruleApply((d) => moveProjectRule(d, kw, delta), "規則の順序を変えました");
+    return;
+  }
   const rdel = q("[data-rdel]");
   if (rdel) { ruleApply((d) => removeProjectRule(d, rdel.dataset.rdel), "規則を削除しました"); return; }
   if (q("[data-reopen]")) { openFile("reopen"); return; }
@@ -561,6 +573,18 @@ function onReportChange(el) {
   }
 }
 
+/** 設定タブの基本の設定を保存する。勤務時間は開始・終了を組で渡す（片方だけだと、両方が不正なファイルを直せない）。不正な値は通知して、入力を元に戻す */
+function changeSetting(el) {
+  const k = el.dataset.set;
+  const val = (name) => view.querySelector(`[data-set="${name}"]`)?.value ?? "";
+  let patch;
+  if (k === "workday-start" || k === "workday-end") patch = { workday: { start: val("workday-start"), end: val("workday-end") } };
+  else if (k === "waitingLongDays") patch = { waitingLongDays: Number(el.value) };
+  else if (k === "label-group" || k === "label-subgroup") patch = { labels: { [k.slice("label-".length)]: el.value } };
+  else patch = { reportShowMeetingTitles: el.checked };
+  apply((d) => updateSettings(d, patch), "設定を保存しました");
+}
+
 function onChange(el) {
   const { date: today } = clock();
   if (S.reportPanel && el.matches?.("[data-rptall],[data-rptp],[data-rptk],[data-rptd]")) { onReportChange(el); return; }
@@ -606,6 +630,7 @@ function onChange(el) {
     } else p[k] = el.value;
     return;
   }
+  if (el.dataset.set !== undefined) { changeSetting(el); return; }
   if (el.dataset.rkw !== undefined) { const old = el.dataset.rkw; ruleApply((d) => renameProjectRule(d, old, el.value), "キーワードを変更しました", { inPlace: true }); return; }
   if (el.dataset.rpj !== undefined) { const kw = el.dataset.rpj, pid = el.value; ruleApply((d) => setProjectRule(d, kw, pid), "プロジェクトを変更しました", { inPlace: true }); return; }
   if (el.dataset.groupfilter !== undefined) { S.group = el.value; S.resetScroll = true; render(); return; }

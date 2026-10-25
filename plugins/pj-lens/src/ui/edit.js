@@ -1,5 +1,5 @@
 // 画面からの編集（追加・削除・更新）。すべて不変更新で、不正な入力は例外にする（呼び出し側が理由を表示する）。
-import { addDays, isDate, nowLocal } from "../core/dates.js";
+import { addDays, isDate, isTime, toMin, nowLocal } from "../core/dates.js";
 import { taskStart } from "../core/metrics.js";
 import { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE } from "../core/schema.js";
 
@@ -224,6 +224,37 @@ export function deleteTask(data, taskId, { force = false } = {}) {
     data: { ...data, tasks: data.tasks.filter((t) => t.id !== taskId).map((t) => ((t.predecessors ?? []).includes(taskId) ? { ...t, predecessors: t.predecessors.filter((p) => p !== taskId) } : t)) },
     dependents,
   };
+}
+
+/**
+ * 設定（勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定）の変更。patch に含まれる項目だけ変える。
+ * 勤務時間は開始・終了を組で渡す。呼び名は空にするとそのキーを消す（既定の呼び名に戻る）。不正な値は例外
+ */
+export function updateSettings(data, patch) {
+  const s = { ...(data.settings ?? {}) };
+  if ("workday" in patch) {
+    const { start, end } = patch.workday ?? {};
+    if (!isTime(start) || !isTime(end) || toMin(start) >= toMin(end)) throw new Error("勤務時間は HH:MM で、開始を終了より前にしてください");
+    s.workday = { start, end };
+  }
+  if ("waitingLongDays" in patch) {
+    if (!Number.isInteger(patch.waitingLongDays) || patch.waitingLongDays < 1) throw new Error("待ち長期化の日数は 1 以上の整数にしてください");
+    s.waitingLongDays = patch.waitingLongDays;
+  }
+  if ("labels" in patch) {
+    const labels = s.labels && typeof s.labels === "object" && !Array.isArray(s.labels) ? { ...s.labels } : {};
+    for (const k of ["group", "subgroup"]) {
+      if (!(k in patch.labels)) continue;
+      const v = String(patch.labels[k] ?? "").trim();
+      if (v) labels[k] = v; else delete labels[k];
+    }
+    if (Object.keys(labels).length) s.labels = labels; else delete s.labels;
+  }
+  if ("reportShowMeetingTitles" in patch) {
+    if (typeof patch.reportShowMeetingTitles !== "boolean") throw new Error("会議の件名を載せるかは、チェックの入／切にしてください");
+    s.reportShowMeetingTitles = patch.reportShowMeetingTitles;
+  }
+  return { ...data, settings: s };
 }
 
 export function addProject(data, { name, type = "その他" }, today = nowLocal().date) {

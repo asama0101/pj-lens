@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule, renameProjectRule, ruleMeetingCounts } from "../plugins/pj-lens/src/core/rules.js";
+import { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule, renameProjectRule, ruleMeetingCounts, moveProjectRule } from "../plugins/pj-lens/src/core/rules.js";
 
 const ev = (id, title, extra = {}) => ({ id, date: "2026-10-20", start: "10:00", end: "11:00", title, source: "mcp", skip: false, externalId: id, ...extra });
 const data = (events, rules = [], projects = ["A", "B"]) => ({
@@ -79,4 +79,27 @@ test("ruleMeetingCounts: 規則の並びで、その規則で付いている会�
   assert.deepEqual(ruleMeetingCounts(d), [2, 0, 0]);
   assert.deepEqual(ruleMeetingCounts(data([], [])), []);
   assert.deepEqual(ruleMeetingCounts({ settings: {}, events: [] }), []);
+});
+
+test("moveProjectRule: 1 つ上・下へ動かす。先頭の上・末尾の下は変えない。無いキーワードは例外。元のデータは変えない", () => {
+  const rules = [{ keyword: "a", projectId: "A" }, { keyword: "b", projectId: "B" }, { keyword: "c", projectId: "A" }];
+  const d = data([], rules);
+  const kw = (x) => x.settings.projectRules.map((r) => r.keyword).join("");
+  assert.equal(kw(moveProjectRule(d, "b", -1)), "bac");
+  assert.equal(kw(moveProjectRule(d, "b", 1)), "acb");
+  assert.equal(kw(moveProjectRule(d, "a", -1)), "abc");
+  assert.equal(kw(moveProjectRule(d, "c", 1)), "abc");
+  assert.equal(kw(moveProjectRule(d, " B ", -1)), "bac", "大文字小文字・前後の空白を無視");
+  assert.throws(() => moveProjectRule(d, "zzz", 1), /zzz/);
+  assert.equal(kw(d), "abc");
+});
+
+test("moveProjectRule: 入れ替えると、両方に当たる rule の会議は新しい先頭の規則のものになり、manual の会議は変わらない", () => {
+  const rules = [{ keyword: "ベンダーX", projectId: "A" }, { keyword: "見積", projectId: "B" }];
+  const d = assignMeetingProjects(data([ev("m1", "ベンダーX 見積会議"), ev("m2", "ベンダーX 見積会議", { projectId: "C", projectBy: "manual" })], rules, ["A", "B", "C"]));
+  const get = (x, id) => x.events.find((e) => e.id === id);
+  assert.equal(get(d, "m1").projectId, "A");
+  const moved = moveProjectRule(d, "見積", -1);
+  assert.deepEqual([get(moved, "m1").projectId, get(moved, "m1").projectBy], ["B", "rule"]);
+  assert.deepEqual([get(moved, "m2").projectId, get(moved, "m2").projectBy], ["C", "manual"]);
 });

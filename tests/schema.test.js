@@ -183,3 +183,38 @@ test("inbox: 不正な status・重複 id・不明な projectId・不正な op�
     assert.ok(hit(v(d).errors, "inbox"), JSON.stringify(inbox));
   }
 });
+
+// ---- settings の形の注意（エラーにはしない） ----
+const withSettings = (s) => { const d = load(); d.settings = { ...d.settings, ...s }; return d; };
+const settingsWarn = (d, key) => v(d).warnings.filter((m) => m.startsWith(`settings.${key}:`));
+
+test("settings: 形が違う workday・waitingLongDays・labels・reportShowMeetingTitles は注意（エラーにしない）", () => {
+  const bad = {
+    workday: [{ start: "9:00", end: "18:00" }, { start: "18:00", end: "09:00" }, { start: "09:00" }, "x"],
+    waitingLongDays: ["7", 0, 1.5, -2],
+    labels: ["x", { group: 1 }, { subgroup: null }],
+    reportShowMeetingTitles: ["yes", 1],
+  };
+  for (const [key, values] of Object.entries(bad)) {
+    for (const value of values) {
+      const d = withSettings({ [key]: value });
+      assert.equal(settingsWarn(d, key).length, 1, `${key}=${JSON.stringify(value)}`);
+      assert.deepEqual(v(d).errors, [], `${key}=${JSON.stringify(value)}`);
+    }
+  }
+});
+
+test("settings: 正しい値と settings なしのファイルに、settings の注意は出ない", () => {
+  const ok = withSettings({ workday: { start: "08:30", end: "17:30" }, waitingLongDays: 3, labels: { group: "フェーズ" }, reportShowMeetingTitles: true });
+  assert.deepEqual(v(ok).warnings.filter((m) => m.startsWith("settings.")), []);
+  const none = load();
+  delete none.settings;
+  assert.deepEqual(v(none).warnings.filter((m) => m.startsWith("settings.")), []);
+  assert.deepEqual(v(load()).warnings.filter((m) => m.startsWith("settings.")), []);
+});
+
+test("settings: null は未設定として扱い（読む側は既定で動く）、注意を出さない。waitingLongDays の注意は既定で動くとは言わない", () => {
+  for (const key of ["workday", "waitingLongDays", "labels", "reportShowMeetingTitles"]) assert.equal(settingsWarn(withSettings({ [key]: null }), key).length, 0, key);
+  const [w] = settingsWarn(withSettings({ waitingLongDays: 0 }), "waitingLongDays");
+  assert.ok(!w.includes("既定の 7 で動きます") && w.includes("遅延バッジ"), w);
+});

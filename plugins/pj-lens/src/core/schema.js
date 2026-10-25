@@ -128,6 +128,21 @@ export function validate(data, now = nowLocal()) {
   }
 
   const st = data.settings ?? {};
+  // 形の違う設定は、注意にとどめる（読む側は、既定値で動く。workday だけは、HH:MM でないと画面が動かない）
+  const w = st.workday;
+  if (w != null && !(typeof w === "object" && isTime(w.start) && isTime(w.end) && toMin(w.start) < toMin(w.end))) {
+    warn("settings.workday: start・end は HH:MM で、開始 < 終了にしてください。直すまでスケジュール画面は正しく動きません");
+  }
+  if (st.waitingLongDays != null && !(Number.isInteger(st.waitingLongDays) && st.waitingLongDays >= 1)) {
+    warn("settings.waitingLongDays: 1 以上の整数にしてください（直すまで、遅延バッジと「今日の優先」の待ち長期化が正しく出ません）");
+  }
+  const lb = st.labels;
+  if (lb != null && !(typeof lb === "object" && !Array.isArray(lb) && ["group", "subgroup"].every((k) => lb[k] === undefined || typeof lb[k] === "string"))) {
+    warn("settings.labels: group・subgroup は文字列にしてください（既定の呼び名で動きます）");
+  }
+  if (st.reportShowMeetingTitles != null && typeof st.reportShowMeetingTitles !== "boolean") {
+    warn("settings.reportShowMeetingTitles: true か false にしてください（既定の false で動きます）");
+  }
   (st.projectRules ?? []).forEach((r, i) => {
     if (!String(r?.keyword ?? "").trim()) err(`settings.projectRules[${i}]: keyword が空です`);
     if (!projectIds.has(r?.projectId)) err(`settings.projectRules[${i}]: 不明な projectId "${r?.projectId}"`);

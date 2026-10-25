@@ -30,3 +30,13 @@ test("app.js・index.html: 開始画面の案内、確認パネルの理由の�
   const html = readFileSync(new URL("../plugins/pj-lens/src/ui/index.html", import.meta.url), "utf8");
   assert.match(html, /<div id="toast"[^>]*role="status"/);
 });
+
+test("app.js: 設定タブの data-set は updateSettings で保存し（勤務時間は開始・終了を組で）、data-rmove は moveProjectRule、focusSelector も data-set を扱う", () => {
+  assert.match(src, /updateSettings\(/);
+  const set = src.slice(src.indexOf("el.dataset.set"), src.indexOf("el.dataset.set") + 900);
+  assert.match(set, /workday:\s*\{\s*start:\s*val\("workday-start"\),\s*end:\s*val\("workday-end"\)\s*\}/, "開始・終了を DOM から組で読む");
+  assert.match(src, /moveProjectRule\(/);
+  assert.match(src, /data-rmove/);
+  const fs = src.slice(src.indexOf("function focusSelector"), src.indexOf("function focusSelector") + 900);
+  assert.match(fs, /d\.set/);
+});

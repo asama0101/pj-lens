@@ -48,6 +48,18 @@ export function removeProjectRule(data, keyword) {
   return assignMeetingProjects({ ...data, settings: { ...data.settings, projectRules: rules } });
 }
 
+/** 規則を 1 つ上（delta = -1）・下（delta = 1）へ動かし、会議へ付け直す（上の規則が先に当たるため）。端では動かさない。不明なキーワードは例外 */
+export function moveProjectRule(data, keyword, delta) {
+  const rules = data.settings?.projectRules ?? [];
+  const at = rules.findIndex((r) => sameKey(r.keyword, keyword));
+  if (at < 0) throw new Error(`キーワード「${keyword}」の規則がありません`);
+  const to = at + delta;
+  if (to < 0 || to >= rules.length) return data;
+  const next = [...rules];
+  [next[at], next[to]] = [next[to], next[at]];
+  return assignMeetingProjects({ ...data, settings: { ...data.settings, projectRules: next } });
+}
+
 /** 規則のキーワードを書き換える（順序とプロジェクトは保つ）。会議へ付け直す。空・不明な元・他の規則と同じキーワードは例外 */
 export function renameProjectRule(data, oldKeyword, newKeyword) {
   const k = String(newKeyword ?? "").trim();

@@ -671,6 +671,21 @@ function validate(data, now = nowLocal()) {
   }
 
   const st = data.settings ?? {};
+  // 形の違う設定は、注意にとどめる（読む側は、既定値で動く。workday だけは、HH:MM でないと画面が動かない）
+  const w = st.workday;
+  if (w != null && !(typeof w === "object" && isTime(w.start) && isTime(w.end) && toMin(w.start) < toMin(w.end))) {
+    warn("settings.workday: start・end は HH:MM で、開始 < 終了にしてください。直すまでスケジュール画面は正しく動きません");
+  }
+  if (st.waitingLongDays != null && !(Number.isInteger(st.waitingLongDays) && st.waitingLongDays >= 1)) {
+    warn("settings.waitingLongDays: 1 以上の整数にしてください（直すまで、遅延バッジと「今日の優先」の待ち長期化が正しく出ません）");
+  }
+  const lb = st.labels;
+  if (lb != null && !(typeof lb === "object" && !Array.isArray(lb) && ["group", "subgroup"].every((k) => lb[k] === undefined || typeof lb[k] === "string"))) {
+    warn("settings.labels: group・subgroup は文字列にしてください（既定の呼び名で動きます）");
+  }
+  if (st.reportShowMeetingTitles != null && typeof st.reportShowMeetingTitles !== "boolean") {
+    warn("settings.reportShowMeetingTitles: true か false にしてください（既定の false で動きます）");
+  }
   (st.projectRules ?? []).forEach((r, i) => {
     if (!String(r?.keyword ?? "").trim()) err(`settings.projectRules[${i}]: keyword が空です`);
     if (!projectIds.has(r?.projectId)) err(`settings.projectRules[${i}]: 不明な projectId "${r?.projectId}"`);
@@ -1067,7 +1082,7 @@ return { computeImpact, needsReplan, applyReplan, commitReplan };
 })();
 
 /* src/core/rules.js */
-const { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule, renameProjectRule, ruleMeetingCounts } = (() => {
+const { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule, moveProjectRule, renameProjectRule, ruleMeetingCounts } = (() => {
 // 会議のプロジェクト規則（件名のキーワード → プロジェクト）。すべて不変更新。
 // 手動で付けたもの（projectBy: "manual"）は、規則の再適用で変えない。
 
@@ -1118,6 +1133,18 @@ function removeProjectRule(data, keyword) {
   return assignMeetingProjects({ ...data, settings: { ...data.settings, projectRules: rules } });
 }
 
+/** 規則を 1 つ上（delta = -1）・下（delta = 1）へ動かし、会議へ付け直す（上の規則が先に当たるため）。端では動かさない。不明なキーワードは例外 */
+function moveProjectRule(data, keyword, delta) {
+  const rules = data.settings?.projectRules ?? [];
+  const at = rules.findIndex((r) => sameKey(r.keyword, keyword));
+  if (at < 0) throw new Error(`キーワード「${keyword}」の規則がありません`);
+  const to = at + delta;
+  if (to < 0 || to >= rules.length) return data;
+  const next = [...rules];
+  [next[at], next[to]] = [next[to], next[at]];
+  return assignMeetingProjects({ ...data, settings: { ...data.settings, projectRules: next } });
+}
+
 /** 規則のキーワードを書き換える（順序とプロジェクトは保つ）。会議へ付け直す。空・不明な元・他の規則と同じキーワードは例外 */
 function renameProjectRule(data, oldKeyword, newKeyword) {
   const k = String(newKeyword ?? "").trim();
@@ -1144,7 +1171,7 @@ function ruleMeetingCounts(data) {
   return counts;
 }
 
-return { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule, renameProjectRule, ruleMeetingCounts };
+return { matchProject, assignMeetingProjects, setProjectRule, removeProjectRule, moveProjectRule, renameProjectRule, ruleMeetingCounts };
 })();
 
 /* src/core/schedule.js */
@@ -1896,7 +1923,7 @@ return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills };
 })();
 
 /* src/ui/edit.js */
-const { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, addProject, deleteProject } = (() => {
+const { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addProject, deleteProject } = (() => {
 // 画面からの編集（追加・削除・更新）。すべて不変更新で、不正な入力は例外にする（呼び出し側が理由を表示する）。
 
 
@@ -2125,6 +2152,37 @@ function deleteTask(data, taskId, { force = false } = {}) {
   };
 }
 
+/**
+ * 設定（勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定）の変更。patch に含まれる項目だけ変える。
+ * 勤務時間は開始・終了を組で渡す。呼び名は空にするとそのキーを消す（既定の呼び名に戻る）。不正な値は例外
+ */
+function updateSettings(data, patch) {
+  const s = { ...(data.settings ?? {}) };
+  if ("workday" in patch) {
+    const { start, end } = patch.workday ?? {};
+    if (!isTime(start) || !isTime(end) || toMin(start) >= toMin(end)) throw new Error("勤務時間は HH:MM で、開始を終了より前にしてください");
+    s.workday = { start, end };
+  }
+  if ("waitingLongDays" in patch) {
+    if (!Number.isInteger(patch.waitingLongDays) || patch.waitingLongDays < 1) throw new Error("待ち長期化の日数は 1 以上の整数にしてください");
+    s.waitingLongDays = patch.waitingLongDays;
+  }
+  if ("labels" in patch) {
+    const labels = s.labels && typeof s.labels === "object" && !Array.isArray(s.labels) ? { ...s.labels } : {};
+    for (const k of ["group", "subgroup"]) {
+      if (!(k in patch.labels)) continue;
+      const v = String(patch.labels[k] ?? "").trim();
+      if (v) labels[k] = v; else delete labels[k];
+    }
+    if (Object.keys(labels).length) s.labels = labels; else delete s.labels;
+  }
+  if ("reportShowMeetingTitles" in patch) {
+    if (typeof patch.reportShowMeetingTitles !== "boolean") throw new Error("会議の件名を載せるかは、チェックの入／切にしてください");
+    s.reportShowMeetingTitles = patch.reportShowMeetingTitles;
+  }
+  return { ...data, settings: s };
+}
+
 function addProject(data, { name, type = "その他" }, today = nowLocal().date) {
   const n = String(name ?? "").trim();
   if (!n) throw new Error("プロジェクト名を入力してください");
@@ -2155,7 +2213,7 @@ function deleteProject(data, projectId) {
   return { data: { ...data, settings, events, projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
 }
 
-return { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, addProject, deleteProject };
+return { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addProject, deleteProject };
 })();
 
 /* src/ui/inboxops.js */
@@ -2907,7 +2965,10 @@ return { renderWorkload, shiftWorkloadDate };
 
 /* src/ui/views/settings.js */
 const { renderSettings } = (() => {
-// 「設定」タブ: キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
+// 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定）と、キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
+
+
+
 
 
 
@@ -2918,6 +2979,24 @@ function renderSettings(data, today, opts = {}) {
   const counts = ruleMeetingCounts(data);
   const options = (sel) => projects.map((p) => `<option value="${esc(p.id)}"${p.id === sel ? " selected" : ""}>${esc(p.name)}</option>`).join("");
 
+  // 基本の設定: 値は settings の値。形が違う項目（validate の注意が出る項目）は、既定値を出して、横に注意を出す
+  const warns = validate(data).warnings.filter((m) => m.startsWith("settings."));
+  const warnOf = (key) => warns.filter((m) => m.startsWith(`settings.${key}:`)).map((m) => `<div class="note err">${esc(m)}</div>`).join("");
+  const st = data.settings ?? {};
+  const wdOk = st.workday && isTime(st.workday.start) && isTime(st.workday.end) && toMin(st.workday.start) < toMin(st.workday.end);
+  const wd = wdOk ? st.workday : { start: "09:00", end: "18:00" };
+  const wl = Number.isInteger(st.waitingLongDays) && st.waitingLongDays >= 1 ? st.waitingLongDays : 7;
+  const lb = groupLabels(st);
+  const basic = `<section class="panel" aria-labelledby="h-basic"><h2 id="h-basic" style="margin-top:0">基本の設定</h2>
+      <p class="note" style="margin:0 0 10px">変更はその場でファイルに保存されます。</p>
+      <div class="tscroll"><table class="tbl edit"><tbody>
+        <tr><td data-l="項目">勤務時間</td><td data-l="値"><input class="in" type="time" data-set="workday-start" value="${esc(wd.start)}" aria-label="勤務時間の開始"> 〜 <input class="in" type="time" data-set="workday-end" value="${esc(wd.end)}" aria-label="勤務時間の終了">${warnOf("workday")}</td><td class="muted" data-l="説明">スケジュールで作業枠を置ける範囲です。</td></tr>
+        <tr><td data-l="項目">待ち長期化の日数</td><td data-l="値"><input class="in" type="number" min="1" step="1" data-set="waitingLongDays" value="${wl}" aria-label="待ち長期化とみなす日数"> 日${warnOf("waitingLongDays")}</td><td class="muted" data-l="説明">Waiting がこの日数を超えると、「今日の優先」と遅延バッジに出ます。</td></tr>
+        <tr><td data-l="項目">見出しの呼び名</td><td data-l="値"><input class="in" data-set="label-group" value="${esc(lb.group)}" aria-label="大項目の呼び名"> <input class="in" data-set="label-subgroup" value="${esc(lb.subgroup)}" aria-label="中項目の呼び名">${warnOf("labels")}</td><td class="muted" data-l="説明">ガント・リストの見出しの呼び名です。空にすると既定（大項目・中項目）に戻ります。</td></tr>
+        <tr><td data-l="項目">会議の件名</td><td data-l="値"><label><input type="checkbox" data-set="reportShowMeetingTitles"${st.reportShowMeetingTitles === true ? " checked" : ""}> レポートに載せる</label>${warnOf("reportShowMeetingTitles")}</td><td class="muted" data-l="説明">レポートの予定に会議の件名を載せるかです（既定は載せない）。</td></tr>
+      </tbody></table></div>
+    </section>`;
+
   const ruleRows = rules.map((r, i) => {
     const known = projects.some((p) => p.id === r.projectId);
     const unknown = known ? "" : `<option value="${esc(r.projectId)}" selected>（不明: ${esc(r.projectId)}）</option>`;
@@ -2925,7 +3004,7 @@ function renderSettings(data, today, opts = {}) {
     return `<tr><td data-l="キーワード"><input class="in" data-rkw="${k}" data-ri="${i}" value="${k}" aria-label="キーワード ${k}"></td>
       <td data-l="プロジェクト"><select class="in" data-rpj="${k}" data-ri="${i}" aria-label="${k} のプロジェクト">${unknown}${options(r.projectId)}</select></td>
       <td class="mono" data-l="付いている会議" data-rcount>${counts[i]} 件</td>
-      <td data-l=""><button class="btn" data-rdel="${k}" aria-label="${k} の規則を削除">削除</button></td></tr>`;
+      <td data-l=""><button class="btn" data-rmove="${k}|-1" aria-label="${k} を上へ"${i === 0 ? " disabled" : ""}>↑</button> <button class="btn" data-rmove="${k}|1" aria-label="${k} を下へ"${i === rules.length - 1 ? " disabled" : ""}>↓</button> <button class="btn" data-rdel="${k}" aria-label="${k} の規則を削除">削除</button></td></tr>`;
   }).join("");
   const empty = rules.length ? "" : `<tr><td colspan="4" class="muted">規則はありません。下の行から追加します。</td></tr>`;
   const addRow = `<tr><td data-l="キーワード"><input class="in" data-rnew placeholder="件名に含むキーワード" aria-label="追加するキーワード"></td>
@@ -2941,6 +3020,7 @@ function renderSettings(data, today, opts = {}) {
   }).join("");
 
   return `<div style="display:flex;flex-direction:column;gap:16px">
+    ${basic}
     <section class="panel" aria-labelledby="h-rules"><h2 id="h-rules" style="margin-top:0">キーワード規則（会議名・メールの件名に共通）</h2>
       <p class="note" style="margin:0 0 10px">件名にキーワードを含む会議を、そのプロジェクトに付けます。メールの取り込みの対象にも使います（上の規則が先に当たります）。手動で付けた会議は、規則を変えても変わりません。変更はその場でファイルに保存されます。</p>
       ${opts.ruleError ? `<p class="note err" role="alert" style="margin:0 0 10px">${esc(opts.ruleError)}</p>` : ""}
@@ -3416,6 +3496,7 @@ function focusSelector(el) {
   if (d.pf && d.pid) return q("data-pf", d.pf) + q("data-pid", d.pid);
   if (d.mf && d.pid) return q("data-mf", d.mf) + q("data-pid", d.pid) + q("data-i", d.i);
   if (d.gadd) return q("data-gadd", d.gadd);
+  if (d.set) return q("data-set", d.set);
   // 規則の欄は、書き換えるとキーワードが変わるので、行の位置（data-ri。書き換えても並びは変わらない）で探す
   if (d.rkw !== undefined) return `[data-rkw][data-ri="${CSS.escape(d.ri)}"]`;
   if (d.rpj !== undefined) return `[data-rpj][data-ri="${CSS.escape(d.ri)}"]`;
@@ -3568,7 +3649,7 @@ function ruleApply(edit, msg, { inPlace = false } = {}) {
   S.ruleError = "";
   if (!inPlace) return apply(edit, msg);
   if (!apply(edit, msg, { quiet: true })) return false;
-  view.querySelector(".note.err")?.remove();
+  view.querySelector(".note.err[role=alert]")?.remove();
   patchRuleRows();
   return true;
 }
@@ -3592,6 +3673,11 @@ function patchRuleRows() {
     const del = tr.querySelector("[data-rdel]");
     del.dataset.rdel = r.keyword;
     del.setAttribute("aria-label", `${r.keyword} の規則を削除`);
+    tr.querySelectorAll("[data-rmove]").forEach((b) => {
+      const delta = b.dataset.rmove.slice(b.dataset.rmove.lastIndexOf("|") + 1);
+      b.dataset.rmove = `${r.keyword}|${delta}`;
+      b.setAttribute("aria-label", `${r.keyword} を${delta === "-1" ? "上" : "下"}へ`);
+    });
     tr.querySelector("[data-rcount]").textContent = `${counts[i]} 件`;
   });
 }
@@ -3599,7 +3685,7 @@ function patchRuleRows() {
 /** 規則の追加。エラーは通知だけにして、入力欄は描き直さない（打った文字を残す） */
 function addRule() {
   S.ruleError = "";
-  view.querySelector(".note.err")?.remove();
+  view.querySelector(".note.err[role=alert]")?.remove();
   const kw = view.querySelector("[data-rnew]")?.value ?? "", pid = view.querySelector("[data-rnewpj]")?.value;
   if (!pid) { toast("先にプロジェクトを追加してください"); return; }
   const edit = (d) => setProjectRule(d, kw, pid);
@@ -3716,6 +3802,12 @@ view.addEventListener("click", (e) => {
   const now = clock();
 
   if (q("[data-radd]")) { addRule(); return; }
+  const rmove = q("[data-rmove]");
+  if (rmove) {
+    const [kw, delta] = [rmove.dataset.rmove.slice(0, rmove.dataset.rmove.lastIndexOf("|")), Number(rmove.dataset.rmove.slice(rmove.dataset.rmove.lastIndexOf("|") + 1))];
+    ruleApply((d) => moveProjectRule(d, kw, delta), "規則の順序を変えました");
+    return;
+  }
   const rdel = q("[data-rdel]");
   if (rdel) { ruleApply((d) => removeProjectRule(d, rdel.dataset.rdel), "規則を削除しました"); return; }
   if (q("[data-reopen]")) { openFile("reopen"); return; }
@@ -3888,6 +3980,18 @@ function onReportChange(el) {
   }
 }
 
+/** 設定タブの基本の設定を保存する。勤務時間は開始・終了を組で渡す（片方だけだと、両方が不正なファイルを直せない）。不正な値は通知して、入力を元に戻す */
+function changeSetting(el) {
+  const k = el.dataset.set;
+  const val = (name) => view.querySelector(`[data-set="${name}"]`)?.value ?? "";
+  let patch;
+  if (k === "workday-start" || k === "workday-end") patch = { workday: { start: val("workday-start"), end: val("workday-end") } };
+  else if (k === "waitingLongDays") patch = { waitingLongDays: Number(el.value) };
+  else if (k === "label-group" || k === "label-subgroup") patch = { labels: { [k.slice("label-".length)]: el.value } };
+  else patch = { reportShowMeetingTitles: el.checked };
+  apply((d) => updateSettings(d, patch), "設定を保存しました");
+}
+
 function onChange(el) {
   const { date: today } = clock();
   if (S.reportPanel && el.matches?.("[data-rptall],[data-rptp],[data-rptk],[data-rptd]")) { onReportChange(el); return; }
@@ -3933,6 +4037,7 @@ function onChange(el) {
     } else p[k] = el.value;
     return;
   }
+  if (el.dataset.set !== undefined) { changeSetting(el); return; }
   if (el.dataset.rkw !== undefined) { const old = el.dataset.rkw; ruleApply((d) => renameProjectRule(d, old, el.value), "キーワードを変更しました", { inPlace: true }); return; }
   if (el.dataset.rpj !== undefined) { const kw = el.dataset.rpj, pid = el.value; ruleApply((d) => setProjectRule(d, kw, pid), "プロジェクトを変更しました", { inPlace: true }); return; }
   if (el.dataset.groupfilter !== undefined) { S.group = el.value; S.resetScroll = true; render(); return; }
