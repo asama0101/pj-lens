@@ -94,14 +94,14 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 | `tasks` | `id`、`projectId`、`title`、`due`、`start`、`status`、`memo`、`predecessors`、`waitingOn`、`importance`（`high`／`mid`／`low`／`null`）、`doneAt`、`sessions`（作業枠。`id`、`date`、`start`、`end`、`kind`＝`planned`／`actual`）、`group`（大項目）、`subgroup`（中項目）、`wbsKey`（WBS 上の項目名の連結。再取り込みの照合用）。`waitingOn` は `party`、`since`。大項目・中項目は表示と絞り込み用の文字列で、親の期限や進捗は集計しない |
 | `events` | 会議。`id`、`date`、`start`、`end`、`title`、`source`（`manual`／`mcp`）、`skip`、`externalId`、`projectId`、`projectBy`（`rule`／`manual`）、`confirmed`（過ぎたあと確認すると稼働に数える） |
 | `inbox` | 任意。HTML から Claude Code への依頼の受信箱。`watching`（`at`: Claude Code が見ている印の日時。30 秒ごとに更新）、`requests`（最新 20 件。`id`＝`R1` など、`at`、`projectId`、`status`＝`pending`／`working`／`question`／`proposed`／`applied`／`rejected`／`failed`、`thread`＝`role`（`user`／`claude`）・`at`・`text` のやりとり、`proposal`＝`summary`・`reason`・`cause`・`ops`（`moveDue`／`addPred`／`removePred`／`addTask`）・`sections`・`warnings`・`base`、`result`＝`at`・`by`（`html`／`claude`）・`summary`） |
-| `changeLog` | 日程変更と取り込みの履歴。`at`、`taskIds`、`reason`、`cause`、`deltaDays`。取り込みの記録には、`source`（`wbs`／`mail`／`calendar`／`inbox`）と、メールの `messageIds` が付く |
+| `changeLog` | 日程変更と取り込みの履歴。`at`、`taskIds`、`reason`、`cause`、`deltaDays`。取り込みの記録には、`source`（`wbs`／`mail`／`calendar`／`inbox`）と、メールの `messageIds` が付く。新しい報告に置き換えられた古いメール報告には `superseded: true`（そのタスクの `taskIds` つき。画面とレポートの変更履歴に出る） |
 
 ## 取り込み（intake）
 
 どれも「読み取り → 変更案の表 → 利用者の承認 → 書き込み」の順で、承認の前はタスクを変えない（文章の取り込みは、承認前に `data.json` の受信箱へ依頼と提案を書くが、タスクは承認後の `approve` まで変わらない）。
 
 - 文章（メール・議事録・メモ）の取り込みは、書き込みを受信箱の経路に乗せる（`submit --working` → `propose` → `approve`。「HTML からの依頼（inbox）」を参照）。期限が書かれていないタスクは、Claude が先行と `businessDays` で仮に置き、日付の足し算は `propose` が行う。行番号で直して再提案し、承認後に登録する。重要度は受信箱の登録が受けないので入れない。待ち先（`Waiting`）は、取り込みでは設定せず、報告だけする。
-- WBS の取り込みは、列の対応と変更案を一緒に見せて承認を 1 回にする（承認後に `mapping-set` → `wbs-apply`）。進捗メールは、同じタスクの報告が複数通あれば最新の 1 通だけを `items` に入れ、古いものは `taskId: null`（処理済みにするだけ）にする。
+- WBS の取り込みは、列の対応と変更案を一緒に見せて承認を 1 回にする（承認後に `mapping-set` → `wbs-apply`）。進捗メールは、同じタスクの報告が複数通あれば最新の 1 通だけを `items` に入れ、古いものは `taskId: null` と `relatedTaskId`（そのタスクの ID）にする。反映はせず処理済みにして、`applyMailImport` が `superseded: true` の記録（`taskIds: [relatedTaskId]`、`deltaDays: 0`）を足す。プロジェクト画面とレポートの変更履歴は、`source` があり日数が 0 の記録を出さないが、`superseded` の記録だけは出す（日数は出さない）。`relatedTaskId` が無い `taskId: null` は、従来どおり `taskIds: []` の記録（画面には出ない）。
 
 ### Excel の WBS
 
@@ -125,6 +125,7 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 - 変更履歴には、期限を動かす操作ごとに 1 件（日数・理由つき）と、先行・登録をまとめた 1 件（`source` が `inbox`。画面の「日程変更の履歴」には出ない）が残る。
 - 後続の動き: 先行を足したとき、後続の期限が先行より前なら、先行の期限と同じ日まで動かす（`replan` と同じ規則）。操作は、登録→先行→期限の順に当てる。開始日のあるタスクに先行を足すと、開始日は先行から決まるので外す（提案の注意に出る）。
 - 提案のあとにデータが変わったとき: 反映せず、依頼が「失敗」になる。「もう一度提案してもらう」で作り直す。先に Claude Code の画面で承認・却下した依頼を、HTML でもう一度承認しても、何も変わらない（二重には反映されない）。
+- 期限を動かす `moveDue` と、`businessDays` 指定の `addTask` は、同じ依頼にできない（`planOps` が例外を投げる。先行の期限が動くと、営業日が吸収されるため）。`agents/inbox.md` は、期限の移動だけを提案し、登録は承認後にもう一度依頼してもらう。`moveDue` と `due`（日付）指定の `addTask` は一緒にできる。
 - 登録（`addTask`）の期限は、`due`（日付）か `businessDays`（営業日の整数）のどちらか一方。`businessDays` は、完了していない先行の期限の最大値（無ければ今日）から数えて、土日と休みを除いた日数後の日付（`core/dates.js` の `dueAfter(base, businessDays, cal)`。`cal` は `core/holidays.js` の `calendarOf(settings)`＝`{off, on}`。`on`［`workdays`］の日は営業日、`off`［`holidays` と `nationalHolidays`］と土日は飛ばす。`on` が最優先）。営業日の計算は受信箱の登録だけで、`replan`・`impact.js`・ドラッグの期限変更は暦日のまま。`propose` が `businessDays` を `due` に置き換えて提案の `ops` に保存するので、承認が翌日以降でも `stale` にならない（提案の表の `add` 行には `businessDays` が残る）。HTML の提案カードの登録の表には、行番号（`data-row`）と営業日の列が出て、「修正を依頼する」は暖色（`btn warm`）。
 - `tools/inbox.js submit ... --working` は、依頼を `working`（処理中）で作る。`wait` は `pending` だけを知らせるので、`/pj-lens:watch` が動いていても `inbox` エージェントに横取りされない。`intake` の文章の取り込みが使う。
 - できないこと: タスクの削除・状態の変更、プロジェクトや会議の追加・削除。重要度は、依頼では設定しない。
@@ -170,6 +171,8 @@ node tools/xlsx.js --data <保存先> plan.xlsx           # Excel を JSON で�
 
 ### 次の版（未公開）
 
+- 追加: `/pj-lens:intake mail` で、同じタスクの報告が複数のメールにあるとき、古い報告の要点が、そのタスクの変更履歴（プロジェクト画面・レポート）に残ります（`relatedTaskId`、`changeLog` の `superseded`）。これまでは、古い報告は処理済みになるだけで、画面にもレポートにも出ませんでした。
+- 変更: 同じ依頼に、期限の移動（`moveDue`）と営業日指定の登録（`businessDays`）を書くと、エラーになります（先行の期限が動いて、営業日が吸収されるため）。先に期限の移動を承認してから、登録を依頼してください。
 - 修正: 設定タブの勤務時間を、時・分を順に打っても入力が途切れないようにしました。打ち終わる（0.8 秒止まる）か入力欄を離れてから保存し、保存に成功しても画面を描き直しません。不正な値は通知して、入力欄だけを保存された値に戻します（フォーカスは保たれます）。
 - 修正: 受信箱の依頼（`inbox`）で仮に置いた期限が、プロジェクトの期間に収まるかを確かめ、収まらなければ提案の要約に警告を書くようにしました（`intake` と同じ指針）。
 - 変更: タスクを Done・Cancelled にしたとき、進行中の予定枠を残したことをメッセージで知らせます（終わったら「実績にする」で確定します）。
