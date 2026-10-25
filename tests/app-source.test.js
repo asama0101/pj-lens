@@ -141,3 +141,31 @@ test("app.js: 「解除して完了にする」を押したとき、確認を出
   const ok = src.slice(i, i + 400);
   assert.match(ok, /pd\.future\.filter\(\(sid\) => futurePlanned\(S\.data, pd\.id, clock\(\)\)\.includes\(sid\)\)/);
 });
+
+test("app.js: 設定タブの入力の保存は、成功しても描き直さない（時刻は時・分を打つたびに change が起き、描き直すと入力の位置が「時」に戻って、続きが打てなくなる）。直した項目の古い注意だけ消す", () => {
+  const fn = src.slice(src.indexOf("function changeSetting"), src.indexOf("function changeSetting") + 1000);
+  assert.match(fn, /apply\(\(d\) => updateSettings\(d, patch\), "設定を保存しました", \{ quiet: true \}\)/);
+  assert.match(fn, /\.note\.err/);
+});
+
+test("app.js: 勤務時間の入力は、打っている途中の値（開始 > 終了など）で保存せず、打ち終わる（少し止まる）か入力欄を離れてから保存する", () => {
+  assert.match(src, /function changeSettingSoon\(el\)/);
+  const soon = src.slice(src.indexOf("function changeSettingSoon"), src.indexOf("function changeSettingSoon") + 700);
+  assert.match(soon, /setTimeout\(/);
+  assert.match(soon, /clearTimeout\(/);
+  assert.match(src, /el\.dataset\.set\.startsWith\("workday-"\) \? changeSettingSoon\(el\) : changeSetting\(el\)/);
+  const out = src.slice(src.indexOf('addEventListener("focusout"'), src.indexOf('addEventListener("focusout"') + 400);
+  assert.match(out, /workday-/);
+  assert.match(out, /changeSetting\(/);
+});
+
+test("app.js: render の先頭で、保存待ちの勤務時間のタイマーを止める（描き直しの途中で focusout が走り、入れ子の描き直しになるのを防ぐ）", () => {
+  const head = src.slice(src.indexOf("function render() {"), src.indexOf("function render() {") + 200);
+  assert.match(head, /clearTimeout\(settingTimer\); settingTimer = null;/);
+});
+
+test("app.js: 設定タブの入力の保存後、古い注意を消すのは勤務時間と待ち長期化の日数だけ（呼び名は片方だけ直しても、もう片方の注意を残す）。呼び名は保存された値（空なら既定）を入力欄に出す", () => {
+  const fn = src.slice(src.indexOf("function changeSetting(el)"), src.indexOf("function changeSetting(el)") + 1500);
+  assert.match(fn, /k\.startsWith\("label-"\)/);
+  assert.match(fn, /groupLabels\(S\.data\.settings\)/);
+});

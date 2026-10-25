@@ -1,5 +1,6 @@
 // ダッシュボード本体: 状態の保持、描画、保存、イベントの結線。判断ロジックは src/core、見た目は src/ui/views、データ編集は src/ui/edit.js。
 const store = createStore();
+let settingTimer = null; // 勤務時間の保存待ちのタイマー（changeSettingSoon）。render が最初に呼ばれる前に宣言しておく
 const params = new URLSearchParams(location.search);
 // ?today=2026-10-20&time=10:15 で「現在」を固定できる(デモ・動作確認用)
 const clock = () => (params.get("today") ? { date: params.get("today"), time: params.get("time") ?? "10:15" } : nowLocal());
@@ -51,6 +52,7 @@ function renderBody() {
 
 function render() {
   hideTip();
+  clearTimeout(settingTimer); settingTimer = null; // 描き直しで入力欄を取り除くときに focusout が走り、保存が入れ子の描き直しになるのを防ぐ（待っていた入力は、描き直しで消えるのと同じ）
   const c = clock();
   $("todaylabel").textContent = `${c.date.replace(/-/g, "/")}(${wdJa(c.date)})`;
   document.querySelectorAll("nav [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.id === "tab-" + S.screen)));
@@ -631,8 +633,23 @@ function changeSetting(el) {
   if (k === "workday-start" || k === "workday-end") patch = { workday: { start: val("workday-start"), end: val("workday-end") } };
   else if (k === "waitingLongDays") patch = { waitingLongDays: Number(el.value) };
   else patch = { labels: { [k.slice("label-".length)]: el.value } }; // label-group / label-subgroup
-  apply((d) => updateSettings(d, patch), "設定を保存しました");
+  // 成功したら描き直さない（時刻は時・分を打つたびに change が起き、描き直すと入力の位置が「時」に戻って続きが打てない）。不正な値は apply が通知して描き直し、入力を元に戻す
+  if (!apply((d) => updateSettings(d, patch), "設定を保存しました", { quiet: true })) return;
+  if (k.startsWith("label-")) el.value = groupLabels(S.data.settings)[k.slice("label-".length)]; // 空・前後の空白は、保存された値（空なら既定の呼び名）を出す。ほかの呼び名の注意は残す
+  else el.closest("tr")?.querySelectorAll(".note.err").forEach((n) => n.remove()); // 直した項目の古い注意を消す（行の値をまるごと保存し直す項目だけ）
 }
+
+/** 勤務時間は、打っている途中の値（「1」だけで 01:00 になり、開始より前など）で保存・検査しない。打ち終わる（少し止まる）か、入力欄を離れたら保存する */
+function changeSettingSoon(el) {
+  clearTimeout(settingTimer);
+  settingTimer = setTimeout(() => { settingTimer = null; if (view.contains(el)) changeSetting(el); }, 800);
+}
+view.addEventListener("focusout", (e) => {
+  if (!settingTimer || !e.target.matches?.('[data-set^="workday-"]')) return;
+  clearTimeout(settingTimer);
+  settingTimer = null;
+  changeSetting(e.target);
+});
 
 function onChange(el) {
   const { date: today } = clock();
@@ -679,7 +696,7 @@ function onChange(el) {
     } else p[k] = el.value;
     return;
   }
-  if (el.dataset.set !== undefined) { changeSetting(el); return; }
+  if (el.dataset.set !== undefined) { el.dataset.set.startsWith("workday-") ? changeSettingSoon(el) : changeSetting(el); return; }
   if (el.dataset.hrowkind !== undefined) {
     const date = el.dataset.hrowkind, kind = el.value;
     apply((d) => addHoliday(d, { date, kind, note: (d.settings?.holidays ?? []).find((h) => h?.date === date)?.note }), "区分を変更しました");
