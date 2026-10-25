@@ -40,3 +40,49 @@ test("app.js: 設定タブの data-set は updateSettings で保存し（勤務�
   const fs = src.slice(src.indexOf("function focusSelector"), src.indexOf("function focusSelector") + 900);
   assert.match(fs, /d\.set/);
 });
+
+test("app.js: 祝日の追加・削除は addHoliday / removeHoliday で保存し、入力の Enter でも追加する。focusSelector も data-hnew を扱う", () => {
+  assert.match(src, /addHoliday\(/);
+  assert.match(src, /removeHoliday\(/);
+  assert.ok(src.includes("[data-hadd]") && src.includes("[data-hdel]"));
+  assert.match(src, /e\.key === "Enter" && !e\.isComposing && e\.target\.matches\("\[data-hnew\]"\)/);
+  const fs = src.slice(src.indexOf("function focusSelector"), src.indexOf("function focusSelector") + 1200);
+  assert.match(fs, /d\.hnew/);
+});
+
+test("schedule.js: カレンダー上部の確認（doneAsk）は無い（今日のタスクのパネルに移した）", () => {
+  const sc = readFileSync(new URL("../plugins/pj-lens/src/ui/views/schedule.js", import.meta.url), "utf8");
+  assert.doesNotMatch(sc, /doneAsk/);
+  assert.doesNotMatch(sc, /statusButtons/);
+});
+
+test("app.js: 枠のドラッグ・下端ドラッグの間、ポインタの近くに時刻（開始–終了）を出し、終わり・描き直しで消す", () => {
+  assert.match(src, /function showTip\(/);
+  assert.match(src, /function hideTip\(/);
+  const over = src.slice(src.indexOf('view.addEventListener("dragover"'), src.indexOf('view.addEventListener("drop"'));
+  assert.match(over, /showTip\(/, "dragover で更新");
+  const end = src.slice(src.indexOf('view.addEventListener("drop"'), src.indexOf("/* ---------- 枠・手入力の会議の下端ドラッグ"));
+  assert.match(end, /hideTip\(\)[\s\S]*dragend|dragend[\s\S]*hideTip\(\)/);
+  assert.equal((end.match(/hideTip\(\)/g) ?? []).length >= 2, true, "drop と dragend の両方");
+  const rz = src.slice(src.indexOf("/* ---------- 枠・手入力の会議の下端ドラッグ"), src.indexOf("/* ---------- ガント上のドラッグ"));
+  assert.match(rz, /const move = [\s\S]*showTip\(/, "長さ変更中の更新");
+  assert.match(rz, /const up = [\s\S]*hideTip\(\)/, "離したら消す");
+  assert.match(src, /function render\(\) \{[^\n]*\n\s*hideTip\(\)/, "描き直しで消す");
+});
+
+test("app.js: 画面（タブ）を切り替えるとき、未来の予定枠の確認待ち（pendingDone）を捨てる（出す場所が無い画面で残らない）", () => {
+  const tab = src.slice(src.indexOf("S.screen = b.id.slice(4);"), src.indexOf("S.screen = b.id.slice(4);") + 200);
+  assert.match(tab, /S\.pendingDone = null/);
+});
+
+test("app.js: 「今日の優先」のスイッチを切るとき、パネル内にしか出ない確認待ち（pendingDone）を捨てる。スイッチの説明に今日のタスクも書く", () => {
+  const pf = src.slice(src.indexOf('if (pf) {'), src.indexOf('if (pf) {') + 300);
+  assert.match(pf, /S\.pendingDone = null/);
+  assert.match(src, /title="画面右の「今日のタスク」「今日の優先」/);
+});
+
+test("schedule.js: ブロックの時刻は esc して出す（toMin が先に検証するが、描画側でも守る）", () => {
+  const sc = readFileSync(new URL("../plugins/pj-lens/src/ui/views/schedule.js", import.meta.url), "utf8");
+  assert.match(sc, /\$\{esc\(m\.start\)\}-\$\{esc\(m\.end\)\}/);
+  assert.match(sc, /\$\{esc\(s\.start\)\}-\$\{esc\(s\.end\)\}/);
+});

@@ -257,6 +257,22 @@ export function updateSettings(data, patch) {
   return { ...data, settings: s };
 }
 
+/** 祝日（営業日の計算で飛ばす日）を足す。昇順・重複なしで保つ。実在しない日付は例外 */
+export function addHoliday(data, date) {
+  if (!isDate(date)) throw new Error(`祝日は実在する日付（YYYY-MM-DD）にしてください: ${date}`);
+  const cur = Array.isArray(data.settings?.holidays) ? data.settings.holidays : [];
+  return { ...data, settings: { ...data.settings, holidays: [...new Set([...cur, date])].sort() } };
+}
+
+/** 祝日を外す。無い日付は何もしない。空になったらキーを消す */
+export function removeHoliday(data, date) {
+  const cur = Array.isArray(data.settings?.holidays) ? data.settings.holidays : [];
+  const s = { ...data.settings };
+  const rest = cur.filter((h) => h !== date);
+  if (rest.length) s.holidays = rest; else delete s.holidays;
+  return { ...data, settings: s };
+}
+
 export function addProject(data, { name, type = "その他" }, today = nowLocal().date) {
   const n = String(name ?? "").trim();
   if (!n) throw new Error("プロジェクト名を入力してください");

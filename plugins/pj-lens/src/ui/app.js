@@ -50,10 +50,11 @@ function renderBody() {
 }
 
 function render() {
+  hideTip();
   const c = clock();
   $("todaylabel").textContent = `${c.date.replace(/-/g, "/")}(${wdJa(c.date)})`;
   document.querySelectorAll("nav [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.id === "tab-" + S.screen)));
-  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="prio" aria-pressed="${S.prefs.showPrio}" title="画面右の「今日の優先」を出したり隠したりします">今日の優先</button><button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
+  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="prio" aria-pressed="${S.prefs.showPrio}" title="画面右の「今日のタスク」「今日の優先」を出したり隠したりします">今日の優先</button><button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
   renderBar();
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
@@ -94,6 +95,7 @@ function focusSelector(el) {
   if (d.rkw !== undefined) return `[data-rkw][data-ri="${CSS.escape(d.ri)}"]`;
   if (d.rpj !== undefined) return `[data-rpj][data-ri="${CSS.escape(d.ri)}"]`;
   if (d.rnew !== undefined) return "[data-rnew]";
+  if (d.hnew !== undefined) return "[data-hnew]";
   if (d.rnewpj !== undefined) return "[data-rnewpj]";
   if (d.waitparty) return q("data-waitparty", d.waitparty);
   if (d.rp) return q("data-rp", d.rp);
@@ -287,6 +289,14 @@ function addRule() {
   apply(edit, "規則を保存しました（同じキーワードは置き換えます）");
 }
 
+/** 設定タブの祝日の追加。エラーは通知だけにして、入力欄は描き直さない（打った日付を残す） */
+function addHolidayFromInput() {
+  const date = view.querySelector("[data-hnew]")?.value ?? "";
+  const edit = (d) => addHoliday(d, date);
+  try { edit(S.data); } catch (e) { toast(e.message); return; }
+  apply(edit, "祝日を追加しました");
+}
+
 /** 見出し行の「＋」の大項目・中項目（data-ag / data-asg）を、追加するタスクの置き場にする */
 const placeOf = (el) => ({ group: el.dataset.ag ?? "", subgroup: el.dataset.asg ?? "" });
 
@@ -348,6 +358,7 @@ document.querySelector("nav").addEventListener("click", (e) => {
   const b = e.target.closest("[role=tab]");
   if (!b) return;
   S.screen = b.id.slice(4);
+  S.pendingDone = null;
   S.ruleError = "";
   clearSel();
   S.resetScroll = true;
@@ -355,7 +366,7 @@ document.querySelector("nav").addEventListener("click", (e) => {
 });
 $("filebar").addEventListener("click", async (e) => {
   const pf = e.target.closest("[data-pref]");
-  if (pf) { const k = pf.dataset.pref === "prio" ? "showPrio" : "showActual"; S.prefs = { ...S.prefs, [k]: !S.prefs[k] }; savePrefs(S.prefs); render(); return; }
+  if (pf) { S.pendingDone = null; const k = pf.dataset.pref === "prio" ? "showPrio" : "showActual"; S.prefs = { ...S.prefs, [k]: !S.prefs[k] }; savePrefs(S.prefs); render(); return; }
   if (e.target.closest("[data-refresh]")) {
     await saveChain;
     if (S.saveFailed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }
@@ -395,6 +406,9 @@ view.addEventListener("click", (e) => {
   const now = clock();
 
   if (q("[data-radd]")) { addRule(); return; }
+  if (q("[data-hadd]")) { addHolidayFromInput(); return; }
+  const hdel = q("[data-hdel]");
+  if (hdel) { apply((d) => removeHoliday(d, hdel.dataset.hdel), "祝日を外しました"); return; }
   const rmove = q("[data-rmove]");
   if (rmove) {
     const [kw, delta] = [rmove.dataset.rmove.slice(0, rmove.dataset.rmove.lastIndexOf("|")), Number(rmove.dataset.rmove.slice(rmove.dataset.rmove.lastIndexOf("|") + 1))];
@@ -693,6 +707,16 @@ function planDrop(dz, clientY) {
   return { st, end: st + 60, error: r.error, warning: r.warning, next: asEdit((d) => addSession(d, did, put, now)), msg: `${S.data.tasks.find((t) => t.id === did).title} を ${fmtMD(date)} ${hm(st)} に${kind === "actual" ? "実績として記録" : "予定として配置"}しました` };
 }
 
+/** ドラッグ中の時刻（10:00–11:00）を、ポインタの近くに出す。終わり・Esc・描き直しで消す */
+function showTip(text, x, y) {
+  let tip = document.getElementById("dragtip");
+  if (!tip) { tip = document.createElement("div"); tip.id = "dragtip"; tip.setAttribute("aria-hidden", "true"); document.body.appendChild(tip); }
+  tip.textContent = text;
+  tip.style.left = `${x + 14}px`;
+  tip.style.top = `${y + 14}px`;
+}
+function hideTip() { document.getElementById("dragtip")?.remove(); }
+
 view.addEventListener("dragstart", (e) => {
   const li = e.target.closest("[data-pick]"), bl = e.target.closest("[data-dragsess]"), mg = e.target.closest("[data-dragmtg]");
   drag = li ? { kind: "task", id: li.dataset.pick } : bl ? { kind: "sess", id: bl.dataset.dragsess } : mg ? { kind: "mtg", id: mg.dataset.dragmtg } : null;
@@ -710,6 +734,7 @@ view.addEventListener("dragover", (e) => {
   ghost.style.height = g.ht(p.st, p.end);
   ghost.classList.toggle("ng", !!p.error);
   ghost.textContent = p.error ?? `${hm(p.st)}-${hm(p.end)}${p.warning ? `(${p.warning})` : ""}`;
+  if (p.error) hideTip(); else showTip(`${hm(p.st)}–${hm(p.end)}`, e.clientX, e.clientY);
 });
 view.addEventListener("drop", (e) => {
   const dz = e.target.closest(".dz");
@@ -718,11 +743,12 @@ view.addEventListener("drop", (e) => {
   const p = planDrop(dz, e.clientY);
   drag = null;
   ghost?.remove(); ghost = null;
+  hideTip();
   if (p.error) { toast(p.error); return; }
   S.picked = null;
   apply((d) => p.next(d), `${p.msg}${p.warning ? `(${p.warning})` : ""}`);
 });
-view.addEventListener("dragend", () => { drag = null; ghost?.remove(); ghost = null; });
+view.addEventListener("dragend", () => { drag = null; ghost?.remove(); ghost = null; hideTip(); });
 
 /* ---------- 枠・手入力の会議の下端ドラッグ(終了時刻を変える) ---------- */
 view.addEventListener("mousedown", (e) => {
@@ -738,10 +764,12 @@ view.addEventListener("mousedown", (e) => {
   const move = (ev) => {
     end = Math.max(a0 + 15, Math.min(g.h0 + g.span, Math.round(minAtEl(ev.clientY, blk.parentNode) / 15) * 15));
     blk.style.height = g.ht(a0, end);
+    showTip(`${hm(a0)}–${hm(end)}`, ev.clientX, ev.clientY);
   };
   const up = () => {
     document.removeEventListener("mousemove", move);
     document.removeEventListener("mouseup", up);
+    hideTip();
     blk.draggable = true;
     if (end == null) return;
     const e2 = toHHMM(end);
@@ -837,6 +865,7 @@ view.addEventListener("keydown", (e) => {
   // 日本語入力の変換確定の Enter(isComposing)では追加しない
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-gadd]")) { e.preventDefault(); submitGAdd(e.target); return; }
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-rnew]")) { e.preventDefault(); addRule(); return; }
+  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-hnew]")) { e.preventDefault(); addHolidayFromInput(); return; }
   if (e.key === "Escape" && e.target.matches("[data-gadd]")) { S.addAt = null; render(); return; }
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-waitparty]")) { e.preventDefault(); submitWait(e.target.dataset.waitparty); return; }
   if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-pick]")) { e.preventDefault(); e.target.click(); }

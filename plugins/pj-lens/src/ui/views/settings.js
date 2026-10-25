@@ -1,7 +1,7 @@
 // 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定）と、キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
 import { ruleMeetingCounts } from "../../core/rules.js";
 import { validate } from "../../core/schema.js";
-import { isTime, toMin } from "../../core/dates.js";
+import { isDate, isTime, toMin } from "../../core/dates.js";
 import { groupLabels } from "../../core/groups.js";
 import { esc } from "../common.js";
 
@@ -30,6 +30,14 @@ export function renderSettings(data, today, opts = {}) {
       </tbody></table></div>
     </section>`;
 
+  const holidays = (Array.isArray(st.holidays) ? st.holidays.filter(isDate) : []).slice().sort();
+  const holidayRows = holidays.map((h) => `<tr><td class="mono" data-l="日付">${esc(h)}</td><td data-l=""><button class="btn" data-hdel="${esc(h)}" aria-label="${esc(h)} を祝日から外す">削除</button></td></tr>`).join("");
+  const holidaySec = `<section class="panel" aria-labelledby="h-hol"><h2 id="h-hol" style="margin-top:0">祝日</h2>
+      <p class="note" style="margin:0 0 10px">営業日の計算で飛ばす日です（土日は常に飛ばします）。受信箱の登録（営業日からの期限）だけが使います。変更はその場でファイルに保存されます。</p>
+      ${warnOf("holidays")}
+      <div class="tscroll"><table class="tbl edit"><tbody>${holidayRows || `<tr><td colspan="2" class="muted">祝日はありません。下の行から追加します。</td></tr>`}<tr><td data-l="日付"><input class="in" type="date" data-hnew aria-label="追加する祝日"></td><td data-l=""><button class="btn" data-hadd>＋ 追加</button></td></tr></tbody></table></div>
+    </section>`;
+
   const ruleRows = rules.map((r, i) => {
     const known = projects.some((p) => p.id === r.projectId);
     const unknown = known ? "" : `<option value="${esc(r.projectId)}" selected>（不明: ${esc(r.projectId)}）</option>`;
@@ -54,6 +62,7 @@ export function renderSettings(data, today, opts = {}) {
 
   return `<div style="display:flex;flex-direction:column;gap:16px">
     ${basic}
+    ${holidaySec}
     <section class="panel" aria-labelledby="h-rules"><h2 id="h-rules" style="margin-top:0">キーワード規則（会議名・メールの件名に共通）</h2>
       <p class="note" style="margin:0 0 10px">件名にキーワードを含む会議を、そのプロジェクトに付けます。メールの取り込みの対象にも使います（上の規則が先に当たります）。手動で付けた会議は、規則を変えても変わりません。変更はその場でファイルに保存されます。</p>
       ${opts.ruleError ? `<p class="note err" role="alert" style="margin:0 0 10px">${esc(opts.ruleError)}</p>` : ""}

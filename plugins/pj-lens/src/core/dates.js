@@ -53,10 +53,18 @@ export function addDays(date, n) {
   return `${pad(y, 4)}-${pad(m)}-${pad(d)}`;
 }
 
-/** baseDate の days 日後（暦日。days は 0 以上の整数） */
-export function dueAfter(baseDate, days) {
-  if (!Number.isInteger(days) || days < 0) throw new Error(`日数は 0 以上の整数にしてください: ${days}`);
-  return addDays(baseDate, days);
+/** baseDate の businessDays 営業日後（土日と holidays を除く。businessDays は 0 以上の整数。0 なら baseDate のまま） */
+export function dueAfter(baseDate, businessDays, holidays = []) {
+  if (!Number.isInteger(businessDays) || businessDays < 0) throw new Error(`営業日は 0 以上の整数にしてください: ${businessDays}`);
+  if (!Array.isArray(holidays)) throw new Error("祝日は日付の配列にしてください（設定の holidays を直してください）");
+  const off = new Set(holidays.map((h) => (parse(h), h)));
+  let d = baseDate;
+  parse(d);
+  for (let n = 0; n < businessDays;) {
+    d = addDays(d, 1);
+    if (!isWeekend(d) && !off.has(d)) n++;
+  }
+  return d;
 }
 
 /** a - b（日数） */

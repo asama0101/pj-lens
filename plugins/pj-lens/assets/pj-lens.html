@@ -35,7 +35,7 @@ header.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;justify-
 header.top{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0;margin-block:-8px 0}
 /* プロジェクト画面のフィルタ行は、ヘッダーの下に固定する。高さは --th（app.js が測る） */
 .toolbar.ptool{position:sticky;top:var(--hh,0px);z-index:9;background:var(--bg);padding:6px 0 10px;margin-bottom:0}
-.cols>.prio{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + 8px);align-self:start;max-height:calc(100vh - var(--hh,0px) - var(--th,0px) - 24px);overflow-y:auto}
+.cols>.side{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + 8px);align-self:start;max-height:calc(100vh - var(--hh,0px) - var(--th,0px) - 24px);overflow-y:auto;display:flex;flex-direction:column;gap:16px}
 h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.01em}
 .today{color:var(--muted);font-size:13px}
 nav[role=tablist]{display:flex;gap:2px;background:var(--line-soft);padding:3px;border-radius:8px}
@@ -89,6 +89,13 @@ h2{font-size:14px;margin:0 0 10px;font-weight:700}
 .rank .why{grid-column:2;color:var(--muted);font-size:12px;line-height:1.5}
 .rank .act{display:inline-block;font-size:11px;padding:0 6px;border-radius:4px;background:var(--warn-soft);color:var(--warn);margin-right:6px}
 .rank li[data-pick]{cursor:pointer;border-radius:6px}
+.rank .t .pill{vertical-align:1px}
+.rank .bb{display:flex;flex-direction:row;gap:6px;flex-wrap:wrap}
+.rank .bb .btn{padding:0 10px;font-size:12px}
+.rank.tl li{grid-template-columns:minmax(0,1fr)}
+.rank.tl .pj,.rank.tl .why,.rank.tl .bb,.rank.tl .ask{grid-column:1}
+.rank li.closed{opacity:.55}
+.blk .stt{font-size:11px;opacity:.85;margin-left:4px}
 .rank li.picked{background:var(--accent-soft);outline:2px solid var(--accent);outline-offset:-2px}
 /* テーブル */
 .tbl{width:100%;border-collapse:collapse;font-size:13px}
@@ -116,6 +123,7 @@ h2{font-size:14px;margin:0 0 10px;font-weight:700}
 .blk.mtg{background:var(--meeting);color:var(--meeting-ink)}
 .blk.task{background:var(--accent-soft);color:var(--ink);border:1px solid var(--accent);border-left-width:4px}
 .blk .tm{font-family:var(--f-mono);font-size:10px;opacity:.8;display:block}
+.week .blk .tm{white-space:nowrap}
 button.free{position:absolute;left:2px;right:2px;border:1px dashed var(--ok);background:var(--free);border-radius:5px;color:var(--ok);font:inherit;font-size:12px;cursor:default;padding:0 6px;text-align:left}
 body.picking button.free{cursor:copy}
 body.picking button.free:hover{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
@@ -193,6 +201,7 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .ask{font-size:12px;color:var(--bad);max-width:190px}
 .btn.danger{border-color:var(--bad);color:var(--bad)}
 .ghost{position:absolute;left:2px;right:2px;border:2px dashed var(--accent);background:var(--accent-soft);border-radius:5px;font-size:12px;padding:2px 6px;color:var(--accent);pointer-events:none;z-index:5}
+#dragtip{position:fixed;z-index:15;background:var(--ink);color:var(--bg);padding:3px 8px;border-radius:6px;font-size:12px;font-family:var(--f-mono);pointer-events:none;white-space:nowrap}
 .ghost.ng{border-color:var(--bad);background:var(--bad-soft);color:var(--bad)}
 .rank li[draggable=true]{cursor:grab}
 .blk.task[draggable=true]{cursor:grab}
@@ -362,6 +371,8 @@ tr.hl td{transition:background .3s}
 .rptpanel label.chk{display:inline-flex;align-items:center;gap:6px;font-size:13px}
 .rpt-name{margin:0;font-size:13px}
 .note.err{color:var(--bad)}
+.btn.warm{background:var(--warn-soft);border-color:var(--warn);color:var(--ink);font-weight:700}
+.btn.warm:hover{border-color:var(--warn);color:var(--ink);filter:brightness(.95)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
 .g-row.g-grp{background:var(--line-soft);min-height:26px;align-items:center}
 .g-row.g-grp .g-label{background:var(--line-soft)}
@@ -496,10 +507,18 @@ function addDays(date, n) {
   return `${pad(y, 4)}-${pad(m)}-${pad(d)}`;
 }
 
-/** baseDate の days 日後（暦日。days は 0 以上の整数） */
-function dueAfter(baseDate, days) {
-  if (!Number.isInteger(days) || days < 0) throw new Error(`日数は 0 以上の整数にしてください: ${days}`);
-  return addDays(baseDate, days);
+/** baseDate の businessDays 営業日後（土日と holidays を除く。businessDays は 0 以上の整数。0 なら baseDate のまま） */
+function dueAfter(baseDate, businessDays, holidays = []) {
+  if (!Number.isInteger(businessDays) || businessDays < 0) throw new Error(`営業日は 0 以上の整数にしてください: ${businessDays}`);
+  if (!Array.isArray(holidays)) throw new Error("祝日は日付の配列にしてください（設定の holidays を直してください）");
+  const off = new Set(holidays.map((h) => (parse(h), h)));
+  let d = baseDate;
+  parse(d);
+  for (let n = 0; n < businessDays;) {
+    d = addDays(d, 1);
+    if (!isWeekend(d) && !off.has(d)) n++;
+  }
+  return d;
 }
 
 /** a - b（日数） */
@@ -685,6 +704,9 @@ function validate(data, now = nowLocal()) {
   }
   if (st.reportShowMeetingTitles != null && typeof st.reportShowMeetingTitles !== "boolean") {
     warn("settings.reportShowMeetingTitles: true か false にしてください（既定の false で動きます）");
+  }
+  if (st.holidays != null && !(Array.isArray(st.holidays) && st.holidays.every(isDate))) {
+    warn("settings.holidays: YYYY-MM-DD の配列にしてください（直すまで、営業日の計算で例外になります）");
   }
   (st.projectRules ?? []).forEach((r, i) => {
     if (!String(r?.keyword ?? "").trim()) err(`settings.projectRules[${i}]: keyword が空です`);
@@ -1923,7 +1945,7 @@ return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills };
 })();
 
 /* src/ui/edit.js */
-const { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addProject, deleteProject } = (() => {
+const { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, removeHoliday, addProject, deleteProject } = (() => {
 // 画面からの編集（追加・削除・更新）。すべて不変更新で、不正な入力は例外にする（呼び出し側が理由を表示する）。
 
 
@@ -2183,6 +2205,22 @@ function updateSettings(data, patch) {
   return { ...data, settings: s };
 }
 
+/** 祝日（営業日の計算で飛ばす日）を足す。昇順・重複なしで保つ。実在しない日付は例外 */
+function addHoliday(data, date) {
+  if (!isDate(date)) throw new Error(`祝日は実在する日付（YYYY-MM-DD）にしてください: ${date}`);
+  const cur = Array.isArray(data.settings?.holidays) ? data.settings.holidays : [];
+  return { ...data, settings: { ...data.settings, holidays: [...new Set([...cur, date])].sort() } };
+}
+
+/** 祝日を外す。無い日付は何もしない。空になったらキーを消す */
+function removeHoliday(data, date) {
+  const cur = Array.isArray(data.settings?.holidays) ? data.settings.holidays : [];
+  const s = { ...data.settings };
+  const rest = cur.filter((h) => h !== date);
+  if (rest.length) s.holidays = rest; else delete s.holidays;
+  return { ...data, settings: s };
+}
+
 function addProject(data, { name, type = "その他" }, today = nowLocal().date) {
   const n = String(name ?? "").trim();
   if (!n) throw new Error("プロジェクト名を入力してください");
@@ -2213,7 +2251,7 @@ function deleteProject(data, projectId) {
   return { data: { ...data, settings, events, projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
 }
 
-return { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addProject, deleteProject };
+return { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, removeHoliday, addProject, deleteProject };
 })();
 
 /* src/ui/inboxops.js */
@@ -2265,15 +2303,16 @@ function simulate(data, ops, today) {
   const resolve = (token) => refs.get(token) ?? token;
 
   // ① addTask（まず全部足し、先行は、足し終えてから結ぶ。ref で別の addTask を指せるように）
-  // days 指定の期限は、先行（既存のタスク、または別の addTask の ref）が決まってから計算する。ops の書く順には依存しない
+  // businessDays 指定の期限は、先行（既存のタスク、または別の addTask の ref）が決まってから計算する。ops の書く順には依存しない
   const adds = ops.filter((o) => o.op === "addTask");
-  const dueOf = new Map(); // ref → 計算した期限（days 指定のもの）
-  const pending = adds.filter((o) => o.days !== undefined);
+  const dueOf = new Map(); // ref → 計算した期限（businessDays 指定のもの）
+  const pending = adds.filter((o) => o.businessDays !== undefined);
   for (const o of adds) {
     const ref = String(o.ref ?? "").trim();
     if (!ref) throw new Error("addTask には ref が必要です");
-    const hasDue = o.due !== undefined, hasDays = o.days !== undefined;
-    if (hasDue === hasDays) throw new Error(`addTask（${ref}）には due か days のどちらか一方が必要です`);
+    if (o.days !== undefined) throw new Error(`addTask（${ref}）の days は businessDays（営業日）に変わりました`);
+    const hasDue = o.due !== undefined, hasDays = o.businessDays !== undefined;
+    if (hasDue === hasDays) throw new Error(`addTask（${ref}）には due か businessDays のどちらか一方が必要です`);
   }
   const refDue = new Map(adds.filter((o) => o.due !== undefined).map((o) => [String(o.ref).trim(), o.due]));
   while (pending.length) {
@@ -2283,17 +2322,17 @@ function simulate(data, ops, today) {
       const open = (o.predecessors ?? []).map((p) => (refDue.has(p) ? { due: refDue.get(p), status: "To Do" } : need(p))).filter((t) => !closed(t));
       const base = open.map((t) => t.due).reduce(max, "") || today;
       const ref = String(o.ref).trim();
-      dueOf.set(ref, dueAfter(base, o.days));
+      dueOf.set(ref, dueAfter(base, o.businessDays, w.settings?.holidays ?? []));
       refDue.set(ref, dueOf.get(ref));
       pending.splice(pending.indexOf(o), 1);
     }
   }
-  const planned = new Map(); // ref → days を due に固定した op
+  const planned = new Map(); // ref → businessDays を due に固定した op
   for (const o of adds) {
     const ref = String(o.ref ?? "").trim();
     if (refs.has(ref)) throw new Error(`ref "${ref}" が重複しています`);
     const due = o.due ?? dueOf.get(ref);
-    planned.set(o, o.days === undefined ? o : (({ days, ...rest }) => ({ ...rest, due }))(o));
+    planned.set(o, o.businessDays === undefined ? o : (({ businessDays, ...rest }) => ({ ...rest, due }))(o));
     // 開始日: 書かれていればそのとおり。先行があるタスクは入れない（先行から決まる。入れると validate の注意が出る）。なければ今日（期限が過去なら入れない）
     const start = o.start ?? ((o.predecessors ?? []).length || due < today ? null : today);
     w = addTask(w, { projectId: o.projectId, title: o.title, due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
@@ -2386,12 +2425,12 @@ function simulate(data, ops, today) {
   const baseTasks = {};
   for (const id of baseIds) { const t = before.get(id); baseTasks[id] = { due: t.due, predecessors: [...(t.predecessors ?? [])], status: t.status }; projects.add(t.projectId); }
 
-  // 先行が、その先行の先行に合わせて引き上げられると、days の期限も引き上げられ、日数が吸収される。表の日数と食い違うので知らせる
-  for (const o of adds.filter((x) => x.days !== undefined)) {
+  // 先行が、その先行の先行に合わせて引き上げられると、businessDays の期限も引き上げられ、営業日が吸収される。表の営業日と食い違うので知らせる
+  for (const o of adds.filter((x) => x.businessDays !== undefined)) {
     const ref = String(o.ref).trim();
-    if (T(refs.get(ref)).due !== dueOf.get(ref)) warnings.push(`登録するタスク ${ref}（${o.title}）の日数 ${o.days} は、先行の期限が引き上げられたため反映されていません（期限は ${T(refs.get(ref)).due}）`);
+    if (T(refs.get(ref)).due !== dueOf.get(ref)) warnings.push(`登録するタスク ${ref}（${o.title}）の営業日 ${o.businessDays} は、先行の期限が引き上げられたため反映されていません（期限は ${T(refs.get(ref)).due}）`);
   }
-  const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, days: o.days ?? null, start: t.start ?? null, predecessors: o.predecessors ?? [] }; });
+  const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, businessDays: o.businessDays ?? null, start: t.start ?? null, predecessors: o.predecessors ?? [] }; });
   const sections = [];
   if (addRows.length) sections.push({ kind: "add", rows: addRows });
   if (predRows.length) sections.push({ kind: "pred", rows: predRows });
@@ -2447,27 +2486,62 @@ return { summarizeSections, planOps, applyProposal };
 })();
 
 /* src/ui/views/prio.js */
-const { statusButtons, renderPrio } = (() => {
-// 「今日の優先」パネル（プロジェクト画面・スケジュール画面で共通）
+const { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide } = (() => {
+// 「今日のタスク」「今日の優先」パネル（プロジェクト画面・スケジュール画面で共通。右の列に並ぶ）
 
 
 
 
-/** 着手（To Do・Waiting のとき）と完了（Done・Cancelled 以外）のボタン。スケジュール画面の優先と作業枠が使う */
+const PILL = { "To Do": "off", "In Progress": "ok", Waiting: "wait", Done: "done", Cancelled: "off" };
+const statusPill = (t) => `<span class="pill ${PILL[t.status] ?? "off"}">${esc(t.status)}</span>`;
+const isClosed = (t) => t.status === "Done" || t.status === "Cancelled";
+
+/** 着手（To Do・Waiting のとき）と完了（Done・Cancelled 以外）のボタン。今日のタスクが使う */
 function statusButtons(t) {
   const btn = (status, label) => `<button class="btn" data-setstatus="${esc(t.id)}|${status}" aria-label="${esc(t.id)} を${label}にする">${label}</button>`;
   const start = t.status === "To Do" || t.status === "Waiting" ? btn("In Progress", "着手") : "";
-  const done = t.status !== "Done" && t.status !== "Cancelled" ? btn("Done", "完了") : "";
+  const done = !isClosed(t) ? btn("Done", "完了") : "";
   return start || done ? `<span class="bb">${start}${done}</span>` : "";
+}
+
+/** 未来の予定の枠を解除して Done・Cancelled にする確認（今日のタスクの行と、リストの状態の欄が使う） */
+function doneAskHtml(pd) {
+  return `<div class="ask" style="max-width:none">${esc(pd.id)} の未来の予定の枠 ${pd.n} 件を解除して ${esc(pd.status)} にします。<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-doneok="${esc(pd.id)}">解除して ${esc(pd.status)} にする</button><button class="btn" data-doneno>やめる</button></div></div>`;
+}
+
+/** 今日の日付に作業枠（予定・実績・未確認）があるタスクを [{ t, slots }] で返す。未完了を最初の枠の開始順に、Done・Cancelled を末尾に */
+function todayList(data, today) {
+  const rows = data.tasks
+    .map((t) => ({ t, slots: (t.sessions ?? []).filter((s) => s.date === today).sort((a, b) => a.start.localeCompare(b.start)) }))
+    .filter((r) => r.slots.length);
+  return rows.sort((a, b) => isClosed(a.t) - isClosed(b.t) || a.slots[0].start.localeCompare(b.slots[0].start));
+}
+
+const todayTaskIds = (data, today) => todayList(data, today).map((r) => r.t.id);
+
+/** 今日のタスク。今日に枠が無ければ空文字
+ *  @param opts.pendingDone  未来の予定の枠を解除する確認待ち { id, status, n }（その行に確認を出す） */
+function renderTodayTasks(data, today, opts = {}) {
+  const rows = todayList(data, today);
+  if (!rows.length) return "";
+  const items = rows.map(({ t, slots }) => {
+    const proj = esc(data.projects.find((p) => p.id === t.projectId)?.name ?? "");
+    const times = slots.map((s) => esc(`${s.start}–${s.end}`)).join("、");
+    const ask = opts.pendingDone?.id === t.id ? doneAskHtml(opts.pendingDone) : "";
+    return `<li data-today="${esc(t.id)}"${isClosed(t) ? ' class="closed"' : ""}><span class="pj">${proj}</span><span class="t">${esc(t.title)} ${statusPill(t)}</span><span class="why mono">${times}</span>${isClosed(t) ? "" : statusButtons(t)}${ask}</li>`;
+  }).join("");
+  return `<section class="panel todaytasks" aria-labelledby="h-td"><h2 id="h-td">今日のタスク</h2><ul class="rank tl">${items}</ul></section>`;
 }
 
 /**
  * @param opts.sched   true ならスケジュール画面用（全件・ドラッグ可）。false なら上位 4 件
  * @param opts.picked  選択中のタスク ID
+ * 今日のタスクに入っているタスクは出さない（順位の計算は変えず、表示で除く）
  */
 function renderPrio(data, today, opts = {}) {
   const { sched = false, picked = null } = opts;
-  const ranked = rankTasks(data, today);
+  const inToday = new Set(todayTaskIds(data, today));
+  const ranked = rankTasks(data, today).filter((r) => !inToday.has(r.taskId));
   const shown = sched ? ranked : ranked.slice(0, 4);
   const items = shown.map((r, i) => {
     const t = data.tasks.find((x) => x.id === r.taskId);
@@ -2475,7 +2549,7 @@ function renderPrio(data, today, opts = {}) {
     const pill = a.count ? ` <span class="pill ok">${a.count}回・実績 ${a.hours.toFixed(1)}h</span>` : "";
     const proj = esc(data.projects.find((p) => p.id === t.projectId)?.name ?? "");
     const drag = sched ? ` draggable="true" data-pick="${esc(t.id)}" tabindex="0"` : "";
-    return `<li${drag} class="${picked === t.id ? "picked" : ""}"><span class="n">${i + 1}</span><span class="pj">${proj}</span><span class="t">${r.action === "chase" ? `<span class="act">${r.reasons.some((x) => x.includes("催促")) ? "催促" : "確認"}</span>` : ""}${esc(t.title)}${pill}</span><span class="why">${esc(r.reasons.join("。"))}</span>${sched ? statusButtons(t) : ""}</li>`;
+    return `<li${drag} class="${picked === t.id ? "picked" : ""}"><span class="n">${i + 1}</span><span class="pj">${proj}</span><span class="t">${r.action === "chase" ? `<span class="act">${r.reasons.some((x) => x.includes("催促")) ? "催促" : "確認"}</span>` : ""}${esc(t.title)} ${statusPill(t)}${pill}</span><span class="why">${esc(r.reasons.join("。"))}</span></li>`;
   }).join("");
   const note = sched
     ? "タスクをカレンダーへドラッグして配置します(15分刻み・長さ1時間)。配置済みの枠もドラッグで移動できます。キーボードでは、タスクを選んで日表示の空き枠を押します。"
@@ -2483,7 +2557,12 @@ function renderPrio(data, today, opts = {}) {
   return `<section class="panel prio" aria-labelledby="h-rk"><h2 id="h-rk">今日の優先</h2>${shown.length ? `<ol class="rank">${items}</ol>` : `<p class="muted">優先するタスクはありません。</p>`}<p class="note" style="margin:10px 0 0">${note}</p></section>`;
 }
 
-return { statusButtons, renderPrio };
+/** 右の列: 今日のタスク（あれば）＋今日の優先。列の直下の要素として固定表示（sticky）にするため、1 つの箱にまとめる */
+function renderSide(data, today, opts = {}) {
+  return `<div class="side">${renderTodayTasks(data, today, opts)}${renderPrio(data, today, opts)}</div>`;
+}
+
+return { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide };
 })();
 
 /* src/ui/views/gantt.js */
@@ -2691,19 +2770,22 @@ function meetingBlocks(data, d, full, g, ctx) {
     const by = m.projectBy === "manual" ? "（手動）" : m.projectBy === "rule" ? "（規則）" : "";
     const proj = full ? `<span class="mp">${pname ? `プロジェクト: ${esc(pname)}${by}` : "プロジェクト未設定"}</span>` : "";
     const confirm = full && kind === "unconfirmed" ? `<span class="bb"><button class="btn" data-confirmmtg="${esc(m.id)}">実績にする</button></span>` : "";
-    return `<div class="blk mtg ${m.skip ? "skip" : ""} ${kc} ${ctx.selMtg === m.id ? "sel" : ""}" data-mtg="${esc(m.id)}" tabindex="0" ${manual ? `draggable="true" data-dragmtg="${esc(m.id)}"` : ""} style="top:${g.tp(a)};height:${g.ht(a, b)}" title="${esc(m.title)}${m.skip ? "(参加しない)" : ""}${manual ? "" : "(予定表から取得)"}"><span class="tm">${full ? `${m.start}-${m.end}` : m.start}${mark}</span>${esc(m.title)}${proj}${confirm}${manual ? `<i class="rz" data-rzm="${esc(m.id)}" aria-label="終了時刻を変更"></i>` : ""}</div>`;
+    return `<div class="blk mtg ${m.skip ? "skip" : ""} ${kc} ${ctx.selMtg === m.id ? "sel" : ""}" data-mtg="${esc(m.id)}" tabindex="0" ${manual ? `draggable="true" data-dragmtg="${esc(m.id)}"` : ""} style="top:${g.tp(a)};height:${g.ht(a, b)}" title="${esc(m.title)}${m.skip ? "(参加しない)" : ""}${manual ? "" : "(予定表から取得)"}"><span class="tm">${esc(m.start)}-${esc(m.end)}${mark}</span>${esc(m.title)}${proj}${confirm}${manual ? `<i class="rz" data-rzm="${esc(m.id)}" aria-label="終了時刻を変更"></i>` : ""}</div>`;
   }).join("");
 }
 
 const KIND_CLS = { actual: "act", unconfirmed: "unconf", planned: "plan" };
 const KIND_JA = { act: "実績", unconf: "未確認", plan: "予定" };
+/** 日表示の枠に出す、タスクの状態の文字 */
+const STATUS_JA = { "To Do": "未着手", "In Progress": "着手中", Waiting: "待ち", Done: "完了", Cancelled: "中止" };
 
 function sessionBlocks(data, d, full, g, ctx) {
   return allSessions(data).filter((s) => s.date === d).map((s) => {
     const kind = sessionKind(s, ctx.now);
     const c = KIND_CLS[kind];
-    const confirm = (full && kind === "unconfirmed" ? `<span class="bb"><button class="btn" data-confirm="${esc(s.id)}">実績にする</button></span>` : "") + (full ? statusButtons(data.tasks.find((t) => t.id === s.taskId)) : "");
-    return `<div class="blk task ${c} ${ctx.selSess === s.id ? "sel" : ""}" draggable="true" tabindex="0" data-dragsess="${esc(s.id)}" style="top:${g.tp(toMin(s.start))};height:${g.ht(toMin(s.start), toMin(s.end))}" title="${esc(s.title)}(${KIND_JA[c]})"><span class="tm">${full ? `${s.start}-${s.end}` : s.start}${c === "act" ? " ✓" : c === "unconf" ? " 未確認" : ""}</span>${full ? `${esc(s.taskId)} ` : ""}${esc(s.title)}${confirm}<i class="rz" data-rz="${esc(s.id)}" aria-label="終了時刻を変更"></i></div>`;
+    const confirm = full && kind === "unconfirmed" ? `<span class="bb"><button class="btn" data-confirm="${esc(s.id)}">実績にする</button></span>` : "";
+    const st = full ? ` <span class="stt">${STATUS_JA[data.tasks.find((t) => t.id === s.taskId).status] ?? ""}</span>` : "";
+    return `<div class="blk task ${c} ${ctx.selSess === s.id ? "sel" : ""}" draggable="true" tabindex="0" data-dragsess="${esc(s.id)}" style="top:${g.tp(toMin(s.start))};height:${g.ht(toMin(s.start), toMin(s.end))}" title="${esc(s.title)}(${KIND_JA[c]})"><span class="tm">${esc(s.start)}-${esc(s.end)}${c === "act" ? " ✓" : c === "unconf" ? " 未確認" : ""}</span>${full ? `${esc(s.taskId)} ` : ""}${esc(s.title)}${st}${confirm}<i class="rz" data-rz="${esc(s.id)}" aria-label="終了時刻を変更"></i></div>`;
   }).join("");
 }
 
@@ -2792,14 +2874,12 @@ function renderSchedule(data, today, opts) {
   const selMtg = (data.events ?? []).find((m) => m.id === opts.selMtg && days.includes(m.date));
   const delLabel = selSess ? `「${esc(selSess.title)}」の枠を削除` : selMtg && selMtg.source === "manual" ? `会議「${esc(selMtg.title)}」を削除` : "枠や会議を選んで削除";
   const delOk = !!selSess || (selMtg && selMtg.source === "manual");
-  const pd = opts.pendingDone;
-  const doneAsk = pd ? `<div class="ask" style="max-width:none">${esc(pd.id)} の未来の予定の枠 ${pd.n} 件を解除して ${esc(pd.status)} にします。<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-doneok="${esc(pd.id)}">解除して ${esc(pd.status)} にする</button><button class="btn" data-doneno>やめる</button></div></div>` : "";
   const calOpts = { ...opts, view, date, now, selSess: selSess?.id ?? null, selMtg: selMtg?.id ?? null };
 
   const nav = `<div class="toolbar"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn" data-nav="${-step}" aria-label="前へ">←</button><button class="btn" data-nav="${step}" aria-label="次へ">→</button><button class="btn" data-sgoto>今日</button><strong style="margin-left:6px">${title}</strong></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" data-mtgadd>＋ 会議を追加</button><div class="seg" role="group" aria-label="表示"><button data-sview="week" aria-pressed="${view === "week"}">週</button><button data-sview="day" aria-pressed="${view === "day"}">日</button></div></div></div>
     <div class="summary"><span>実績 <b class="mono">${hours.toFixed(1)}時間</b></span><span>予定 <b class="mono">${planned}件</b></span>${unconf ? `<span class="pill wait">未確認 ${unconf}件（作業枠 ${unconfS}・会議 ${unconfM}）</span><button class="btn" data-confirmall>未確認をすべて実績にする</button>` : ""}<button class="btn danger" data-delsel ${delOk ? "" : "disabled"}>${delLabel}</button></div>`;
-  return `<div class="cols${opts.showPrio === false ? " one" : ""}"><section class="panel">${nav}${doneAsk}<div id="mtgslot">${meetingForm(data, { mtgDraft: opts.mtgDraft, selMtg: selMtg?.id })}</div><div id="calslot">${renderCalendar(data, today, calOpts)}</div></section>${opts.showPrio === false ? "" : renderPrio(data, today, { sched: true, picked: opts.picked })}</div>`;
+  return `<div class="cols${opts.showPrio === false ? " one" : ""}"><section class="panel">${nav}<div id="mtgslot">${meetingForm(data, { mtgDraft: opts.mtgDraft, selMtg: selMtg?.id })}</div><div id="calslot">${renderCalendar(data, today, calOpts)}</div></section>${opts.showPrio === false ? "" : renderSide(data, today, { sched: true, picked: opts.picked, pendingDone: opts.pendingDone })}</div>`;
 }
 
 
@@ -2997,6 +3077,14 @@ function renderSettings(data, today, opts = {}) {
       </tbody></table></div>
     </section>`;
 
+  const holidays = (Array.isArray(st.holidays) ? st.holidays.filter(isDate) : []).slice().sort();
+  const holidayRows = holidays.map((h) => `<tr><td class="mono" data-l="日付">${esc(h)}</td><td data-l=""><button class="btn" data-hdel="${esc(h)}" aria-label="${esc(h)} を祝日から外す">削除</button></td></tr>`).join("");
+  const holidaySec = `<section class="panel" aria-labelledby="h-hol"><h2 id="h-hol" style="margin-top:0">祝日</h2>
+      <p class="note" style="margin:0 0 10px">営業日の計算で飛ばす日です（土日は常に飛ばします）。受信箱の登録（営業日からの期限）だけが使います。変更はその場でファイルに保存されます。</p>
+      ${warnOf("holidays")}
+      <div class="tscroll"><table class="tbl edit"><tbody>${holidayRows || `<tr><td colspan="2" class="muted">祝日はありません。下の行から追加します。</td></tr>`}<tr><td data-l="日付"><input class="in" type="date" data-hnew aria-label="追加する祝日"></td><td data-l=""><button class="btn" data-hadd>＋ 追加</button></td></tr></tbody></table></div>
+    </section>`;
+
   const ruleRows = rules.map((r, i) => {
     const known = projects.some((p) => p.id === r.projectId);
     const unknown = known ? "" : `<option value="${esc(r.projectId)}" selected>（不明: ${esc(r.projectId)}）</option>`;
@@ -3021,6 +3109,7 @@ function renderSettings(data, today, opts = {}) {
 
   return `<div style="display:flex;flex-direction:column;gap:16px">
     ${basic}
+    ${holidaySec}
     <section class="panel" aria-labelledby="h-rules"><h2 id="h-rules" style="margin-top:0">キーワード規則（会議名・メールの件名に共通）</h2>
       <p class="note" style="margin:0 0 10px">件名にキーワードを含む会議を、そのプロジェクトに付けます。メールの取り込みの対象にも使います（上の規則が先に当たります）。手動で付けた会議は、規則を変えても変わりません。変更はその場でファイルに保存されます。</p>
       ${opts.ruleError ? `<p class="note err" role="alert" style="margin:0 0 10px">${esc(opts.ruleError)}</p>` : ""}
@@ -3071,8 +3160,8 @@ function sectionHtml(data, s) {
     return `<div class="ib-sec"><b>先行の対応付け</b><ul class="ib-list">${rows}</ul></div>`;
   }
   if (s.kind === "add") {
-    const rows = s.rows.map((r, i) => `<tr data-row="${i + 1}"><td class="mono">${i + 1}</td><td>${esc(r.title)}</td><td>${r.group ? esc(r.group) : "（なし）"}${r.subgroup ? ` ▸ ${esc(r.subgroup)}` : ""}</td><td class="mono">${fmtMD(r.due)}</td><td class="mono">${(r.predecessors ?? []).length ? esc(r.predecessors.join(", ")) : "—"}</td></tr>`).join("");
-    return `<div class="ib-sec"><b>タスクの登録（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>#</th><th>件名</th><th>大項目 ▸ 中項目</th><th>期限</th><th>先行</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    const rows = s.rows.map((r, i) => `<tr data-row="${i + 1}"><td class="mono">${i + 1}</td><td>${esc(r.title)}</td><td>${r.group ? esc(r.group) : "（なし）"}${r.subgroup ? ` ▸ ${esc(r.subgroup)}` : ""}</td><td class="mono">${r.businessDays ?? "—"}</td><td class="mono">${fmtMD(r.due)}</td><td class="mono">${(r.predecessors ?? []).length ? esc(r.predecessors.join(", ")) : "—"}</td></tr>`).join("");
+    return `<div class="ib-sec"><b>タスクの登録（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>#</th><th>件名</th><th>大項目 ▸ 中項目</th><th>営業日</th><th>期限</th><th>先行</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   return "";
 }
@@ -3089,7 +3178,7 @@ function detailHtml(data, r, ui) {
       <div class="ib-ctl"><label>原因<select class="in" data-ib-cause="${esc(r.id)}" aria-label="原因">${CAUSES.map((c) => `<option${c === cause ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
       <label style="flex:1 1 220px">変更履歴に残す理由<input class="in" data-ib-reason="${esc(r.id)}" value="${esc(reason)}" aria-label="変更履歴に残す理由"></label></div>
       <div class="ib-act"><button class="btn primary" data-ib-approve="${esc(r.id)}">承認して反映する</button><button class="btn" data-ib-reject="${esc(r.id)}">却下する</button></div>
-      <div class="ib-ctl"><input class="in" data-ib-reply="${esc(r.id)}" value="${esc(ui.replies?.[r.id] ?? "")}" placeholder="修正の依頼（例: A5 は 5 日にして）" aria-label="修正の依頼" style="flex:1 1 240px"><button class="btn" data-ib-replysend="${esc(r.id)}">修正を依頼する</button></div></div>`;
+      <div class="ib-ctl"><input class="in" data-ib-reply="${esc(r.id)}" value="${esc(ui.replies?.[r.id] ?? "")}" placeholder="修正の依頼（例: A5 は 5 営業日にして）" aria-label="修正の依頼" style="flex:1 1 240px"><button class="btn warm" data-ib-replysend="${esc(r.id)}">修正を依頼する</button></div></div>`;
   }
   if ((r.status === "pending" || r.status === "working") && r.thread.length > 1) {
     return `<div class="ib-card">${threadHtml(r)}</div>`;
@@ -3144,7 +3233,7 @@ return { renderInboxBar };
 
 /* src/ui/views/project.js */
 const { renderProjects } = (() => {
-// プロジェクト画面: 絞り込み × ガント／リスト、右に「今日の優先」
+// プロジェクト画面: 絞り込み × ガント／リスト、右に「今日のタスク」「今日の優先」
 
 
 
@@ -3183,8 +3272,8 @@ function renderList(data, p, today, opts) {
       <td data-l="件名"><input class="in" id="f-${esc(t.id)}-t" data-f="title" data-id="${esc(t.id)}" value="${esc(t.title)}" aria-label="${esc(t.id)} の件名"></td>
       <td data-l="状態">${opts.pendingWait === t.id
         ? `<div class="ask" style="max-width:none">待ち先を入力<input class="in" data-waitparty="${esc(t.id)}" placeholder="ベンダー・部署名" aria-label="${esc(t.id)} の待ち先"><div style="display:flex;gap:6px;margin-top:4px"><button class="btn" data-waitok="${esc(t.id)}">Waiting にする</button><button class="btn" data-waitno>やめる</button></div></div>`
-        : opts.pendingDone?.id === t.id
-        ? `<div class="ask" style="max-width:none">未来の予定の枠 ${opts.pendingDone.n} 件を解除して ${esc(opts.pendingDone.status)} にします。<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-doneok="${esc(t.id)}">解除して ${esc(opts.pendingDone.status)} にする</button><button class="btn" data-doneno>やめる</button></div></div>`
+        : opts.pendingDone?.id === t.id && !opts.todayIds?.has(t.id)
+        ? doneAskHtml(opts.pendingDone)
         : `<select class="in" data-f="status" data-id="${esc(t.id)}" aria-label="${esc(t.id)} の状態">${TASK_STATUS.map((o) => `<option ${o === t.status ? "selected" : ""}>${o}</option>`).join("")}</select>${late ? ` <span class="pill late">期限超過</span>` : ""}`}</td>
       <td data-l="開始">${preds.length ? `<span class="mono muted" title="先行タスクの期限から決まります">${fmtMD(taskStart(data, t.id))} <small>先行から</small></span>` : `<input class="in" type="date" data-f="start" data-id="${esc(t.id)}" value="${esc(t.start ?? "")}" aria-label="${esc(t.id)} の開始日">`}</td>
       <td data-l="期限"><input class="in" type="date" data-f="due" data-id="${esc(t.id)}" value="${esc(t.due)}" aria-label="${esc(t.id)} の期限"></td>
@@ -3253,13 +3342,14 @@ function renderProjects(data, today, opts = {}) {
   const gsel = names.length
     ? `<label class="gfilter">${esc(labels.group)} <select class="in sm" data-groupfilter aria-label="${esc(labels.group)}で絞り込み"><option value="all"${group === "all" ? " selected" : ""}>すべて</option>${names.map((n) => `<option value="${esc(n)}"${n === group ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></label>`
     : "";
+  const todayIds = showPrio ? new Set(todayTaskIds(data, today)) : new Set();
   const body = view === "gantt"
     ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual, group, addAt: opts.addAt })}</section>`
-    : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, group })).join("")}</div>`;
+    : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, group, todayIds })).join("")}</div>`;
   return `<div class="toolbar ptool"><div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="プロジェクトで絞り込み">${chips}${gsel}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${addBtn}<div class="seg" role="group" aria-label="表示"><button data-pview="gantt" aria-pressed="${view === "gantt"}">ガント</button><button data-pview="list" aria-pressed="${view === "list"}">リスト</button></div></div></div>
     ${opts.pendingReplan ? renderReplanPanel(data, opts.pendingReplan) : ""}
-    <div class="cols${showPrio ? "" : " one"}">${body}${showPrio ? renderPrio(data, today, { sched: false }) : ""}</div>`;
+    <div class="cols${showPrio ? "" : " one"}">${body}${showPrio ? renderSide(data, today, { sched: false, pendingDone: opts.pendingDone }) : ""}</div>`;
 }
 
 return { renderProjects };
@@ -3457,10 +3547,11 @@ function renderBody() {
 }
 
 function render() {
+  hideTip();
   const c = clock();
   $("todaylabel").textContent = `${c.date.replace(/-/g, "/")}(${wdJa(c.date)})`;
   document.querySelectorAll("nav [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.id === "tab-" + S.screen)));
-  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="prio" aria-pressed="${S.prefs.showPrio}" title="画面右の「今日の優先」を出したり隠したりします">今日の優先</button><button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
+  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="prio" aria-pressed="${S.prefs.showPrio}" title="画面右の「今日のタスク」「今日の優先」を出したり隠したりします">今日の優先</button><button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
   renderBar();
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
@@ -3501,6 +3592,7 @@ function focusSelector(el) {
   if (d.rkw !== undefined) return `[data-rkw][data-ri="${CSS.escape(d.ri)}"]`;
   if (d.rpj !== undefined) return `[data-rpj][data-ri="${CSS.escape(d.ri)}"]`;
   if (d.rnew !== undefined) return "[data-rnew]";
+  if (d.hnew !== undefined) return "[data-hnew]";
   if (d.rnewpj !== undefined) return "[data-rnewpj]";
   if (d.waitparty) return q("data-waitparty", d.waitparty);
   if (d.rp) return q("data-rp", d.rp);
@@ -3694,6 +3786,14 @@ function addRule() {
   apply(edit, "規則を保存しました（同じキーワードは置き換えます）");
 }
 
+/** 設定タブの祝日の追加。エラーは通知だけにして、入力欄は描き直さない（打った日付を残す） */
+function addHolidayFromInput() {
+  const date = view.querySelector("[data-hnew]")?.value ?? "";
+  const edit = (d) => addHoliday(d, date);
+  try { edit(S.data); } catch (e) { toast(e.message); return; }
+  apply(edit, "祝日を追加しました");
+}
+
 /** 見出し行の「＋」の大項目・中項目（data-ag / data-asg）を、追加するタスクの置き場にする */
 const placeOf = (el) => ({ group: el.dataset.ag ?? "", subgroup: el.dataset.asg ?? "" });
 
@@ -3755,6 +3855,7 @@ document.querySelector("nav").addEventListener("click", (e) => {
   const b = e.target.closest("[role=tab]");
   if (!b) return;
   S.screen = b.id.slice(4);
+  S.pendingDone = null;
   S.ruleError = "";
   clearSel();
   S.resetScroll = true;
@@ -3762,7 +3863,7 @@ document.querySelector("nav").addEventListener("click", (e) => {
 });
 $("filebar").addEventListener("click", async (e) => {
   const pf = e.target.closest("[data-pref]");
-  if (pf) { const k = pf.dataset.pref === "prio" ? "showPrio" : "showActual"; S.prefs = { ...S.prefs, [k]: !S.prefs[k] }; savePrefs(S.prefs); render(); return; }
+  if (pf) { S.pendingDone = null; const k = pf.dataset.pref === "prio" ? "showPrio" : "showActual"; S.prefs = { ...S.prefs, [k]: !S.prefs[k] }; savePrefs(S.prefs); render(); return; }
   if (e.target.closest("[data-refresh]")) {
     await saveChain;
     if (S.saveFailed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }
@@ -3802,6 +3903,9 @@ view.addEventListener("click", (e) => {
   const now = clock();
 
   if (q("[data-radd]")) { addRule(); return; }
+  if (q("[data-hadd]")) { addHolidayFromInput(); return; }
+  const hdel = q("[data-hdel]");
+  if (hdel) { apply((d) => removeHoliday(d, hdel.dataset.hdel), "祝日を外しました"); return; }
   const rmove = q("[data-rmove]");
   if (rmove) {
     const [kw, delta] = [rmove.dataset.rmove.slice(0, rmove.dataset.rmove.lastIndexOf("|")), Number(rmove.dataset.rmove.slice(rmove.dataset.rmove.lastIndexOf("|") + 1))];
@@ -4100,6 +4204,16 @@ function planDrop(dz, clientY) {
   return { st, end: st + 60, error: r.error, warning: r.warning, next: asEdit((d) => addSession(d, did, put, now)), msg: `${S.data.tasks.find((t) => t.id === did).title} を ${fmtMD(date)} ${hm(st)} に${kind === "actual" ? "実績として記録" : "予定として配置"}しました` };
 }
 
+/** ドラッグ中の時刻（10:00–11:00）を、ポインタの近くに出す。終わり・Esc・描き直しで消す */
+function showTip(text, x, y) {
+  let tip = document.getElementById("dragtip");
+  if (!tip) { tip = document.createElement("div"); tip.id = "dragtip"; tip.setAttribute("aria-hidden", "true"); document.body.appendChild(tip); }
+  tip.textContent = text;
+  tip.style.left = `${x + 14}px`;
+  tip.style.top = `${y + 14}px`;
+}
+function hideTip() { document.getElementById("dragtip")?.remove(); }
+
 view.addEventListener("dragstart", (e) => {
   const li = e.target.closest("[data-pick]"), bl = e.target.closest("[data-dragsess]"), mg = e.target.closest("[data-dragmtg]");
   drag = li ? { kind: "task", id: li.dataset.pick } : bl ? { kind: "sess", id: bl.dataset.dragsess } : mg ? { kind: "mtg", id: mg.dataset.dragmtg } : null;
@@ -4117,6 +4231,7 @@ view.addEventListener("dragover", (e) => {
   ghost.style.height = g.ht(p.st, p.end);
   ghost.classList.toggle("ng", !!p.error);
   ghost.textContent = p.error ?? `${hm(p.st)}-${hm(p.end)}${p.warning ? `(${p.warning})` : ""}`;
+  if (p.error) hideTip(); else showTip(`${hm(p.st)}–${hm(p.end)}`, e.clientX, e.clientY);
 });
 view.addEventListener("drop", (e) => {
   const dz = e.target.closest(".dz");
@@ -4125,11 +4240,12 @@ view.addEventListener("drop", (e) => {
   const p = planDrop(dz, e.clientY);
   drag = null;
   ghost?.remove(); ghost = null;
+  hideTip();
   if (p.error) { toast(p.error); return; }
   S.picked = null;
   apply((d) => p.next(d), `${p.msg}${p.warning ? `(${p.warning})` : ""}`);
 });
-view.addEventListener("dragend", () => { drag = null; ghost?.remove(); ghost = null; });
+view.addEventListener("dragend", () => { drag = null; ghost?.remove(); ghost = null; hideTip(); });
 
 /* ---------- 枠・手入力の会議の下端ドラッグ(終了時刻を変える) ---------- */
 view.addEventListener("mousedown", (e) => {
@@ -4145,10 +4261,12 @@ view.addEventListener("mousedown", (e) => {
   const move = (ev) => {
     end = Math.max(a0 + 15, Math.min(g.h0 + g.span, Math.round(minAtEl(ev.clientY, blk.parentNode) / 15) * 15));
     blk.style.height = g.ht(a0, end);
+    showTip(`${hm(a0)}–${hm(end)}`, ev.clientX, ev.clientY);
   };
   const up = () => {
     document.removeEventListener("mousemove", move);
     document.removeEventListener("mouseup", up);
+    hideTip();
     blk.draggable = true;
     if (end == null) return;
     const e2 = toHHMM(end);
@@ -4244,6 +4362,7 @@ view.addEventListener("keydown", (e) => {
   // 日本語入力の変換確定の Enter(isComposing)では追加しない
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-gadd]")) { e.preventDefault(); submitGAdd(e.target); return; }
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-rnew]")) { e.preventDefault(); addRule(); return; }
+  if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-hnew]")) { e.preventDefault(); addHolidayFromInput(); return; }
   if (e.key === "Escape" && e.target.matches("[data-gadd]")) { S.addAt = null; render(); return; }
   if (e.key === "Enter" && !e.isComposing && e.target.matches("[data-waitparty]")) { e.preventDefault(); submitWait(e.target.dataset.waitparty); return; }
   if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-pick]")) { e.preventDefault(); e.target.click(); }

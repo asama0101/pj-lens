@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { validate } from "../plugins/pj-lens/src/core/schema.js";
 import {
   updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveTaskDates, moveProjectDates, moveMilestone,
-  addTaskQuick, predecessorCandidates, addTask, deleteTask, addProject, deleteProject,
+  addTaskQuick, predecessorCandidates, addTask, deleteTask, addProject, deleteProject, addHoliday, removeHoliday,
 } from "../plugins/pj-lens/src/ui/edit.js";
 
 const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
@@ -224,4 +224,27 @@ test("updateSettings: 1 項目だけの patch は他の項目を保つ。labels 
   assert.deepEqual(updateSettings(d, { waitingLongDays: 5 }).settings, { workday: { start: "08:30", end: "17:30" }, waitingLongDays: 5, reportShowMeetingTitles: true });
   assert.deepEqual(updateSettings({ ...d, settings: { labels: "xy" } }, { labels: { group: "G" } }).settings.labels, { group: "G" });
   assert.ok(!("labels" in updateSettings({ ...d, settings: { labels: ["a"] } }, { labels: { group: "" } }).settings));
+});
+
+test("addHoliday・removeHoliday: 昇順・重複なしで保ち、他の設定を残す。日付でないものは例外。空になったらキーを消す", () => {
+  let d = { ...load(), settings: { waitingLongDays: 3 } };
+  d = addHoliday(d, "2026-11-23");
+  d = addHoliday(d, "2026-10-26");
+  d = addHoliday(d, "2026-11-23");
+  assert.deepEqual(d.settings, { waitingLongDays: 3, holidays: ["2026-10-26", "2026-11-23"] });
+  assert.throws(() => addHoliday(d, "x"), /日付/);
+  assert.throws(() => addHoliday(d, "2026-02-30"), /日付/);
+  assert.deepEqual(removeHoliday(d, "2026-10-26").settings.holidays, ["2026-11-23"]);
+  assert.deepEqual(removeHoliday(d, "2026-01-01").settings.holidays, ["2026-10-26", "2026-11-23"]);
+  assert.deepEqual(removeHoliday(removeHoliday(d, "2026-10-26"), "2026-11-23").settings, { waitingLongDays: 3 });
+  ok(d);
+});
+
+test("addHoliday: holidays が配列でない壊れたファイルでも、追加で正しい配列に直る", () => {
+  assert.deepEqual(addHoliday({ ...load(), settings: { holidays: "x" } }, "2026-10-26").settings.holidays, ["2026-10-26"]);
+});
+
+test("addHoliday: 既存の日付でない要素は消さない（手で書いた値を黙って捨てない）", () => {
+  const d = addHoliday({ ...load(), settings: { holidays: ["2026/11/23", "2026-12-01"] } }, "2026-11-03");
+  assert.deepEqual(d.settings.holidays, ["2026-11-03", "2026-12-01", "2026/11/23"]);
 });

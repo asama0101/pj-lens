@@ -28,7 +28,7 @@ header.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;justify-
 header.top{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0;margin-block:-8px 0}
 /* プロジェクト画面のフィルタ行は、ヘッダーの下に固定する。高さは --th（app.js が測る） */
 .toolbar.ptool{position:sticky;top:var(--hh,0px);z-index:9;background:var(--bg);padding:6px 0 10px;margin-bottom:0}
-.cols>.prio{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + 8px);align-self:start;max-height:calc(100vh - var(--hh,0px) - var(--th,0px) - 24px);overflow-y:auto}
+.cols>.side{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + 8px);align-self:start;max-height:calc(100vh - var(--hh,0px) - var(--th,0px) - 24px);overflow-y:auto;display:flex;flex-direction:column;gap:16px}
 h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.01em}
 .today{color:var(--muted);font-size:13px}
 nav[role=tablist]{display:flex;gap:2px;background:var(--line-soft);padding:3px;border-radius:8px}
@@ -82,6 +82,13 @@ h2{font-size:14px;margin:0 0 10px;font-weight:700}
 .rank .why{grid-column:2;color:var(--muted);font-size:12px;line-height:1.5}
 .rank .act{display:inline-block;font-size:11px;padding:0 6px;border-radius:4px;background:var(--warn-soft);color:var(--warn);margin-right:6px}
 .rank li[data-pick]{cursor:pointer;border-radius:6px}
+.rank .t .pill{vertical-align:1px}
+.rank .bb{display:flex;flex-direction:row;gap:6px;flex-wrap:wrap}
+.rank .bb .btn{padding:0 10px;font-size:12px}
+.rank.tl li{grid-template-columns:minmax(0,1fr)}
+.rank.tl .pj,.rank.tl .why,.rank.tl .bb,.rank.tl .ask{grid-column:1}
+.rank li.closed{opacity:.55}
+.blk .stt{font-size:11px;opacity:.85;margin-left:4px}
 .rank li.picked{background:var(--accent-soft);outline:2px solid var(--accent);outline-offset:-2px}
 /* テーブル */
 .tbl{width:100%;border-collapse:collapse;font-size:13px}
@@ -109,6 +116,7 @@ h2{font-size:14px;margin:0 0 10px;font-weight:700}
 .blk.mtg{background:var(--meeting);color:var(--meeting-ink)}
 .blk.task{background:var(--accent-soft);color:var(--ink);border:1px solid var(--accent);border-left-width:4px}
 .blk .tm{font-family:var(--f-mono);font-size:10px;opacity:.8;display:block}
+.week .blk .tm{white-space:nowrap}
 button.free{position:absolute;left:2px;right:2px;border:1px dashed var(--ok);background:var(--free);border-radius:5px;color:var(--ok);font:inherit;font-size:12px;cursor:default;padding:0 6px;text-align:left}
 body.picking button.free{cursor:copy}
 body.picking button.free:hover{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
@@ -186,6 +194,7 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .ask{font-size:12px;color:var(--bad);max-width:190px}
 .btn.danger{border-color:var(--bad);color:var(--bad)}
 .ghost{position:absolute;left:2px;right:2px;border:2px dashed var(--accent);background:var(--accent-soft);border-radius:5px;font-size:12px;padding:2px 6px;color:var(--accent);pointer-events:none;z-index:5}
+#dragtip{position:fixed;z-index:15;background:var(--ink);color:var(--bg);padding:3px 8px;border-radius:6px;font-size:12px;font-family:var(--f-mono);pointer-events:none;white-space:nowrap}
 .ghost.ng{border-color:var(--bad);background:var(--bad-soft);color:var(--bad)}
 .rank li[draggable=true]{cursor:grab}
 .blk.task[draggable=true]{cursor:grab}
@@ -355,6 +364,8 @@ tr.hl td{transition:background .3s}
 .rptpanel label.chk{display:inline-flex;align-items:center;gap:6px;font-size:13px}
 .rpt-name{margin:0;font-size:13px}
 .note.err{color:var(--bad)}
+.btn.warm{background:var(--warn-soft);border-color:var(--warn);color:var(--ink);font-weight:700}
+.btn.warm:hover{border-color:var(--warn);color:var(--ink);filter:brightness(.95)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
 .g-row.g-grp{background:var(--line-soft);min-height:26px;align-items:center}
 .g-row.g-grp .g-label{background:var(--line-soft)}

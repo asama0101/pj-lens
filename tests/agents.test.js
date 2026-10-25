@@ -68,7 +68,7 @@ test("intake(mail): 期間の既定は『前回処理した日から』（その
 
 test("intake(文章): 書き込みは受信箱の submit --working → propose → approve。仮日程・行番号で直す手順があり、直接の追記と重要度の推定は無い", () => {
   const t = read("agents/intake.md");
-  for (const w of ["tools/inbox.js", "submit", "--working", "propose", "approve", "行番号", "仮", "days", "もう一度"]) assert.ok(t.includes(w), w);
+  for (const w of ["tools/inbox.js", "submit", "--working", "propose", "approve", "行番号", "仮", "businessDays", "もう一度"]) assert.ok(t.includes(w), w);
   assert.doesNotMatch(t, /承認後に追記/);
   assert.match(t, /重要度.*入れない/);
   assert.match(t, /待ち先.*報告/);
@@ -80,9 +80,9 @@ test("intake(wbs・mail): 列の対応と変更案を一緒に見せて承認 1 
   assert.match(t, /同じタスク.*最新/);
 });
 
-test("inbox: addTask は days（due と排他）で日数を書き、期限が無いときは聞き返さず仮で置く。行番号で直す", () => {
+test("inbox: addTask は businessDays（due と排他）で営業日を書き、期限が無いときは聞き返さず仮で置く。行番号で直す", () => {
   const t = read("agents/inbox.md");
-  for (const w of ["days", "行番号", "仮", "もう一度"]) assert.ok(t.includes(w), w);
+  for (const w of ["businessDays", "行番号", "仮", "もう一度"]) assert.ok(t.includes(w), w);
   assert.doesNotMatch(t, /期限が書かれていない/);
 });
 

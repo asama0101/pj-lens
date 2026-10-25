@@ -218,3 +218,12 @@ test("settings: null は未設定として扱い（読む側は既定で動く�
   const [w] = settingsWarn(withSettings({ waitingLongDays: 0 }), "waitingLongDays");
   assert.ok(!w.includes("既定の 7 で動きます") && w.includes("遅延バッジ"), w);
 });
+
+test("settings.holidays: 日付の配列でないと注意（エラーにしない）。正しい配列・未設定・null は出ない", () => {
+  for (const value of ["2026-10-26", ["x"], ["2026-02-30"], [1], {}]) {
+    const d = withSettings({ holidays: value });
+    assert.equal(settingsWarn(d, "holidays").length, 1, JSON.stringify(value));
+    assert.deepEqual(v(d).errors, [], JSON.stringify(value));
+  }
+  for (const value of [["2026-10-26"], [], null]) assert.equal(settingsWarn(withSettings({ holidays: value }), "holidays").length, 0, JSON.stringify(value));
+});

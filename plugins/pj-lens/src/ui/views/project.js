@@ -1,4 +1,4 @@
-// プロジェクト画面: 絞り込み × ガント／リスト、右に「今日の優先」
+// プロジェクト画面: 絞り込み × ガント／リスト、右に「今日のタスク」「今日の優先」
 import { projectProgress, projectFlags, taskFlags, taskStart } from "../../core/metrics.js";
 import { taskActual } from "../../core/sessions.js";
 import { projectHours } from "../../core/workload.js";
@@ -8,7 +8,7 @@ import { predecessorCandidates } from "../edit.js";
 import { groupLabels, groupNames, groupSections } from "../../core/groups.js";
 import { renderGantt } from "./gantt.js";
 import { renderReplanPanel } from "./replan.js";
-import { renderPrio } from "./prio.js";
+import { renderSide, todayTaskIds, doneAskHtml } from "./prio.js";
 
 const actText = (data, id) => {
   const a = taskActual(data, id);
@@ -37,8 +37,8 @@ function renderList(data, p, today, opts) {
       <td data-l="件名"><input class="in" id="f-${esc(t.id)}-t" data-f="title" data-id="${esc(t.id)}" value="${esc(t.title)}" aria-label="${esc(t.id)} の件名"></td>
       <td data-l="状態">${opts.pendingWait === t.id
         ? `<div class="ask" style="max-width:none">待ち先を入力<input class="in" data-waitparty="${esc(t.id)}" placeholder="ベンダー・部署名" aria-label="${esc(t.id)} の待ち先"><div style="display:flex;gap:6px;margin-top:4px"><button class="btn" data-waitok="${esc(t.id)}">Waiting にする</button><button class="btn" data-waitno>やめる</button></div></div>`
-        : opts.pendingDone?.id === t.id
-        ? `<div class="ask" style="max-width:none">未来の予定の枠 ${opts.pendingDone.n} 件を解除して ${esc(opts.pendingDone.status)} にします。<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-doneok="${esc(t.id)}">解除して ${esc(opts.pendingDone.status)} にする</button><button class="btn" data-doneno>やめる</button></div></div>`
+        : opts.pendingDone?.id === t.id && !opts.todayIds?.has(t.id)
+        ? doneAskHtml(opts.pendingDone)
         : `<select class="in" data-f="status" data-id="${esc(t.id)}" aria-label="${esc(t.id)} の状態">${TASK_STATUS.map((o) => `<option ${o === t.status ? "selected" : ""}>${o}</option>`).join("")}</select>${late ? ` <span class="pill late">期限超過</span>` : ""}`}</td>
       <td data-l="開始">${preds.length ? `<span class="mono muted" title="先行タスクの期限から決まります">${fmtMD(taskStart(data, t.id))} <small>先行から</small></span>` : `<input class="in" type="date" data-f="start" data-id="${esc(t.id)}" value="${esc(t.start ?? "")}" aria-label="${esc(t.id)} の開始日">`}</td>
       <td data-l="期限"><input class="in" type="date" data-f="due" data-id="${esc(t.id)}" value="${esc(t.due)}" aria-label="${esc(t.id)} の期限"></td>
@@ -107,11 +107,12 @@ export function renderProjects(data, today, opts = {}) {
   const gsel = names.length
     ? `<label class="gfilter">${esc(labels.group)} <select class="in sm" data-groupfilter aria-label="${esc(labels.group)}で絞り込み"><option value="all"${group === "all" ? " selected" : ""}>すべて</option>${names.map((n) => `<option value="${esc(n)}"${n === group ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></label>`
     : "";
+  const todayIds = showPrio ? new Set(todayTaskIds(data, today)) : new Set();
   const body = view === "gantt"
     ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual, group, addAt: opts.addAt })}</section>`
-    : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, group })).join("")}</div>`;
+    : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, group, todayIds })).join("")}</div>`;
   return `<div class="toolbar ptool"><div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="プロジェクトで絞り込み">${chips}${gsel}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${addBtn}<div class="seg" role="group" aria-label="表示"><button data-pview="gantt" aria-pressed="${view === "gantt"}">ガント</button><button data-pview="list" aria-pressed="${view === "list"}">リスト</button></div></div></div>
     ${opts.pendingReplan ? renderReplanPanel(data, opts.pendingReplan) : ""}
-    <div class="cols${showPrio ? "" : " one"}">${body}${showPrio ? renderPrio(data, today, { sched: false }) : ""}</div>`;
+    <div class="cols${showPrio ? "" : " one"}">${body}${showPrio ? renderSide(data, today, { sched: false, pendingDone: opts.pendingDone }) : ""}</div>`;
 }

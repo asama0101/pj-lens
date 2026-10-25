@@ -143,6 +143,9 @@ export function validate(data, now = nowLocal()) {
   if (st.reportShowMeetingTitles != null && typeof st.reportShowMeetingTitles !== "boolean") {
     warn("settings.reportShowMeetingTitles: true か false にしてください（既定の false で動きます）");
   }
+  if (st.holidays != null && !(Array.isArray(st.holidays) && st.holidays.every(isDate))) {
+    warn("settings.holidays: YYYY-MM-DD の配列にしてください（直すまで、営業日の計算で例外になります）");
+  }
   (st.projectRules ?? []).forEach((r, i) => {
     if (!String(r?.keyword ?? "").trim()) err(`settings.projectRules[${i}]: keyword が空です`);
     if (!projectIds.has(r?.projectId)) err(`settings.projectRules[${i}]: 不明な projectId "${r?.projectId}"`);

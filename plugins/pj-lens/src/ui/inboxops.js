@@ -45,15 +45,16 @@ function simulate(data, ops, today) {
   const resolve = (token) => refs.get(token) ?? token;
 
   // ① addTask（まず全部足し、先行は、足し終えてから結ぶ。ref で別の addTask を指せるように）
-  // days 指定の期限は、先行（既存のタスク、または別の addTask の ref）が決まってから計算する。ops の書く順には依存しない
+  // businessDays 指定の期限は、先行（既存のタスク、または別の addTask の ref）が決まってから計算する。ops の書く順には依存しない
   const adds = ops.filter((o) => o.op === "addTask");
-  const dueOf = new Map(); // ref → 計算した期限（days 指定のもの）
-  const pending = adds.filter((o) => o.days !== undefined);
+  const dueOf = new Map(); // ref → 計算した期限（businessDays 指定のもの）
+  const pending = adds.filter((o) => o.businessDays !== undefined);
   for (const o of adds) {
     const ref = String(o.ref ?? "").trim();
     if (!ref) throw new Error("addTask には ref が必要です");
-    const hasDue = o.due !== undefined, hasDays = o.days !== undefined;
-    if (hasDue === hasDays) throw new Error(`addTask（${ref}）には due か days のどちらか一方が必要です`);
+    if (o.days !== undefined) throw new Error(`addTask（${ref}）の days は businessDays（営業日）に変わりました`);
+    const hasDue = o.due !== undefined, hasDays = o.businessDays !== undefined;
+    if (hasDue === hasDays) throw new Error(`addTask（${ref}）には due か businessDays のどちらか一方が必要です`);
   }
   const refDue = new Map(adds.filter((o) => o.due !== undefined).map((o) => [String(o.ref).trim(), o.due]));
   while (pending.length) {
@@ -63,17 +64,17 @@ function simulate(data, ops, today) {
       const open = (o.predecessors ?? []).map((p) => (refDue.has(p) ? { due: refDue.get(p), status: "To Do" } : need(p))).filter((t) => !closed(t));
       const base = open.map((t) => t.due).reduce(max, "") || today;
       const ref = String(o.ref).trim();
-      dueOf.set(ref, dueAfter(base, o.days));
+      dueOf.set(ref, dueAfter(base, o.businessDays, w.settings?.holidays ?? []));
       refDue.set(ref, dueOf.get(ref));
       pending.splice(pending.indexOf(o), 1);
     }
   }
-  const planned = new Map(); // ref → days を due に固定した op
+  const planned = new Map(); // ref → businessDays を due に固定した op
   for (const o of adds) {
     const ref = String(o.ref ?? "").trim();
     if (refs.has(ref)) throw new Error(`ref "${ref}" が重複しています`);
     const due = o.due ?? dueOf.get(ref);
-    planned.set(o, o.days === undefined ? o : (({ days, ...rest }) => ({ ...rest, due }))(o));
+    planned.set(o, o.businessDays === undefined ? o : (({ businessDays, ...rest }) => ({ ...rest, due }))(o));
     // 開始日: 書かれていればそのとおり。先行があるタスクは入れない（先行から決まる。入れると validate の注意が出る）。なければ今日（期限が過去なら入れない）
     const start = o.start ?? ((o.predecessors ?? []).length || due < today ? null : today);
     w = addTask(w, { projectId: o.projectId, title: o.title, due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
@@ -166,12 +167,12 @@ function simulate(data, ops, today) {
   const baseTasks = {};
   for (const id of baseIds) { const t = before.get(id); baseTasks[id] = { due: t.due, predecessors: [...(t.predecessors ?? [])], status: t.status }; projects.add(t.projectId); }
 
-  // 先行が、その先行の先行に合わせて引き上げられると、days の期限も引き上げられ、日数が吸収される。表の日数と食い違うので知らせる
-  for (const o of adds.filter((x) => x.days !== undefined)) {
+  // 先行が、その先行の先行に合わせて引き上げられると、businessDays の期限も引き上げられ、営業日が吸収される。表の営業日と食い違うので知らせる
+  for (const o of adds.filter((x) => x.businessDays !== undefined)) {
     const ref = String(o.ref).trim();
-    if (T(refs.get(ref)).due !== dueOf.get(ref)) warnings.push(`登録するタスク ${ref}（${o.title}）の日数 ${o.days} は、先行の期限が引き上げられたため反映されていません（期限は ${T(refs.get(ref)).due}）`);
+    if (T(refs.get(ref)).due !== dueOf.get(ref)) warnings.push(`登録するタスク ${ref}（${o.title}）の営業日 ${o.businessDays} は、先行の期限が引き上げられたため反映されていません（期限は ${T(refs.get(ref)).due}）`);
   }
-  const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, days: o.days ?? null, start: t.start ?? null, predecessors: o.predecessors ?? [] }; });
+  const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, businessDays: o.businessDays ?? null, start: t.start ?? null, predecessors: o.predecessors ?? [] }; });
   const sections = [];
   if (addRows.length) sections.push({ kind: "add", rows: addRows });
   if (predRows.length) sections.push({ kind: "pred", rows: predRows });
