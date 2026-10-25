@@ -40,7 +40,9 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 - ガントの「完了を隠す」は、Done のタスクの行に加えて、複数のプロジェクトを出しているときは、完了したプロジェクト（状態が「完了」、またはタスクが全部 Done）も隠す。1 つを選んでいるときは隠さない。
 - ガント・リストは、(大項目 ▸ 中項目) ごとに区切り行を出す。並びは、大項目の登場順、その中は中項目の登場順で、未設定は末尾の「（なし）」。表示だけの並べ替えで、保存ファイルの並びは変わらない。見出しの呼び名は `settings.labels` で変える。
 - 日程変更の確認パネルは、期限を変えて、後続が動く・プロジェクト期限を超える・前倒しで詰められる後続がある、のいずれかのときに出る。反映するときは、原因（ベンダー／社内／自分／その他）と理由を入れる。
-- スケジュール画面の「今日の優先」の各行と日表示の作業枠に、「着手」（To Do・Waiting のとき。In Progress にする）と「完了」（Done・Cancelled 以外。Done にする）のボタンがある。リストの状態の select と同じ関数（`app.js` の `changeStatus`）を通るので、未来の予定枠があるときの確認（スケジュール画面の中に出る）や、Waiting の待ち先の規則も同じ。
+- 「今日のタスク」（`views/prio.js` の `renderTodayTasks`。今日の日付に作業枠があるタスクを枠から導く。保存しない）が、プロジェクト画面・スケジュール画面の右の列（`renderSide`。`showPrio` に従う）で「今日の優先」の上に出る。行に状態の pill と、「着手」（To Do・Waiting のとき。In Progress にする）・「完了」（Done・Cancelled 以外。Done にする）のボタンがある。Done・Cancelled は薄く、ボタン無しで末尾。今日のタスクに入ったタスクは、`renderPrio` が一覧から除く（`rankTasks` は変えない）。ボタンはリストの状態の select と同じ関数（`app.js` の `changeStatus`）を通る。未来の予定枠があるときの確認（`doneAskHtml`）は、対象が今日のタスクにいればパネルの行に、いなければ（リストの select から）リストの行に出る。日表示の作業枠は、ボタンの代わりにタスクの状態の文字を出す。
+- 枠・会議のドラッグと下端ドラッグの間、`app.js` の `showTip` がポインタの近くに「開始–終了」を出す（`hideTip` が drop・dragend・離したとき・描き直しで消す）。週表示のブロックも開始–終了を出す。
+- 設定タブの「祝日」の節は、`settings.holidays`（`YYYY-MM-DD` の配列）を編集する（`addHoliday`・`removeHoliday`。昇順・重複なし）。`validate` は配列でないとき注意（warning）にする。
 - 設定タブの「基本の設定」は、勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定を、その場で保存する（`updateSettings`）。勤務時間は開始・終了を組で保存する。形が違う値は `validate` が注意（warning）にし、設定タブは既定値を入力欄に出して横に注意を出す（読む側に fallback は無く、勤務時間が `HH:MM` でないとスケジュール画面は動かない）。キーワード規則は↑↓で並べ替えられる（`moveProjectRule`。上の規則が先に当たるため、並べ替えたら会議へ付け直す）。
 - スケジュールの枠は、予定（青緑）・実績（緑）・未確認（橙の点線）。会議は紫。枠は実績時間の記録だけで、タスクの状態は変えない。予定表から取得した会議は、「参加しない」とプロジェクトだけ変更できる。
 - 会議のプロジェクトは、規則（件名のキーワード → プロジェクト）で自動に付き（`projectBy` が `rule`）、手動で付けたもの（`manual`）は規則を変えても動かない。
@@ -85,7 +87,7 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 
 | キー | 内容 |
 |---|---|
-| `settings` | 勤務時間（`workday`。既定 09:00〜18:00）、待ちを長いとみなす日数（`waitingLongDays`）、レポートに会議の件名を載せるか（`reportShowMeetingTitles`）、会議のプロジェクト規則（`projectRules`＝`keyword`、`projectId`）、見出しの呼び名（`labels`＝`group`、`subgroup`）、WBS の列の対応（`wbsMappings`＝プロジェクト ID → 項目 → Excel の列見出し）、WBS の取り込み記録（`wbsImports`＝プロジェクト ID → `file`・`at`・`added`・`updated`。最後の 1 件。`wbs-apply` が書く） |
+| `settings` | 祝日（`holidays`＝`YYYY-MM-DD` の配列。営業日の計算で飛ばす）、勤務時間（`workday`。既定 09:00〜18:00）、待ちを長いとみなす日数（`waitingLongDays`）、レポートに会議の件名を載せるか（`reportShowMeetingTitles`）、会議のプロジェクト規則（`projectRules`＝`keyword`、`projectId`）、見出しの呼び名（`labels`＝`group`、`subgroup`）、WBS の列の対応（`wbsMappings`＝プロジェクト ID → 項目 → Excel の列見出し）、WBS の取り込み記録（`wbsImports`＝プロジェクト ID → `file`・`at`・`added`・`updated`。最後の 1 件。`wbs-apply` が書く） |
 | `projects` | `id`、`name`、`type`（増設／更改／改善／不具合対処／その他）、`status`、`start`、`due`、`milestones`（`name`、`date`） |
 | `tasks` | `id`、`projectId`、`title`、`due`、`start`、`status`、`memo`、`predecessors`、`waitingOn`、`importance`（`high`／`mid`／`low`／`null`）、`doneAt`、`sessions`（作業枠。`id`、`date`、`start`、`end`、`kind`＝`planned`／`actual`）、`group`（大項目）、`subgroup`（中項目）、`wbsKey`（WBS 上の項目名の連結。再取り込みの照合用）。`waitingOn` は `party`、`since`。大項目・中項目は表示と絞り込み用の文字列で、親の期限や進捗は集計しない |
 | `events` | 会議。`id`、`date`、`start`、`end`、`title`、`source`（`manual`／`mcp`）、`skip`、`externalId`、`projectId`、`projectBy`（`rule`／`manual`）、`confirmed`（過ぎたあと確認すると稼働に数える） |
@@ -96,7 +98,7 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 
 どれも「読み取り → 変更案の表 → 利用者の承認 → 書き込み」の順で、承認の前はタスクを変えない（文章の取り込みは、承認前に `data.json` の受信箱へ依頼と提案を書くが、タスクは承認後の `approve` まで変わらない）。
 
-- 文章（メール・議事録・メモ）の取り込みは、書き込みを受信箱の経路に乗せる（`submit --working` → `propose` → `approve`。「HTML からの依頼（inbox）」を参照）。期限が書かれていないタスクは、Claude が先行と `days` で仮に置き、日付の足し算は `propose` が行う。行番号で直して再提案し、承認後に登録する。重要度は受信箱の登録が受けないので入れない。待ち先（`Waiting`）は、取り込みでは設定せず、報告だけする。
+- 文章（メール・議事録・メモ）の取り込みは、書き込みを受信箱の経路に乗せる（`submit --working` → `propose` → `approve`。「HTML からの依頼（inbox）」を参照）。期限が書かれていないタスクは、Claude が先行と `businessDays` で仮に置き、日付の足し算は `propose` が行う。行番号で直して再提案し、承認後に登録する。重要度は受信箱の登録が受けないので入れない。待ち先（`Waiting`）は、取り込みでは設定せず、報告だけする。
 - WBS の取り込みは、列の対応と変更案を一緒に見せて承認を 1 回にする（承認後に `mapping-set` → `wbs-apply`）。進捗メールは、同じタスクの報告が複数通あれば最新の 1 通だけを `items` に入れ、古いものは `taskId: null`（処理済みにするだけ）にする。
 
 ### Excel の WBS
@@ -121,7 +123,7 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 - 変更履歴には、期限を動かす操作ごとに 1 件（日数・理由つき）と、先行・登録をまとめた 1 件（`source` が `inbox`。画面の「日程変更の履歴」には出ない）が残る。
 - 後続の動き: 先行を足したとき、後続の期限が先行より前なら、先行の期限と同じ日まで動かす（`replan` と同じ規則）。操作は、登録→先行→期限の順に当てる。開始日のあるタスクに先行を足すと、開始日は先行から決まるので外す（提案の注意に出る）。
 - 提案のあとにデータが変わったとき: 反映せず、依頼が「失敗」になる。「もう一度提案してもらう」で作り直す。先に Claude Code の画面で承認・却下した依頼を、HTML でもう一度承認しても、何も変わらない（二重には反映されない）。
-- 登録（`addTask`）の期限は、`due`（日付）か `days`（暦日の整数）のどちらか一方。`days` は、完了していない先行の期限の最大値（無ければ今日）に足した日付（`core/dates.js` の `dueAfter`）。`propose` が `days` を `due` に置き換えて提案の `ops` に保存するので、承認が翌日以降でも `stale` にならない（提案の表の `add` 行には `days` が残る）。HTML の提案カードの登録の表には、行番号（`data-row`）が出る。
+- 登録（`addTask`）の期限は、`due`（日付）か `businessDays`（営業日の整数）のどちらか一方。`businessDays` は、完了していない先行の期限の最大値（無ければ今日）から数えて、土日と `settings.holidays` を除いた日数後の日付（`core/dates.js` の `dueAfter(base, businessDays, holidays)`）。営業日の計算は受信箱の登録だけで、`replan`・`impact.js`・ドラッグの期限変更は暦日のまま。`propose` が `businessDays` を `due` に置き換えて提案の `ops` に保存するので、承認が翌日以降でも `stale` にならない（提案の表の `add` 行には `businessDays` が残る）。HTML の提案カードの登録の表には、行番号（`data-row`）と営業日の列が出て、「修正を依頼する」は暖色（`btn warm`）。
 - `tools/inbox.js submit ... --working` は、依頼を `working`（処理中）で作る。`wait` は `pending` だけを知らせるので、`/pj-lens:watch` が動いていても `inbox` エージェントに横取りされない。`intake` の文章の取り込みが使う。
 - できないこと: タスクの削除・状態の変更、プロジェクトや会議の追加・削除。重要度は、依頼では設定しない。
 - 履歴は最新の 20 件まで（処理中のものは消えない）。1 件の文章は 4000 文字まで、やりとりは 40 件まで。
@@ -163,8 +165,10 @@ node tools/xlsx.js --data <保存先> plan.xlsx           # Excel を JSON で�
 
 ### 次の版（未公開）
 
-- 追加: `/pj-lens:intake` の文章の取り込みを、受信箱の経路（`submit --working` → `propose` → `approve`）に乗せました。期限が書かれていないタスクは、Claude が先行と日数（`days`）で日程を仮に置き、行番号つきの表で見せます。「3 行目を 10 日に」のように直してからもう一度提案し、承認すると登録されます。受信箱の `addTask` が `days` を受け付けます。
-- 追加: スケジュール画面の「今日の優先」と日表示の作業枠に、「着手」「完了」のボタン。
+- 追加: `/pj-lens:intake` の文章の取り込みを、受信箱の経路（`submit --working` → `propose` → `approve`）に乗せました。期限が書かれていないタスクは、Claude が先行と営業日（`businessDays`）で日程を仮に置き、行番号つきの表で見せます。「3 行目を 10 営業日に」のように直してからもう一度提案し、承認すると登録されます。受信箱の `addTask` が `businessDays`（営業日。土日と設定の祝日を除く）を受け付けます。
+- 追加: 「今日のタスク」のパネル（プロジェクト画面・スケジュール画面の右の列）。今日の日付に作業枠があるタスクを、状態と「着手」「完了」のボタンつきで出します。今日のタスクに入ったタスクは「今日の優先」から外れます。日表示の作業枠は、ボタンの代わりに状態の文字を出します。
+- 追加: 枠・会議のドラッグと長さの変更の間、ポインタの近くに「10:00–11:00」を出します。週表示のブロックも開始–終了を出します。
+- 追加: 受信箱の登録の期限を営業日（土日と設定の祝日を除く）で数えます。設定タブに「祝日」の節（`settings.holidays`）を足しました。HTML の提案カードの登録の表に営業日の列を足し、「修正を依頼する」を暖色にしました。
 - 変更: 日程変更の確認パネルの理由の初期値を「画面で調整」に。`replan` は、原因が読み取れないとき「その他」にして聞き返しません。帯の履歴は、処理待ち・処理中の依頼でもやりとりを出し、帯を開いたとき対象を画面の絞り込みから引き継ぎます。WBS の取り込みは、列の対応と変更案を一緒に見せて承認を 1 回にします。進捗メールは、同じタスクの報告が複数あれば最新だけを使います。
 - 追加: 設定タブの「基本の設定」（勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定）と、キーワード規則の並べ替え（↑↓）。`settings` の形が違うときの注意（`validate`）を足しました。
 - 修正: 開始画面の案内を、`/pj-lens:init` が作る `.pj-lens/data.json` に合わせました。`intake` の `Waiting` の指示の矛盾を、「待ち先は報告のみ」にそろえました。
