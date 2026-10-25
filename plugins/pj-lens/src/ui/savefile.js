@@ -1,4 +1,4 @@
-// HTML ファイルの保存。保存ダイアログが使えるブラウザ（File System Access API）では、保存先を選ばせる（id を固定して、前回のフォルダから始める）。
+// HTML ファイルの保存。保存ダイアログが使えるブラウザ（File System Access API）では、保存先を選ばせる（初期の場所はダウンロードフォルダ。前回の場所は覚えない）。
 // 使えないブラウザや、取り消し以外で失敗したときは、ブラウザのダウンロードとして規約のファイル名で保存する（保存先はブラウザのダウンロード先）。
 
 function download(file, html, w) {
@@ -21,7 +21,7 @@ export async function saveHtmlFile(file, html, w = window) {
   if (typeof w.showSaveFilePicker !== "function") return download(file, html, w);
   let handle;
   try {
-    handle = await w.showSaveFilePicker({ suggestedName: file, id: "pj-lens-report", types: [{ description: "HTML", accept: { "text/html": [".html"] } }] });
+    handle = await w.showSaveFilePicker({ suggestedName: file, startIn: "downloads", types: [{ description: "HTML", accept: { "text/html": [".html"] } }] });
   } catch (e) {
     // 取り消しは、ダイアログを閉じたときだけ。権限がない・使えないなどは、何も作られていないので、ダウンロードに落とす
     return e?.name === "AbortError" ? { ok: false, cancelled: true } : download(file, html, w);

@@ -1,4 +1,4 @@
-// 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定）と、日本の祝日（表示のみ）・休み（手動）・営業日として扱う日と、キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
+// 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名）と、日本の祝日（表示のみ）・休み（手動）・営業日として扱う日と、キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
 import { ruleMeetingCounts } from "../../core/rules.js";
 import { validate, HOLIDAY_KINDS } from "../../core/schema.js";
 import { isDate, isTime, toMin } from "../../core/dates.js";
@@ -26,7 +26,6 @@ export function renderSettings(data, today, opts = {}) {
         <tr><td data-l="項目">勤務時間</td><td data-l="値"><input class="in" type="time" data-set="workday-start" value="${esc(wd.start)}" aria-label="勤務時間の開始"> 〜 <input class="in" type="time" data-set="workday-end" value="${esc(wd.end)}" aria-label="勤務時間の終了">${warnOf("workday")}</td><td class="muted" data-l="説明">スケジュールで作業枠を置ける範囲です。</td></tr>
         <tr><td data-l="項目">待ち長期化の日数</td><td data-l="値"><input class="in" type="number" min="1" step="1" data-set="waitingLongDays" value="${wl}" aria-label="待ち長期化とみなす日数"> 日${warnOf("waitingLongDays")}</td><td class="muted" data-l="説明">Waiting がこの日数を超えると、「今日の優先」と遅延バッジに出ます。</td></tr>
         <tr><td data-l="項目">見出しの呼び名</td><td data-l="値"><input class="in" data-set="label-group" value="${esc(lb.group)}" aria-label="大項目の呼び名"> <input class="in" data-set="label-subgroup" value="${esc(lb.subgroup)}" aria-label="中項目の呼び名">${warnOf("labels")}</td><td class="muted" data-l="説明">ガント・リストの見出しの呼び名です。空にすると既定（大項目・中項目）に戻ります。</td></tr>
-        <tr><td data-l="項目">会議の件名</td><td data-l="値"><label><input type="checkbox" data-set="reportShowMeetingTitles"${st.reportShowMeetingTitles === true ? " checked" : ""}> レポートに載せる</label>${warnOf("reportShowMeetingTitles")}</td><td class="muted" data-l="説明">レポートの予定に会議の件名を載せるかです（既定は載せない）。</td></tr>
       </tbody></table></div>
     </section>`;
 

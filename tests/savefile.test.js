@@ -22,13 +22,14 @@ const handle = (name, createWritable) => (log) => ({
 });
 const named = (name) => Object.assign(new Error(name), { name });
 
-test("saveHtmlFile: 保存ダイアログが使えるブラウザでは、名前と前回の場所（id）を渡して選ばせ、選ばれたファイルに書く", async () => {
+test("saveHtmlFile: 保存ダイアログが使えるブラウザでは、名前とダウンロードフォルダ（startIn）を渡して選ばせ、選ばれたファイルに書く", async () => {
   const { w, log } = fakeWindow(handle("共有版.html"));
   const r = await saveHtmlFile(FILE, "<html>x</html>", w);
   assert.deepEqual(r, { ok: true, name: "共有版.html", picked: true });
   assert.equal(log.pickerArgs.length, 1);
   assert.equal(log.pickerArgs[0].suggestedName, FILE);
-  assert.equal(log.pickerArgs[0].id, "pj-lens-report");
+  assert.equal(log.pickerArgs[0].startIn, "downloads", "初期の場所はダウンロードフォルダ");
+  assert.ok(!("id" in log.pickerArgs[0]), "前回のフォルダは覚えない（id を付けない）");
   assert.deepEqual(log.pickerArgs[0].types, [{ description: "HTML", accept: { "text/html": [".html"] } }]);
   assert.deepEqual(log.written, ["<html>x</html>"]);
   assert.equal(log.closed, 1);

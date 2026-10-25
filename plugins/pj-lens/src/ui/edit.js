@@ -228,7 +228,7 @@ export function deleteTask(data, taskId, { force = false } = {}) {
 }
 
 /**
- * 設定（勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定）の変更。patch に含まれる項目だけ変える。
+ * 設定（勤務時間・待ち長期化の日数・見出しの呼び名）の変更。patch に含まれる項目だけ変える。
  * 勤務時間は開始・終了を組で渡す。呼び名は空にするとそのキーを消す（既定の呼び名に戻る）。不正な値は例外
  */
 export function updateSettings(data, patch) {
@@ -250,10 +250,6 @@ export function updateSettings(data, patch) {
       if (v) labels[k] = v; else delete labels[k];
     }
     if (Object.keys(labels).length) s.labels = labels; else delete s.labels;
-  }
-  if ("reportShowMeetingTitles" in patch) {
-    if (typeof patch.reportShowMeetingTitles !== "boolean") throw new Error("会議の件名を載せるかは、チェックの入／切にしてください");
-    s.reportShowMeetingTitles = patch.reportShowMeetingTitles;
   }
   return { ...data, settings: s };
 }

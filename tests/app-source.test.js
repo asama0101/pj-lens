@@ -124,3 +124,14 @@ test("app.js: makeReport は保存中に重ねて動かさない（ダイアロ�
   const fs = src.slice(src.indexOf("function focusSelector"), src.indexOf("function focusSelector") + 1600);
   assert.match(fs, /d.rptmt !== undefined/, "件名のチェックもフォーカスを戻す");
 });
+
+test("app.js: 「レポート」を押してパネルを開くとき、画面の一番上へスクロールする（閉じるときはしない）", () => {
+  const rb = src.slice(src.indexOf('const rb = e.target.closest("[data-report]")'), src.indexOf('const rb = e.target.closest("[data-report]")') + 400);
+  assert.ok(rb.includes('if (S.reportPanel) window.scrollTo(0, 0)'));
+  assert.doesNotMatch(rb, /scrollIntoView/);
+});
+
+test("app.js: 設定タブの入力（data-set）の保存に、会議の件名は含まない", () => {
+  const fn = src.slice(src.indexOf("function changeSetting"), src.indexOf("function changeSetting") + 900);
+  assert.doesNotMatch(fn, /reportShowMeetingTitles/);
+});

@@ -1947,7 +1947,7 @@ return { DEFAULT_PREFS, loadPrefs, savePrefs, DEFAULT_REPORT_PREFS, loadReportPr
 
 /* src/ui/savefile.js */
 const { saveHtmlFile } = (() => {
-// HTML ファイルの保存。保存ダイアログが使えるブラウザ（File System Access API）では、保存先を選ばせる（id を固定して、前回のフォルダから始める）。
+// HTML ファイルの保存。保存ダイアログが使えるブラウザ（File System Access API）では、保存先を選ばせる（初期の場所はダウンロードフォルダ。前回の場所は覚えない）。
 // 使えないブラウザや、取り消し以外で失敗したときは、ブラウザのダウンロードとして規約のファイル名で保存する（保存先はブラウザのダウンロード先）。
 
 function download(file, html, w) {
@@ -1970,7 +1970,7 @@ async function saveHtmlFile(file, html, w = window) {
   if (typeof w.showSaveFilePicker !== "function") return download(file, html, w);
   let handle;
   try {
-    handle = await w.showSaveFilePicker({ suggestedName: file, id: "pj-lens-report", types: [{ description: "HTML", accept: { "text/html": [".html"] } }] });
+    handle = await w.showSaveFilePicker({ suggestedName: file, startIn: "downloads", types: [{ description: "HTML", accept: { "text/html": [".html"] } }] });
   } catch (e) {
     // 取り消しは、ダイアログを閉じたときだけ。権限がない・使えないなどは、何も作られていないので、ダウンロードに落とす
     return e?.name === "AbortError" ? { ok: false, cancelled: true } : download(file, html, w);
@@ -2268,7 +2268,7 @@ function deleteTask(data, taskId, { force = false } = {}) {
 }
 
 /**
- * 設定（勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定）の変更。patch に含まれる項目だけ変える。
+ * 設定（勤務時間・待ち長期化の日数・見出しの呼び名）の変更。patch に含まれる項目だけ変える。
  * 勤務時間は開始・終了を組で渡す。呼び名は空にするとそのキーを消す（既定の呼び名に戻る）。不正な値は例外
  */
 function updateSettings(data, patch) {
@@ -2290,10 +2290,6 @@ function updateSettings(data, patch) {
       if (v) labels[k] = v; else delete labels[k];
     }
     if (Object.keys(labels).length) s.labels = labels; else delete s.labels;
-  }
-  if ("reportShowMeetingTitles" in patch) {
-    if (typeof patch.reportShowMeetingTitles !== "boolean") throw new Error("会議の件名を載せるかは、チェックの入／切にしてください");
-    s.reportShowMeetingTitles = patch.reportShowMeetingTitles;
   }
   return { ...data, settings: s };
 }
@@ -3184,7 +3180,7 @@ return { renderWorkload, shiftWorkloadDate };
 
 /* src/ui/views/settings.js */
 const { renderSettings } = (() => {
-// 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名・レポートの会議件名の既定）と、日本の祝日（表示のみ）・休み（手動）・営業日として扱う日と、キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
+// 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名）と、日本の祝日（表示のみ）・休み（手動）・営業日として扱う日と、キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
 
 
 
@@ -3212,7 +3208,6 @@ function renderSettings(data, today, opts = {}) {
         <tr><td data-l="項目">勤務時間</td><td data-l="値"><input class="in" type="time" data-set="workday-start" value="${esc(wd.start)}" aria-label="勤務時間の開始"> 〜 <input class="in" type="time" data-set="workday-end" value="${esc(wd.end)}" aria-label="勤務時間の終了">${warnOf("workday")}</td><td class="muted" data-l="説明">スケジュールで作業枠を置ける範囲です。</td></tr>
         <tr><td data-l="項目">待ち長期化の日数</td><td data-l="値"><input class="in" type="number" min="1" step="1" data-set="waitingLongDays" value="${wl}" aria-label="待ち長期化とみなす日数"> 日${warnOf("waitingLongDays")}</td><td class="muted" data-l="説明">Waiting がこの日数を超えると、「今日の優先」と遅延バッジに出ます。</td></tr>
         <tr><td data-l="項目">見出しの呼び名</td><td data-l="値"><input class="in" data-set="label-group" value="${esc(lb.group)}" aria-label="大項目の呼び名"> <input class="in" data-set="label-subgroup" value="${esc(lb.subgroup)}" aria-label="中項目の呼び名">${warnOf("labels")}</td><td class="muted" data-l="説明">ガント・リストの見出しの呼び名です。空にすると既定（大項目・中項目）に戻ります。</td></tr>
-        <tr><td data-l="項目">会議の件名</td><td data-l="値"><label><input type="checkbox" data-set="reportShowMeetingTitles"${st.reportShowMeetingTitles === true ? " checked" : ""}> レポートに載せる</label>${warnOf("reportShowMeetingTitles")}</td><td class="muted" data-l="説明">レポートの予定に会議の件名を載せるかです（既定は載せない）。</td></tr>
       </tbody></table></div>
     </section>`;
 
@@ -4065,7 +4060,7 @@ $("filebar").addEventListener("click", async (e) => {
   if (e.target.closest("[data-openfile]")) openFile("choose");
   if (e.target.closest("[data-download]")) downloadJson();
   const rb = e.target.closest("[data-report]");
-  if (rb) { S.reportPanel = S.reportPanel ? null : { ...loadReportPrefs(), error: "" }; render(); view.scrollIntoView?.({ block: "start" }); }
+  if (rb) { S.reportPanel = S.reportPanel ? null : { ...loadReportPrefs(), error: "" }; render(); if (S.reportPanel) window.scrollTo(0, 0); }
 });
 $("banner").addEventListener("click", async (e) => {
   if (e.target.closest("[data-download]")) downloadJson();
@@ -4286,8 +4281,7 @@ function changeSetting(el) {
   let patch;
   if (k === "workday-start" || k === "workday-end") patch = { workday: { start: val("workday-start"), end: val("workday-end") } };
   else if (k === "waitingLongDays") patch = { waitingLongDays: Number(el.value) };
-  else if (k === "label-group" || k === "label-subgroup") patch = { labels: { [k.slice("label-".length)]: el.value } };
-  else patch = { reportShowMeetingTitles: el.checked };
+  else patch = { labels: { [k.slice("label-".length)]: el.value } }; // label-group / label-subgroup
   apply((d) => updateSettings(d, patch), "設定を保存しました");
 }
 

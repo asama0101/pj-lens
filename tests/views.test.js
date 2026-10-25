@@ -727,20 +727,18 @@ test("renderSchedule: 作業枠のブロックに着手・完了ボタンは無�
 // ---- 設定タブ: 基本の設定と規則の並べ替え ----
 const setTag = (html, name) => (html.match(new RegExp(`<input[^>]*data-set="${name}"[^>]*>`)) ?? [""])[0];
 
-test("設定タブ: 基本の設定の入力。settings が無ければ既定値、あればその値（チェックも）", () => {
+test("設定タブ: 基本の設定の入力。settings が無ければ既定値、あればその値。会議の件名の既定は、画面では変えない", () => {
   const none = load();
   delete none.settings;
   const html = setv(none);
   assert.ok(setTag(html, "workday-start").includes('value="09:00"') && setTag(html, "workday-end").includes('value="18:00"'));
   assert.ok(setTag(html, "waitingLongDays").includes('value="7"'));
   assert.ok(setTag(html, "label-group").includes('value="大項目"') && setTag(html, "label-subgroup").includes('value="中項目"'));
-  assert.ok(!/checked/.test(setTag(html, "reportShowMeetingTitles")));
   const set = load();
-  set.settings = { workday: { start: "08:30", end: "17:30" }, waitingLongDays: 3, labels: { group: "フェーズ" }, reportShowMeetingTitles: true };
+  set.settings = { workday: { start: "08:30", end: "17:30" }, waitingLongDays: 3, labels: { group: "フェーズ" } };
   const h2 = setv(set);
   assert.ok(setTag(h2, "workday-start").includes('value="08:30"') && setTag(h2, "workday-end").includes('value="17:30"'));
   assert.ok(setTag(h2, "waitingLongDays").includes('value="3"') && setTag(h2, "label-group").includes('value="フェーズ"') && setTag(h2, "label-subgroup").includes('value="中項目"'));
-  assert.ok(/checked/.test(setTag(h2, "reportShowMeetingTitles")));
   assert.ok(!h2.includes("settings.workday:"), "正しい値に注意は出ない");
 });
 
@@ -850,4 +848,9 @@ test("renderSchedule: 休みの日（土日・手動の休み・日本の祝日�
   const day = (date) => renderSchedule(d, TODAY, { view: "day", date, now: NOW, showPrio: false });
   assert.ok(!day("2026-10-22").includes('data-free='), "休みの日の日表示に空き枠は出ない");
   assert.ok(day("2026-10-24").includes('data-free='), "営業日の指定の土曜には空き枠が出る");
+});
+
+test("設定タブ: 会議の件名（reportShowMeetingTitles）の入力は出さない（レポートのパネルで保存ごとに選ぶ）", () => {
+  assert.ok(!setv(load()).includes("reportShowMeetingTitles"));
+  assert.ok(!setv(load()).includes("会議の件名"));
 });

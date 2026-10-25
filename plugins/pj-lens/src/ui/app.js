@@ -405,7 +405,7 @@ $("filebar").addEventListener("click", async (e) => {
   if (e.target.closest("[data-openfile]")) openFile("choose");
   if (e.target.closest("[data-download]")) downloadJson();
   const rb = e.target.closest("[data-report]");
-  if (rb) { S.reportPanel = S.reportPanel ? null : { ...loadReportPrefs(), error: "" }; render(); view.scrollIntoView?.({ block: "start" }); }
+  if (rb) { S.reportPanel = S.reportPanel ? null : { ...loadReportPrefs(), error: "" }; render(); if (S.reportPanel) window.scrollTo(0, 0); }
 });
 $("banner").addEventListener("click", async (e) => {
   if (e.target.closest("[data-download]")) downloadJson();
@@ -626,8 +626,7 @@ function changeSetting(el) {
   let patch;
   if (k === "workday-start" || k === "workday-end") patch = { workday: { start: val("workday-start"), end: val("workday-end") } };
   else if (k === "waitingLongDays") patch = { waitingLongDays: Number(el.value) };
-  else if (k === "label-group" || k === "label-subgroup") patch = { labels: { [k.slice("label-".length)]: el.value } };
-  else patch = { reportShowMeetingTitles: el.checked };
+  else patch = { labels: { [k.slice("label-".length)]: el.value } }; // label-group / label-subgroup
   apply((d) => updateSettings(d, patch), "設定を保存しました");
 }
 
