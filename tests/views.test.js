@@ -860,3 +860,32 @@ test("受信箱の提案カード: 営業日の列の値もエスケープする
   const html = ib(withInbox([reqOf("R1", "proposed", { proposal: { ...PROPOSAL, sections: [{ kind: "add", rows }] } })]), { open: true });
   assert.ok(!html.includes("<img src=x"));
 });
+
+test("settingsInputValues: 基本の設定の入力に出す値（形が違う・無い項目は既定値）", async () => {
+  const { settingsInputValues } = await import("../plugins/pj-lens/src/ui/views/settings.js");
+  assert.deepEqual(settingsInputValues({}), { workdayStart: "09:00", workdayEnd: "18:00", waitingLongDays: 7, labelGroup: "大項目", labelSubgroup: "中項目" });
+  const s = { settings: { workday: { start: "08:30", end: "17:30" }, waitingLongDays: 3, labels: { group: " フェーズ ", subgroup: "" } } };
+  assert.deepEqual(settingsInputValues(s), { workdayStart: "08:30", workdayEnd: "17:30", waitingLongDays: 3, labelGroup: "フェーズ", labelSubgroup: "中項目" });
+  for (const bad of [{ workday: { start: "18:00", end: "09:00" } }, { workday: "x" }, { waitingLongDays: 0 }, { waitingLongDays: "3" }]) {
+    const v = settingsInputValues({ settings: bad });
+    assert.deepEqual([v.workdayStart, v.workdayEnd, v.waitingLongDays], ["09:00", "18:00", 7], JSON.stringify(bad));
+  }
+});
+
+test("renderSchedule(day): 休みの日（土日・手動の休み・日本の祝日）の日表示には、置けない旨と指定の方法の注意を出す。営業日の指定の日・平日には出さない", () => {
+  const d = load();
+  d.settings = { ...d.settings, holidays: [{ date: "2026-10-22", kind: "有給" }], workdays: [{ date: "2026-10-24" }] };
+  const day = (date) => renderSchedule(d, TODAY, { view: "day", date, now: NOW, showPrio: false });
+  for (const off of ["2026-10-22", "2026-10-25"]) {
+    const h = day(off);
+    assert.ok(h.includes("この日は休みです") && h.includes("営業日として扱う日"), off);
+  }
+  for (const ok of ["2026-10-21", "2026-10-24"]) assert.ok(!day(ok).includes("この日は休みです"), ok);
+});
+
+test("renderSchedule(day): 日本の祝日の日表示にも注意が出る。週表示には出ない", () => {
+  const d = load();
+  d.settings = { ...d.settings, nationalHolidays: { fetchedAt: "2026-10-20", source: "u", dates: [{ date: "2026-11-03", name: "文化の日" }] } };
+  assert.ok(renderSchedule(d, TODAY, { view: "day", date: "2026-11-03", now: NOW, showPrio: false }).includes("この日は休みです"));
+  assert.ok(!renderSchedule(d, TODAY, { view: "week", date: "2026-11-03", now: NOW, showPrio: false }).includes("この日は休みです"));
+});

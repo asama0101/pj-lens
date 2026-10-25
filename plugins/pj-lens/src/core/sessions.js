@@ -98,6 +98,13 @@ export function projectActualHours(data, projectId) {
   return data.tasks.filter((t) => t.projectId === projectId).reduce((h, t) => h + taskActual(data, t.id).hours, 0);
 }
 
+/** 進行中（開始済みで未終了）の予定枠の ID。タスクを完了にしても残す枠（futurePlanned に含めない） */
+export function runningPlanned(data, taskId, now) {
+  const t = data.tasks.find((x) => x.id === taskId);
+  const started = (s) => s.date < now.date || (s.date === now.date && s.start <= now.time);
+  return (t?.sessions ?? []).filter((s) => s.kind === "planned" && started(s) && !isPast(s, now)).map((s) => s.id);
+}
+
 /** まだ開始していない予定枠の ID（進行中の枠・終了した枠・実績は含まない。完了にするとき解除する対象。進行中の枠は残り、終わったあとに実績にできる） */
 export function futurePlanned(data, taskId, now) {
   const t = data.tasks.find((x) => x.id === taskId);

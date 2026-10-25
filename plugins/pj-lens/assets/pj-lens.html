@@ -942,7 +942,7 @@ return { taskStart, ganttRows, ganttLayout, timeTicks, projectProgress, taskFlag
 })();
 
 /* src/core/sessions.js */
-const { sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, futurePlanned } = (() => {
+const { sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, runningPlanned, futurePlanned } = (() => {
 // 作業枠（予定／実績）の規則。枠は「作業した時間の記録」で、タスクの状態は変えない。すべて不変更新。
 
 
@@ -1043,6 +1043,13 @@ function projectActualHours(data, projectId) {
   return data.tasks.filter((t) => t.projectId === projectId).reduce((h, t) => h + taskActual(data, t.id).hours, 0);
 }
 
+/** 進行中（開始済みで未終了）の予定枠の ID。タスクを完了にしても残す枠（futurePlanned に含めない） */
+function runningPlanned(data, taskId, now) {
+  const t = data.tasks.find((x) => x.id === taskId);
+  const started = (s) => s.date < now.date || (s.date === now.date && s.start <= now.time);
+  return (t?.sessions ?? []).filter((s) => s.kind === "planned" && started(s) && !isPast(s, now)).map((s) => s.id);
+}
+
 /** まだ開始していない予定枠の ID（進行中の枠・終了した枠・実績は含まない。完了にするとき解除する対象。進行中の枠は残り、終わったあとに実績にできる） */
 function futurePlanned(data, taskId, now) {
   const t = data.tasks.find((x) => x.id === taskId);
@@ -1050,7 +1057,7 @@ function futurePlanned(data, taskId, now) {
   return (t?.sessions ?? []).filter((s) => s.kind === "planned" && notStarted(s)).map((s) => s.id);
 }
 
-return { sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, futurePlanned };
+return { sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, runningPlanned, futurePlanned };
 })();
 
 /* src/core/impact.js */
@@ -2977,7 +2984,8 @@ function renderCalendar(data, today, opts) {
     const free = freeOf(data, date, g, isOff).filter((x) => toMin(x.end) - toMin(x.start) >= 20);
     const fb = free.map((x) => `<button class="free" data-free="${toMin(x.start)}" style="top:calc(${g.pc(toMin(x.start)).toFixed(3)}% + 1px);height:calc(${(g.pc(toMin(x.end)) - g.pc(toMin(x.start))).toFixed(3)}% - 3px)" aria-label="空き ${x.start}から${x.end}">${x.start}-${x.end} 空き</button>`).join("");
     const nowLine = date === ctx.now.date && toMin(ctx.now.time) >= g.h0 && toMin(ctx.now.time) <= g.h0 + g.span ? `<span class="nowline" style="top:${g.tp(toMin(ctx.now.time))}" title="現在 ${ctx.now.time}"></span>` : "";
-    cal = `<div class="cal"><div class="cal-grid">${hoursHtml(g)}<div class="cal-body dz" id="calbody" data-date="${date}">${meetingBlocks(data, date, true, g, ctx)}${sessionBlocks(data, date, true, g, ctx)}${fb}${nowLine}</div></div></div>`;
+    const offNote = isOff(date) ? `<p class="note" style="margin:0 0 8px">この日は休みです（土日・日本の祝日・休み）。作業枠は置けません。設定タブの「営業日として扱う日」に指定すると置けます。</p>` : "";
+    cal = `${offNote}<div class="cal"><div class="cal-grid">${hoursHtml(g)}<div class="cal-body dz" id="calbody" data-date="${date}">${meetingBlocks(data, date, true, g, ctx)}${sessionBlocks(data, date, true, g, ctx)}${fb}${nowLine}</div></div></div>`;
   }
   const day = view === "day";
   const legend = `<div class="slegend" aria-label="色の凡例"><span><i class="sw mtg"></i>会議</span><span><i class="sw skipsw"></i>参加しない会議</span><span><i class="sw mtgun"></i>未確認の会議</span><span><i class="sw plan"></i>予定</span><span><i class="sw act"></i>実績(✓)</span><span><i class="sw unconf"></i>未確認(過ぎた予定)</span>${day ? '<span><i class="sw free"></i>空き時間</span><span><i class="sw now"></i>現在時刻</span>' : ""}<span><i class="sw sel"></i>選択中</span></div>`;
@@ -3180,13 +3188,22 @@ return { renderWorkload, shiftWorkloadDate };
 })();
 
 /* src/ui/views/settings.js */
-const { renderSettings } = (() => {
+const { settingsInputValues, renderSettings } = (() => {
 // 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名）と、日本の祝日（表示のみ）・休み（手動）・営業日として扱う日と、キーワード規則（会議名・メールの件名に共通。編集できる）と、WBS の取り込み記録（表示のみ）。
 
 
 
 
 
+
+/** 基本の設定の入力に出す値。形が違う・無い項目は既定値（画面の描画と、不正な入力を元に戻すときに使う） */
+function settingsInputValues(data) {
+  const st = data.settings ?? {};
+  const ok = st.workday && isTime(st.workday.start) && isTime(st.workday.end) && toMin(st.workday.start) < toMin(st.workday.end);
+  const wd = ok ? st.workday : { start: "09:00", end: "18:00" };
+  const lb = groupLabels(st);
+  return { workdayStart: wd.start, workdayEnd: wd.end, waitingLongDays: Number.isInteger(st.waitingLongDays) && st.waitingLongDays >= 1 ? st.waitingLongDays : 7, labelGroup: lb.group, labelSubgroup: lb.subgroup };
+}
 
 /** @param opts.ruleError  規則の追加・書き換えで出たエラーの文言 */
 function renderSettings(data, today, opts = {}) {
@@ -3199,16 +3216,13 @@ function renderSettings(data, today, opts = {}) {
   const warns = validate(data).warnings.filter((m) => m.startsWith("settings."));
   const warnOf = (key) => warns.filter((m) => m.startsWith(`settings.${key}:`)).map((m) => `<div class="note err">${esc(m)}</div>`).join("");
   const st = data.settings ?? {};
-  const wdOk = st.workday && isTime(st.workday.start) && isTime(st.workday.end) && toMin(st.workday.start) < toMin(st.workday.end);
-  const wd = wdOk ? st.workday : { start: "09:00", end: "18:00" };
-  const wl = Number.isInteger(st.waitingLongDays) && st.waitingLongDays >= 1 ? st.waitingLongDays : 7;
-  const lb = groupLabels(st);
+  const iv = settingsInputValues(data);
   const basic = `<section class="panel" aria-labelledby="h-basic"><h2 id="h-basic" style="margin-top:0">基本の設定</h2>
       <p class="note" style="margin:0 0 10px">変更はその場でファイルに保存されます。</p>
       <div class="tscroll"><table class="tbl edit"><tbody>
-        <tr><td data-l="項目">勤務時間</td><td data-l="値"><input class="in" type="time" data-set="workday-start" value="${esc(wd.start)}" aria-label="勤務時間の開始"> 〜 <input class="in" type="time" data-set="workday-end" value="${esc(wd.end)}" aria-label="勤務時間の終了">${warnOf("workday")}</td><td class="muted" data-l="説明">スケジュールで作業枠を置ける範囲です。</td></tr>
-        <tr><td data-l="項目">待ち長期化の日数</td><td data-l="値"><input class="in" type="number" min="1" step="1" data-set="waitingLongDays" value="${wl}" aria-label="待ち長期化とみなす日数"> 日${warnOf("waitingLongDays")}</td><td class="muted" data-l="説明">Waiting がこの日数を超えると、「今日の優先」と遅延バッジに出ます。</td></tr>
-        <tr><td data-l="項目">見出しの呼び名</td><td data-l="値"><input class="in" data-set="label-group" value="${esc(lb.group)}" aria-label="大項目の呼び名"> <input class="in" data-set="label-subgroup" value="${esc(lb.subgroup)}" aria-label="中項目の呼び名">${warnOf("labels")}</td><td class="muted" data-l="説明">ガント・リストの見出しの呼び名です。空にすると既定（大項目・中項目）に戻ります。</td></tr>
+        <tr><td data-l="項目">勤務時間</td><td data-l="値"><input class="in" type="time" data-set="workday-start" value="${esc(iv.workdayStart)}" aria-label="勤務時間の開始"> 〜 <input class="in" type="time" data-set="workday-end" value="${esc(iv.workdayEnd)}" aria-label="勤務時間の終了">${warnOf("workday")}</td><td class="muted" data-l="説明">スケジュールで作業枠を置ける範囲です。</td></tr>
+        <tr><td data-l="項目">待ち長期化の日数</td><td data-l="値"><input class="in" type="number" min="1" step="1" data-set="waitingLongDays" value="${iv.waitingLongDays}" aria-label="待ち長期化とみなす日数"> 日${warnOf("waitingLongDays")}</td><td class="muted" data-l="説明">Waiting がこの日数を超えると、「今日の優先」と遅延バッジに出ます。</td></tr>
+        <tr><td data-l="項目">見出しの呼び名</td><td data-l="値"><input class="in" data-set="label-group" value="${esc(iv.labelGroup)}" aria-label="大項目の呼び名"> <input class="in" data-set="label-subgroup" value="${esc(iv.labelSubgroup)}" aria-label="中項目の呼び名">${warnOf("labels")}</td><td class="muted" data-l="説明">ガント・リストの見出しの呼び名です。空にすると既定（大項目・中項目）に戻ります。</td></tr>
       </tbody></table></div>
     </section>`;
 
@@ -3282,7 +3296,7 @@ function renderSettings(data, today, opts = {}) {
   </div>`;
 }
 
-return { renderSettings };
+return { settingsInputValues, renderSettings };
 })();
 
 /* src/ui/views/inboxpanel.js */
@@ -3518,7 +3532,6 @@ return { renderProjects };
 /* src/ui/views/report.js */
 const { buildReport } = (() => {
 // 進捗レポート(自己完結の HTML)の生成。Node にもブラウザにも依存しない純関数
-
 
 
 
@@ -4236,11 +4249,13 @@ function changeStatus(id, status) {
 }
 
 function setStatus(id, status, future) {
+  const kept = status === "Done" || status === "Cancelled" ? runningPlanned(S.data, id, clock()).length : 0; // 完了にしても進行中の枠は残る
+  const keptMsg = kept ? `。進行中の枠 ${kept} 件は残しました（終わったら「実績にする」で確定します）` : "";
   apply((d) => {
     let next = updateTask(d, id, { status }, clock().date);
     for (const sid of future) next = removeSession(next, sid);
     return next;
-  }, future.length ? `${id} の状態を ${status} にしました。未来の予定の枠 ${future.length} 件を解除しました` : "変更を保存しました");
+  }, future.length ? `${id} の状態を ${status} にしました。未来の予定の枠 ${future.length} 件を解除しました${keptMsg}` : `変更を保存しました${keptMsg}`);
 }
 
 function submitWait(id) {
@@ -4289,10 +4304,19 @@ function changeSetting(el) {
   if (k === "workday-start" || k === "workday-end") patch = { workday: { start: val("workday-start"), end: val("workday-end") } };
   else if (k === "waitingLongDays") patch = { waitingLongDays: Number(el.value) };
   else patch = { labels: { [k.slice("label-".length)]: el.value } }; // label-group / label-subgroup
-  // 成功したら描き直さない（時刻は時・分を打つたびに change が起き、描き直すと入力の位置が「時」に戻って続きが打てない）。不正な値は apply が通知して描き直し、入力を元に戻す
-  if (!apply((d) => updateSettings(d, patch), "設定を保存しました", { quiet: true })) return;
+  // 成功したら描き直さない（時刻は時・分を打つたびに change が起き、描き直すと入力の位置が「時」に戻って続きが打てない）。不正な値は、先に検査して通知し、入力欄だけを元に戻す（restoreSettingInputs。描き直すとフォーカスが消える）
+  const edit = (d) => updateSettings(d, patch);
+  try { edit(S.data); } catch (e) { toast(e.message); restoreSettingInputs(); return; } // 描き直すとフォーカスが消えるので、入力欄だけ元に戻す
+  apply(edit, "設定を保存しました", { quiet: true });
   if (k.startsWith("label-")) el.value = groupLabels(S.data.settings)[k.slice("label-".length)]; // 空・前後の空白は、保存された値（空なら既定の呼び名）を出す。ほかの呼び名の注意は残す
   else el.closest("tr")?.querySelectorAll(".note.err").forEach((n) => n.remove()); // 直した項目の古い注意を消す（行の値をまるごと保存し直す項目だけ）
+}
+
+/** 不正な入力を、保存されている値（無ければ既定値）に戻す */
+function restoreSettingInputs() {
+  const v = settingsInputValues(S.data);
+  const set = (name, value) => { const input = view.querySelector(`[data-set="${name}"]`); if (input) input.value = value; };
+  set("workday-start", v.workdayStart); set("workday-end", v.workdayEnd); set("waitingLongDays", v.waitingLongDays); // 呼び名は不正にならない（updateSettings が例外にするのは勤務時間と待ち長期化の日数だけ）
 }
 
 /** 勤務時間は、打っている途中の値（「1」だけで 01:00 になり、開始より前など）で保存・検査しない。打ち終わる（少し止まる）か、入力欄を離れたら保存する */
@@ -4710,7 +4734,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 
 $("claudebar").addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
-  if (q("[data-ib-toggle]")) { captureBar(); S.ib.open = !S.ib.open; if (S.ib.open && !S.ib.projectId && S.filter !== "all") S.ib.projectId = S.filter; renderBar(); if (S.ib.open) pollInbox(true); return; }
+  if (q("[data-ib-toggle]")) { captureBar(); S.ib.open = !S.ib.open; if (S.ib.open && !S.ib.projectTouched && !S.ib.projectId && S.filter !== "all") S.ib.projectId = S.filter; renderBar(); if (S.ib.open) pollInbox(true); return; }
   const ex = q("[data-ib-example]");
   if (ex) {
     captureBar();
@@ -4732,7 +4756,10 @@ $("claudebar").addEventListener("compositionend", () => { composing = false; if 
 $("claudebar").addEventListener("input", (e) => {
   if (e.target.matches("[data-ib-text]")) { S.ib.text = e.target.value; saveInboxDraft(S.ib.text); }
 });
-$("claudebar").addEventListener("change", (e) => { if (e.target.matches("[data-ib-project],[data-ib-cause],[data-ib-reason],[data-ib-reply]")) captureBar(); });
+$("claudebar").addEventListener("change", (e) => {
+  if (e.target.matches("[data-ib-project]")) S.ib.projectTouched = true; // 利用者が選び直したら、画面の絞り込みで上書きしない
+  if (e.target.matches("[data-ib-project],[data-ib-cause],[data-ib-reason],[data-ib-reply]")) captureBar();
+});
 $("claudebar").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.isComposing) return;
   if (e.target.matches("[data-ib-reply]")) { e.preventDefault(); replyRequest(e.target.dataset.ibReply); }

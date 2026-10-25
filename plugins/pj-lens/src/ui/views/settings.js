@@ -5,6 +5,15 @@ import { isDate, isTime, toMin } from "../../core/dates.js";
 import { groupLabels } from "../../core/groups.js";
 import { esc } from "../common.js";
 
+/** 基本の設定の入力に出す値。形が違う・無い項目は既定値（画面の描画と、不正な入力を元に戻すときに使う） */
+export function settingsInputValues(data) {
+  const st = data.settings ?? {};
+  const ok = st.workday && isTime(st.workday.start) && isTime(st.workday.end) && toMin(st.workday.start) < toMin(st.workday.end);
+  const wd = ok ? st.workday : { start: "09:00", end: "18:00" };
+  const lb = groupLabels(st);
+  return { workdayStart: wd.start, workdayEnd: wd.end, waitingLongDays: Number.isInteger(st.waitingLongDays) && st.waitingLongDays >= 1 ? st.waitingLongDays : 7, labelGroup: lb.group, labelSubgroup: lb.subgroup };
+}
+
 /** @param opts.ruleError  規則の追加・書き換えで出たエラーの文言 */
 export function renderSettings(data, today, opts = {}) {
   const projects = data.projects ?? [];
@@ -16,16 +25,13 @@ export function renderSettings(data, today, opts = {}) {
   const warns = validate(data).warnings.filter((m) => m.startsWith("settings."));
   const warnOf = (key) => warns.filter((m) => m.startsWith(`settings.${key}:`)).map((m) => `<div class="note err">${esc(m)}</div>`).join("");
   const st = data.settings ?? {};
-  const wdOk = st.workday && isTime(st.workday.start) && isTime(st.workday.end) && toMin(st.workday.start) < toMin(st.workday.end);
-  const wd = wdOk ? st.workday : { start: "09:00", end: "18:00" };
-  const wl = Number.isInteger(st.waitingLongDays) && st.waitingLongDays >= 1 ? st.waitingLongDays : 7;
-  const lb = groupLabels(st);
+  const iv = settingsInputValues(data);
   const basic = `<section class="panel" aria-labelledby="h-basic"><h2 id="h-basic" style="margin-top:0">基本の設定</h2>
       <p class="note" style="margin:0 0 10px">変更はその場でファイルに保存されます。</p>
       <div class="tscroll"><table class="tbl edit"><tbody>
-        <tr><td data-l="項目">勤務時間</td><td data-l="値"><input class="in" type="time" data-set="workday-start" value="${esc(wd.start)}" aria-label="勤務時間の開始"> 〜 <input class="in" type="time" data-set="workday-end" value="${esc(wd.end)}" aria-label="勤務時間の終了">${warnOf("workday")}</td><td class="muted" data-l="説明">スケジュールで作業枠を置ける範囲です。</td></tr>
-        <tr><td data-l="項目">待ち長期化の日数</td><td data-l="値"><input class="in" type="number" min="1" step="1" data-set="waitingLongDays" value="${wl}" aria-label="待ち長期化とみなす日数"> 日${warnOf("waitingLongDays")}</td><td class="muted" data-l="説明">Waiting がこの日数を超えると、「今日の優先」と遅延バッジに出ます。</td></tr>
-        <tr><td data-l="項目">見出しの呼び名</td><td data-l="値"><input class="in" data-set="label-group" value="${esc(lb.group)}" aria-label="大項目の呼び名"> <input class="in" data-set="label-subgroup" value="${esc(lb.subgroup)}" aria-label="中項目の呼び名">${warnOf("labels")}</td><td class="muted" data-l="説明">ガント・リストの見出しの呼び名です。空にすると既定（大項目・中項目）に戻ります。</td></tr>
+        <tr><td data-l="項目">勤務時間</td><td data-l="値"><input class="in" type="time" data-set="workday-start" value="${esc(iv.workdayStart)}" aria-label="勤務時間の開始"> 〜 <input class="in" type="time" data-set="workday-end" value="${esc(iv.workdayEnd)}" aria-label="勤務時間の終了">${warnOf("workday")}</td><td class="muted" data-l="説明">スケジュールで作業枠を置ける範囲です。</td></tr>
+        <tr><td data-l="項目">待ち長期化の日数</td><td data-l="値"><input class="in" type="number" min="1" step="1" data-set="waitingLongDays" value="${iv.waitingLongDays}" aria-label="待ち長期化とみなす日数"> 日${warnOf("waitingLongDays")}</td><td class="muted" data-l="説明">Waiting がこの日数を超えると、「今日の優先」と遅延バッジに出ます。</td></tr>
+        <tr><td data-l="項目">見出しの呼び名</td><td data-l="値"><input class="in" data-set="label-group" value="${esc(iv.labelGroup)}" aria-label="大項目の呼び名"> <input class="in" data-set="label-subgroup" value="${esc(iv.labelSubgroup)}" aria-label="中項目の呼び名">${warnOf("labels")}</td><td class="muted" data-l="説明">ガント・リストの見出しの呼び名です。空にすると既定（大項目・中項目）に戻ります。</td></tr>
       </tbody></table></div>
     </section>`;
 

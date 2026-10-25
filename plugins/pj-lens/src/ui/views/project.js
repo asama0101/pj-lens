@@ -3,7 +3,7 @@ import { projectProgress, projectFlags, taskFlags, taskStart } from "../../core/
 import { taskActual } from "../../core/sessions.js";
 import { projectHours } from "../../core/workload.js";
 import { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE } from "../../core/schema.js";
-import { esc, fmtMD, statusDotHtml, flagPills } from "../common.js";
+import { esc, fmtMD, flagPills } from "../common.js";
 import { predecessorCandidates } from "../edit.js";
 import { groupLabels, groupNames, groupSections } from "../../core/groups.js";
 import { renderGantt } from "./gantt.js";

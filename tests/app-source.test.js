@@ -143,8 +143,8 @@ test("app.js: 「解除して完了にする」を押したとき、確認を出
 });
 
 test("app.js: 設定タブの入力の保存は、成功しても描き直さない（時刻は時・分を打つたびに change が起き、描き直すと入力の位置が「時」に戻って、続きが打てなくなる）。直した項目の古い注意だけ消す", () => {
-  const fn = src.slice(src.indexOf("function changeSetting"), src.indexOf("function changeSetting") + 1000);
-  assert.match(fn, /apply\(\(d\) => updateSettings\(d, patch\), "設定を保存しました", \{ quiet: true \}\)/);
+  const fn = src.slice(src.indexOf("function changeSetting"), src.indexOf("function changeSetting") + 2000);
+  assert.ok(fn.includes('apply(edit, "設定を保存しました", { quiet: true })'));
   assert.match(fn, /\.note\.err/);
 });
 
@@ -168,4 +168,30 @@ test("app.js: 設定タブの入力の保存後、古い注意を消すのは勤
   const fn = src.slice(src.indexOf("function changeSetting(el)"), src.indexOf("function changeSetting(el)") + 1500);
   assert.match(fn, /k\.startsWith\("label-"\)/);
   assert.match(fn, /groupLabels\(S\.data\.settings\)/);
+});
+
+test("app.js: 設定タブの入力が不正なときは、描き直さず、入力欄を保存された値に戻す（描き直すとフォーカスが消える）", () => {
+  const fn = src.slice(src.indexOf("function changeSetting(el)"), src.indexOf("function changeSetting(el)") + 2000);
+  assert.match(fn, /try \{ edit\(S\.data\); \} catch \(e\) \{ toast\(e\.message\); restoreSettingInputs\(\); return; \}/);
+  assert.match(src, /function restoreSettingInputs\(\)/);
+  assert.match(src, /settingsInputValues\(S\.data\)/);
+});
+
+test("app.js: 状態を Done・Cancelled にしたとき、進行中の枠を残したことを知らせる", () => {
+  const fn = src.slice(src.indexOf("function setStatus"), src.indexOf("function setStatus") + 1200);
+  assert.match(fn, /runningPlanned\(S\.data, id, clock\(\)\)/);
+  assert.ok(fn.includes("進行中の枠") && fn.includes("実績にする"));
+});
+
+test("app.js: 帯の対象は、利用者が選び直したあとは、画面の絞り込みで上書きしない（「すべて」を選んだのに戻される）", () => {
+  assert.match(src, /e\.target\.matches\("\[data-ib-project\]"\)\) S\.ib\.projectTouched = true/);
+  assert.ok(src.includes('!S.ib.projectTouched && !S.ib.projectId && S.filter !== "all"'));
+});
+
+test("app.js: 設定タブの保存の編集は updateSettings(d, patch)。不正な入力の復元は、不正になりうる勤務時間と待ち長期化の日数だけ（呼び名は不正にならない）", () => {
+  const fn = src.slice(src.indexOf("function changeSetting(el)"), src.indexOf("function changeSetting(el)") + 2000);
+  assert.ok(fn.includes("const edit = (d) => updateSettings(d, patch);"));
+  const rs = src.slice(src.indexOf("function restoreSettingInputs()"), src.indexOf("function restoreSettingInputs()") + 600);
+  assert.ok(rs.includes('set("workday-start"') && rs.includes('set("waitingLongDays"'));
+  assert.ok(!rs.includes("label-"));
 });

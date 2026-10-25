@@ -580,11 +580,13 @@ function changeStatus(id, status) {
 }
 
 function setStatus(id, status, future) {
+  const kept = status === "Done" || status === "Cancelled" ? runningPlanned(S.data, id, clock()).length : 0; // 完了にしても進行中の枠は残る
+  const keptMsg = kept ? `。進行中の枠 ${kept} 件は残しました（終わったら「実績にする」で確定します）` : "";
   apply((d) => {
     let next = updateTask(d, id, { status }, clock().date);
     for (const sid of future) next = removeSession(next, sid);
     return next;
-  }, future.length ? `${id} の状態を ${status} にしました。未来の予定の枠 ${future.length} 件を解除しました` : "変更を保存しました");
+  }, future.length ? `${id} の状態を ${status} にしました。未来の予定の枠 ${future.length} 件を解除しました${keptMsg}` : `変更を保存しました${keptMsg}`);
 }
 
 function submitWait(id) {
@@ -633,10 +635,19 @@ function changeSetting(el) {
   if (k === "workday-start" || k === "workday-end") patch = { workday: { start: val("workday-start"), end: val("workday-end") } };
   else if (k === "waitingLongDays") patch = { waitingLongDays: Number(el.value) };
   else patch = { labels: { [k.slice("label-".length)]: el.value } }; // label-group / label-subgroup
-  // 成功したら描き直さない（時刻は時・分を打つたびに change が起き、描き直すと入力の位置が「時」に戻って続きが打てない）。不正な値は apply が通知して描き直し、入力を元に戻す
-  if (!apply((d) => updateSettings(d, patch), "設定を保存しました", { quiet: true })) return;
+  // 成功したら描き直さない（時刻は時・分を打つたびに change が起き、描き直すと入力の位置が「時」に戻って続きが打てない）。不正な値は、先に検査して通知し、入力欄だけを元に戻す（restoreSettingInputs。描き直すとフォーカスが消える）
+  const edit = (d) => updateSettings(d, patch);
+  try { edit(S.data); } catch (e) { toast(e.message); restoreSettingInputs(); return; } // 描き直すとフォーカスが消えるので、入力欄だけ元に戻す
+  apply(edit, "設定を保存しました", { quiet: true });
   if (k.startsWith("label-")) el.value = groupLabels(S.data.settings)[k.slice("label-".length)]; // 空・前後の空白は、保存された値（空なら既定の呼び名）を出す。ほかの呼び名の注意は残す
   else el.closest("tr")?.querySelectorAll(".note.err").forEach((n) => n.remove()); // 直した項目の古い注意を消す（行の値をまるごと保存し直す項目だけ）
+}
+
+/** 不正な入力を、保存されている値（無ければ既定値）に戻す */
+function restoreSettingInputs() {
+  const v = settingsInputValues(S.data);
+  const set = (name, value) => { const input = view.querySelector(`[data-set="${name}"]`); if (input) input.value = value; };
+  set("workday-start", v.workdayStart); set("workday-end", v.workdayEnd); set("waitingLongDays", v.waitingLongDays); // 呼び名は不正にならない（updateSettings が例外にするのは勤務時間と待ち長期化の日数だけ）
 }
 
 /** 勤務時間は、打っている途中の値（「1」だけで 01:00 になり、開始より前など）で保存・検査しない。打ち終わる（少し止まる）か、入力欄を離れたら保存する */
@@ -1054,7 +1065,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 
 $("claudebar").addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
-  if (q("[data-ib-toggle]")) { captureBar(); S.ib.open = !S.ib.open; if (S.ib.open && !S.ib.projectId && S.filter !== "all") S.ib.projectId = S.filter; renderBar(); if (S.ib.open) pollInbox(true); return; }
+  if (q("[data-ib-toggle]")) { captureBar(); S.ib.open = !S.ib.open; if (S.ib.open && !S.ib.projectTouched && !S.ib.projectId && S.filter !== "all") S.ib.projectId = S.filter; renderBar(); if (S.ib.open) pollInbox(true); return; }
   const ex = q("[data-ib-example]");
   if (ex) {
     captureBar();
@@ -1076,7 +1087,10 @@ $("claudebar").addEventListener("compositionend", () => { composing = false; if 
 $("claudebar").addEventListener("input", (e) => {
   if (e.target.matches("[data-ib-text]")) { S.ib.text = e.target.value; saveInboxDraft(S.ib.text); }
 });
-$("claudebar").addEventListener("change", (e) => { if (e.target.matches("[data-ib-project],[data-ib-cause],[data-ib-reason],[data-ib-reply]")) captureBar(); });
+$("claudebar").addEventListener("change", (e) => {
+  if (e.target.matches("[data-ib-project]")) S.ib.projectTouched = true; // 利用者が選び直したら、画面の絞り込みで上書きしない
+  if (e.target.matches("[data-ib-project],[data-ib-cause],[data-ib-reason],[data-ib-reply]")) captureBar();
+});
 $("claudebar").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.isComposing) return;
   if (e.target.matches("[data-ib-reply]")) { e.preventDefault(); replyRequest(e.target.dataset.ibReply); }

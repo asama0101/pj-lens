@@ -5,7 +5,6 @@ import { sessionKind } from "../../core/sessions.js";
 import { reportPeriod, periodReport, progressAsOf } from "../../core/reportspec.js";
 import { esc, fmtMD, wdJa, flagPills, statusDotHtml } from "../common.js";
 import { renderGantt } from "./gantt.js";
-import { weekStartOf } from "./schedule.js";
 
 const PRINT_CSS = `
 html{background:var(--bg)}
