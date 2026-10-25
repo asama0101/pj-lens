@@ -51,3 +51,23 @@ test("renderReportPreview: 日付を打っている途中でも入力欄を作�
   assert.ok(bad.includes("形式が不正") && !bad.includes(".html"));
   assert.ok(renderReportPanel(data(), st(), TODAY).includes('class="rpt-pre"'));
 });
+
+test("設定パネル: 期間に「今週と来週」「来週」が日付の範囲つきで出る", () => {
+  const h = renderReportPanel(data(), st(), "2026-10-23");
+  for (const k of ["thisAndNext", "nextWeek"]) assert.ok(h.includes(`data-rptk="${k}"`), k);
+  assert.match(h, /今週と来週[^<]*<span[^>]*>10\/19〜11\/1/);
+  assert.match(h, /来週 <span[^>]*>10\/26〜11\/1/);
+  assert.match(renderReportPanel(data(), st({ kind: "nextWeek" }), "2026-10-23"), /data-rptk="nextWeek"[^>]*checked/);
+  assert.ok(renderReportPanel(data(), st({ kind: "thisAndNext" }), "2026-10-23").includes("pj-lens_report_all_20261019--20261101_20261023.html"));
+});
+
+test("設定パネル: 「会議の件名を載せる」のチェック。初期値は設定の値で、パネルの状態（st.showMeetingTitles）があればそれが勝つ", () => {
+  const withSetting = (v) => ({ ...data(), settings: v === undefined ? {} : { reportShowMeetingTitles: v } });
+  const box = (h) => h.match(/<input[^>]*data-rptmt[^>]*>/)?.[0];
+  assert.ok(renderReportPanel(withSetting(false), st(), TODAY).includes("会議の件名を載せる"));
+  assert.ok(box(renderReportPanel(withSetting(true), st(), TODAY)).includes("checked"), "設定が true");
+  assert.ok(!box(renderReportPanel(withSetting(false), st(), TODAY)).includes("checked"), "設定が false");
+  assert.ok(!box(renderReportPanel(withSetting(undefined), st(), TODAY)).includes("checked"), "設定なし");
+  assert.ok(!box(renderReportPanel(withSetting(true), st({ showMeetingTitles: false }), TODAY)).includes("checked"), "状態が false なら設定が true でも外れる");
+  assert.ok(box(renderReportPanel(withSetting(false), st({ showMeetingTitles: true }), TODAY)).includes("checked"), "状態が true なら設定が false でも付く");
+});

@@ -60,3 +60,20 @@ test("loadInboxDraft / saveInboxDraft: 依頼の下書きを往復でき、無�
   assert.doesNotThrow(() => saveInboxDraft("x", boom));
   assert.equal(loadInboxDraft(fake({ "pj-lens.inboxDraft": 5 })), "");
 });
+
+test("レポートの選択: 期間「今週と来週」「来週」を記憶・復元できる", () => {
+  for (const kind of ["thisAndNext", "nextWeek"]) {
+    const s = fake();
+    saveReportPrefs({ kind, start: "", end: "", projectIds: null }, s);
+    assert.equal(loadReportPrefs(s).kind, kind);
+  }
+});
+
+test("saveReportPrefs: 会議の件名のチェック（showMeetingTitles）は保存しない（毎回の明示的な選択）", () => {
+  const s = fake();
+  saveReportPrefs({ kind: "thisWeek", start: "", end: "", projectIds: null, showMeetingTitles: true }, s);
+  const raw = s.getItem("pj-lens.report");
+  assert.ok(raw && raw.includes("thisWeek"), "保存はされている");
+  assert.ok(!raw.includes("showMeetingTitles"));
+  assert.ok(!("showMeetingTitles" in loadReportPrefs(s)));
+});

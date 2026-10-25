@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { reportPeriod, reportFileName, periodReport, progressAsOf } from "../plugins/pj-lens/src/core/reportspec.js";
+import { PERIOD_KINDS, reportPeriod, reportFileName, periodReport, progressAsOf } from "../plugins/pj-lens/src/core/reportspec.js";
 
 const TODAY = "2026-10-21"; // 水曜。今週 10/19〜10/25、先週 10/12〜10/18
 
@@ -106,4 +106,15 @@ test("periodReport: includeUnassigned のとき、プロジェクト未設定（
   assert.deepEqual(on.unassigned, { meetingHours: 2.5, unconfirmedMeetings: 1 });
   assert.equal(periodReport(d, ["A", "B"], LAST, NOW).unassigned, null, "指定しなければ集めない");
   assert.equal(periodReport(d, ["A"], LAST, NOW).rows[0].meetingHours, 1, "プロジェクトの行には混ぜない");
+});
+
+test("reportPeriod: 今週と来週（今週の月曜〜来週の日曜）・来週（ISO 週番号の key）。月曜・日曜・年またぎ", () => {
+  assert.deepEqual(pick(reportPeriod("thisAndNext", "2026-10-23")), ["2026-10-19", "2026-11-01", "今週と来週", "20261019--20261101"]); // 金曜
+  assert.deepEqual(pick(reportPeriod("nextWeek", "2026-10-23")), ["2026-10-26", "2026-11-01", "来週", "2026-W44"]);
+  assert.equal(reportPeriod("thisAndNext", "2026-10-19").start, "2026-10-19"); // 月曜
+  assert.equal(reportPeriod("thisAndNext", "2026-10-25").end, "2026-11-01"); // 日曜
+  assert.equal(reportPeriod("nextWeek", "2026-10-25").start, "2026-10-26");
+  assert.deepEqual(pick(reportPeriod("nextWeek", "2026-12-28")), ["2027-01-04", "2027-01-10", "来週", "2027-W01"]);
+  assert.deepEqual(pick(reportPeriod("thisAndNext", "2026-12-28")), ["2026-12-28", "2027-01-10", "今週と来週", "20261228--20270110"]);
+  assert.deepEqual(PERIOD_KINDS, ["thisWeek", "lastWeek", "lastAndThis", "thisAndNext", "nextWeek", "thisMonth", "lastMonth", "custom"]);
 });

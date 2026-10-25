@@ -83,8 +83,7 @@ function actuals(data, projects, rows, unassigned) {
 }
 
 /** 期間のうち今日以降の予定（日別）。selected は選んだプロジェクトの ID の集合。全プロジェクトを選んだときだけ、プロジェクト未設定の会議も載せる */
-function plan(data, from, to, selected, all, today, now) {
-  const showTitles = data.settings?.reportShowMeetingTitles === true;
+function plan(data, from, to, selected, all, today, now, showTitles) {
   const known = new Set(data.projects.map((p) => p.id));
   const mine = (m) => selected.has(m.projectId) || (all && !known.has(m.projectId));
   const days = [];
@@ -104,8 +103,8 @@ function plan(data, from, to, selected, all, today, now) {
 }
 
 /**
- * 自己完結の HTML を作る。css はダッシュボードのスタイル。会議の件名は settings.reportShowMeetingTitles が true のときだけ載せる。
- * opts: { projectIds（既定は全部）, period（reportPeriod の結果。既定は今週）, title（<title>。既定は「プロジェクト進捗レポート 日付」）, now（{date, time}。未確認の判定に使う。既定は今日の 00:00 =今日の分は過去にしない）}
+ * 自己完結の HTML を作る。css はダッシュボードのスタイル。会議の件名は opts.showMeetingTitles（保存ごとの選択）が true のとき、省略時は settings.reportShowMeetingTitles が true のときだけ載せる。
+ * opts: { showMeetingTitles（会議の件名を載せるか。既定は設定）, projectIds（既定は全部）, period（reportPeriod の結果。既定は今週）, title（<title>。既定は「プロジェクト進捗レポート 日付」）, now（{date, time}。未確認の判定に使う。既定は今日の 00:00 =今日の分は過去にしない）}
  */
 export function buildReport(data, today, css, opts = {}) {
   const period = opts.period ?? reportPeriod("thisWeek", today);
@@ -118,7 +117,7 @@ export function buildReport(data, today, css, opts = {}) {
   const title = opts.title ?? `プロジェクト進捗レポート ${today}`;
   const scope = allSelected ? "全プロジェクト" : projects.map((p) => esc(p.name)).join("、");
   const from = period.start > today ? period.start : today;
-  const planBody = period.end >= today && projects.length ? plan(data, from, period.end, new Set(projects.map((p) => p.id)), allSelected, today, now) : "";
+  const planBody = period.end >= today && projects.length ? plan(data, from, period.end, new Set(projects.map((p) => p.id)), allSelected, today, now, opts.showMeetingTitles ?? data.settings?.reportShowMeetingTitles === true) : "";
   const empty = (n, h) => `<h2 class="sec">${n}. ${h}</h2><p class="muted">プロジェクトがありません。</p>`;
   const body = projects.length
     ? `<h2 class="sec">1. 全体一覧</h2>${overview(data, projects, today, asOf, rows)}<h2 class="sec">2. プロジェクト別の詳細</h2>${projects.map((p) => detail(data, p, today, period, rows.find((r) => r.projectId === p.id))).join("")}<h2 class="sec">3. ${esc(period.label)}の実績</h2>${actuals(data, projects, rows, unassigned)}${planBody ? `<h2 class="sec">4. ${esc(period.label)}の予定</h2>${planBody}` : ""}`

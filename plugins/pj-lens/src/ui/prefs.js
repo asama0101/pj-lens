@@ -27,7 +27,7 @@ export function savePrefs(prefs, storage = browserStorage()) {
 
 // レポートの選択（期間・プロジェクト）。次に開いたとき同じ選択から始められるように覚える。
 const REPORT_KEY = "pj-lens.report";
-const REPORT_KINDS = ["thisWeek", "lastWeek", "lastAndThis", "thisMonth", "lastMonth", "custom"];
+const REPORT_KINDS = ["thisWeek", "lastWeek", "lastAndThis", "thisAndNext", "nextWeek", "thisMonth", "lastMonth", "custom"];
 export const DEFAULT_REPORT_PREFS = { kind: "thisWeek", start: "", end: "", projectIds: null };
 
 /** 保存されたレポートの選択。形が違う値は既定にする。projectIds が null は「全プロジェクト」 */

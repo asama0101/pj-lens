@@ -99,6 +99,7 @@ function focusSelector(el) {
   if (d.rnewpj !== undefined) return "[data-rnewpj]";
   if (d.waitparty) return q("data-waitparty", d.waitparty);
   if (d.rp) return q("data-rp", d.rp);
+  if (d.rptmt !== undefined) return "[data-rptmt]";
   if (d.rptp) return q("data-rptp", d.rptp);
   if (d.rptk) return q("data-rptk", d.rptk);
   if (d.rptd) return q("data-rptd", d.rptd);
@@ -145,17 +146,26 @@ function setReportState(patch) {
   render();
 }
 
-/** 設定パネルで選んだ対象・期間の進捗レポートを、規約のファイル名の HTML としてダウンロードする(保存先はブラウザのダウンロード先のフォルダ) */
+/** 設定パネルで選んだ対象・期間の進捗レポートを、規約のファイル名の HTML として保存する(保存ダイアログが使えれば保存先を選ぶ。使えなければブラウザのダウンロード先のフォルダ)。ダイアログを取り消したときは何もしない */
 async function makeReport() {
+  if (S.saving) return; // 保存ダイアログが開く前の 2 回目のクリックで、二重に保存しない
+  S.saving = true;
+  try {
+    await saveReport();
+  } finally { S.saving = false; }
+}
+
+async function saveReport() {
   const day = clock().date;
   const t = reportTarget(S.data, S.reportPanel, day);
   if (t.problem) { S.reportPanel = { ...S.reportPanel, error: t.problem }; render(); return; }
   const css = document.querySelector("head style")?.textContent ?? "";
-  const html = buildReport(S.data, day, css, { projectIds: t.ids, period: t.period, title: t.name, now: clock() });
+  const html = buildReport(S.data, day, css, { projectIds: t.ids, period: t.period, title: t.name, now: clock(), showMeetingTitles: S.reportPanel.showMeetingTitles });
   const r = await saveHtmlFile(`${t.name}.html`, html);
+  if (r.cancelled) return;
   S.reportPanel = null;
   render();
-  toast(`レポートをダウンロードしました（${r.name}）。保存先は、ブラウザのダウンロード先のフォルダです`);
+  toast(r.picked ? `レポートを保存しました（${r.name}）` : r.fallback ? `選んだ場所に保存できなかったため、ブラウザのダウンロード先のフォルダに保存しました（${r.name}）` : `レポートをダウンロードしました（${r.name}）。保存先は、ブラウザのダウンロード先のフォルダです`);
 }
 
 let saveChain = Promise.resolve();
@@ -586,6 +596,7 @@ function onReportChange(el) {
   const { date: today } = clock();
   const all = S.data.projects.map((p) => p.id);
   const cur = reportTarget(S.data, S.reportPanel, today).ids;
+  if (el.matches("[data-rptmt]")) return setReportState({ showMeetingTitles: el.checked }); // この保存だけの選択。saveReportPrefs は項目を限定するので記憶されない
   if (el.matches("[data-rptall]")) return setReportState({ projectIds: el.checked ? null : [] });
   if (el.dataset.rptp) {
     const next = el.checked ? [...cur, el.dataset.rptp] : cur.filter((id) => id !== el.dataset.rptp);
@@ -622,7 +633,7 @@ function changeSetting(el) {
 
 function onChange(el) {
   const { date: today } = clock();
-  if (S.reportPanel && el.matches?.("[data-rptall],[data-rptp],[data-rptk],[data-rptd]")) { onReportChange(el); return; }
+  if (S.reportPanel && el.matches?.("[data-rptall],[data-rptp],[data-rptk],[data-rptd],[data-rptmt]")) { onReportChange(el); return; }
   if (el.dataset.fileinput !== undefined || el.matches?.("[data-fileinput]")) {
     const file = el.files?.[0];
     if (!file) return;

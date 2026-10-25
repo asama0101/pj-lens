@@ -1499,7 +1499,7 @@ const { PERIOD_KINDS, reportPeriod, reportFileName, periodReport, progressAsOf }
 
 
 
-const PERIOD_KINDS = ["thisWeek", "lastWeek", "lastAndThis", "thisMonth", "lastMonth", "custom"];
+const PERIOD_KINDS = ["thisWeek", "lastWeek", "lastAndThis", "thisAndNext", "nextWeek", "thisMonth", "lastMonth", "custom"];
 
 const compact = (d) => d.replace(/-/g, "");
 const slash = (d) => d.replace(/-/g, "/");
@@ -1521,6 +1521,11 @@ function reportPeriod(kind, today, custom) {
     const [a, b] = [week(addDays(today, -7)), week(today)];
     return make(a.start, b.end, "先週と今週", `${compact(a.start)}--${compact(b.end)}`);
   }
+  if (kind === "thisAndNext") {
+    const [a, b] = [week(today), week(addDays(today, 7))];
+    return make(a.start, b.end, "今週と来週", `${compact(a.start)}--${compact(b.end)}`);
+  }
+  if (kind === "nextWeek") { const r = week(addDays(today, 7)); return make(r.start, r.end, "来週", isoWeekKey(r.start)); }
   if (kind === "thisMonth" || kind === "lastMonth") {
     const r = periodRange("month", kind === "thisMonth" ? today : addDays(periodRange("month", today).start, -1));
     return make(r.start, r.end, kind === "thisMonth" ? "今月" : "先月", r.start.slice(0, 7));
@@ -1909,7 +1914,7 @@ function savePrefs(prefs, storage = browserStorage()) {
 
 // レポートの選択（期間・プロジェクト）。次に開いたとき同じ選択から始められるように覚える。
 const REPORT_KEY = "pj-lens.report";
-const REPORT_KINDS = ["thisWeek", "lastWeek", "lastAndThis", "thisMonth", "lastMonth", "custom"];
+const REPORT_KINDS = ["thisWeek", "lastWeek", "lastAndThis", "thisAndNext", "nextWeek", "thisMonth", "lastMonth", "custom"];
 const DEFAULT_REPORT_PREFS = { kind: "thisWeek", start: "", end: "", projectIds: null };
 
 /** 保存されたレポートの選択。形が違う値は既定にする。projectIds が null は「全プロジェクト」 */
@@ -1942,20 +1947,45 @@ return { DEFAULT_PREFS, loadPrefs, savePrefs, DEFAULT_REPORT_PREFS, loadReportPr
 
 /* src/ui/savefile.js */
 const { saveHtmlFile } = (() => {
-// HTML ファイルの保存。ブラウザのダウンロードとして、規約のファイル名で保存する（保存先はブラウザのダウンロード先のフォルダ）。
+// HTML ファイルの保存。保存ダイアログが使えるブラウザ（File System Access API）では、保存先を選ばせる（id を固定して、前回のフォルダから始める）。
+// 使えないブラウザや、取り消し以外で失敗したときは、ブラウザのダウンロードとして規約のファイル名で保存する（保存先はブラウザのダウンロード先）。
 
-/**
- * @param file 規約のファイル名
- * @param w ブラウザの window（テストでは差し替える）
- */
-async function saveHtmlFile(file, html, w = window) {
+function download(file, html, w) {
   const url = w.URL.createObjectURL(new w.Blob([html], { type: "text/html" }));
   const a = w.document.createElement("a");
   a.href = url;
   a.download = file;
   a.click();
   w.setTimeout(() => w.URL.revokeObjectURL(url), 60000);
-  return { ok: true, name: file };
+  return { ok: true, name: file, picked: false };
+}
+
+/**
+ * @param file 規約のファイル名（保存ダイアログの初期の名前）
+ * @param w ブラウザの window（テストでは差し替える）
+ * @returns { ok: true, name, picked }（picked は保存ダイアログで選んだか。選んだ場所に書けずにダウンロードへ落としたときは fallback: true も付く）、
+ *          または利用者が保存ダイアログを閉じたときの { ok: false, cancelled: true }
+ */
+async function saveHtmlFile(file, html, w = window) {
+  if (typeof w.showSaveFilePicker !== "function") return download(file, html, w);
+  let handle;
+  try {
+    handle = await w.showSaveFilePicker({ suggestedName: file, id: "pj-lens-report", types: [{ description: "HTML", accept: { "text/html": [".html"] } }] });
+  } catch (e) {
+    // 取り消しは、ダイアログを閉じたときだけ。権限がない・使えないなどは、何も作られていないので、ダウンロードに落とす
+    return e?.name === "AbortError" ? { ok: false, cancelled: true } : download(file, html, w);
+  }
+  let out;
+  try {
+    out = await handle.createWritable();
+    await out.write(html);
+    await out.close();
+    return { ok: true, name: handle.name ?? file, picked: true };
+  } catch {
+    // 選んだ場所に書けなかった（共有フォルダの権限・切断など）。書きかけを破棄して、ダウンロードに落とす（呼び出し側が利用者に知らせる）
+    try { await out?.abort?.(); } catch { /* 破棄できなくても続ける */ }
+    return { ...download(file, html, w), fallback: true };
+  }
 }
 
 return { saveHtmlFile };
@@ -3042,7 +3072,7 @@ const { reportTarget, renderReportPreview, renderReportPanel } = (() => {
 
 
 
-const KIND_LABEL = { thisWeek: "今週", lastWeek: "先週", lastAndThis: "先週と今週", thisMonth: "今月", lastMonth: "先月", custom: "自由指定" };
+const KIND_LABEL = { thisWeek: "今週", lastWeek: "先週", lastAndThis: "先週と今週", thisAndNext: "今週と来週", nextWeek: "来週", thisMonth: "今月", lastMonth: "先月", custom: "自由指定" };
 
 /**
  * 選択（st: { kind, start, end, projectIds(null は全部) }）から、生成に使う値を求める。
@@ -3082,6 +3112,7 @@ function renderReportPanel(data, st, today) {
       <label class="chk"><input type="checkbox" data-rptall${t.ids.length === data.projects.length ? " checked" : ""}>全て</label>${projects}
     </fieldset>
     <fieldset class="rpt-set"><legend>期間</legend>${kinds}${custom}</fieldset>
+    <label class="chk"><input type="checkbox" data-rptmt${st.showMeetingTitles ?? data.settings?.reportShowMeetingTitles === true ? " checked" : ""}>会議の件名を載せる</label>
     <div class="rpt-pre">${renderReportPreview(data, st, today)}</div>
     ${st.error ? `<p class="note err" role="alert">${esc(st.error)}</p>` : ""}
     <div class="rp-act"><button class="btn primary" data-rptgo${t.problem ? " disabled" : ""}>HTML で保存</button><button class="btn" data-rptclose>閉じる</button></div>
@@ -3575,8 +3606,7 @@ function actuals(data, projects, rows, unassigned) {
 }
 
 /** 期間のうち今日以降の予定（日別）。selected は選んだプロジェクトの ID の集合。全プロジェクトを選んだときだけ、プロジェクト未設定の会議も載せる */
-function plan(data, from, to, selected, all, today, now) {
-  const showTitles = data.settings?.reportShowMeetingTitles === true;
+function plan(data, from, to, selected, all, today, now, showTitles) {
   const known = new Set(data.projects.map((p) => p.id));
   const mine = (m) => selected.has(m.projectId) || (all && !known.has(m.projectId));
   const days = [];
@@ -3596,8 +3626,8 @@ function plan(data, from, to, selected, all, today, now) {
 }
 
 /**
- * 自己完結の HTML を作る。css はダッシュボードのスタイル。会議の件名は settings.reportShowMeetingTitles が true のときだけ載せる。
- * opts: { projectIds（既定は全部）, period（reportPeriod の結果。既定は今週）, title（<title>。既定は「プロジェクト進捗レポート 日付」）, now（{date, time}。未確認の判定に使う。既定は今日の 00:00 =今日の分は過去にしない）}
+ * 自己完結の HTML を作る。css はダッシュボードのスタイル。会議の件名は opts.showMeetingTitles（保存ごとの選択）が true のとき、省略時は settings.reportShowMeetingTitles が true のときだけ載せる。
+ * opts: { showMeetingTitles（会議の件名を載せるか。既定は設定）, projectIds（既定は全部）, period（reportPeriod の結果。既定は今週）, title（<title>。既定は「プロジェクト進捗レポート 日付」）, now（{date, time}。未確認の判定に使う。既定は今日の 00:00 =今日の分は過去にしない）}
  */
 function buildReport(data, today, css, opts = {}) {
   const period = opts.period ?? reportPeriod("thisWeek", today);
@@ -3610,7 +3640,7 @@ function buildReport(data, today, css, opts = {}) {
   const title = opts.title ?? `プロジェクト進捗レポート ${today}`;
   const scope = allSelected ? "全プロジェクト" : projects.map((p) => esc(p.name)).join("、");
   const from = period.start > today ? period.start : today;
-  const planBody = period.end >= today && projects.length ? plan(data, from, period.end, new Set(projects.map((p) => p.id)), allSelected, today, now) : "";
+  const planBody = period.end >= today && projects.length ? plan(data, from, period.end, new Set(projects.map((p) => p.id)), allSelected, today, now, opts.showMeetingTitles ?? data.settings?.reportShowMeetingTitles === true) : "";
   const empty = (n, h) => `<h2 class="sec">${n}. ${h}</h2><p class="muted">プロジェクトがありません。</p>`;
   const body = projects.length
     ? `<h2 class="sec">1. 全体一覧</h2>${overview(data, projects, today, asOf, rows)}<h2 class="sec">2. プロジェクト別の詳細</h2>${projects.map((p) => detail(data, p, today, period, rows.find((r) => r.projectId === p.id))).join("")}<h2 class="sec">3. ${esc(period.label)}の実績</h2>${actuals(data, projects, rows, unassigned)}${planBody ? `<h2 class="sec">4. ${esc(period.label)}の予定</h2>${planBody}` : ""}`
@@ -3729,6 +3759,7 @@ function focusSelector(el) {
   if (d.rnewpj !== undefined) return "[data-rnewpj]";
   if (d.waitparty) return q("data-waitparty", d.waitparty);
   if (d.rp) return q("data-rp", d.rp);
+  if (d.rptmt !== undefined) return "[data-rptmt]";
   if (d.rptp) return q("data-rptp", d.rptp);
   if (d.rptk) return q("data-rptk", d.rptk);
   if (d.rptd) return q("data-rptd", d.rptd);
@@ -3775,17 +3806,26 @@ function setReportState(patch) {
   render();
 }
 
-/** 設定パネルで選んだ対象・期間の進捗レポートを、規約のファイル名の HTML としてダウンロードする(保存先はブラウザのダウンロード先のフォルダ) */
+/** 設定パネルで選んだ対象・期間の進捗レポートを、規約のファイル名の HTML として保存する(保存ダイアログが使えれば保存先を選ぶ。使えなければブラウザのダウンロード先のフォルダ)。ダイアログを取り消したときは何もしない */
 async function makeReport() {
+  if (S.saving) return; // 保存ダイアログが開く前の 2 回目のクリックで、二重に保存しない
+  S.saving = true;
+  try {
+    await saveReport();
+  } finally { S.saving = false; }
+}
+
+async function saveReport() {
   const day = clock().date;
   const t = reportTarget(S.data, S.reportPanel, day);
   if (t.problem) { S.reportPanel = { ...S.reportPanel, error: t.problem }; render(); return; }
   const css = document.querySelector("head style")?.textContent ?? "";
-  const html = buildReport(S.data, day, css, { projectIds: t.ids, period: t.period, title: t.name, now: clock() });
+  const html = buildReport(S.data, day, css, { projectIds: t.ids, period: t.period, title: t.name, now: clock(), showMeetingTitles: S.reportPanel.showMeetingTitles });
   const r = await saveHtmlFile(`${t.name}.html`, html);
+  if (r.cancelled) return;
   S.reportPanel = null;
   render();
-  toast(`レポートをダウンロードしました（${r.name}）。保存先は、ブラウザのダウンロード先のフォルダです`);
+  toast(r.picked ? `レポートを保存しました（${r.name}）` : r.fallback ? `選んだ場所に保存できなかったため、ブラウザのダウンロード先のフォルダに保存しました（${r.name}）` : `レポートをダウンロードしました（${r.name}）。保存先は、ブラウザのダウンロード先のフォルダです`);
 }
 
 let saveChain = Promise.resolve();
@@ -4216,6 +4256,7 @@ function onReportChange(el) {
   const { date: today } = clock();
   const all = S.data.projects.map((p) => p.id);
   const cur = reportTarget(S.data, S.reportPanel, today).ids;
+  if (el.matches("[data-rptmt]")) return setReportState({ showMeetingTitles: el.checked }); // この保存だけの選択。saveReportPrefs は項目を限定するので記憶されない
   if (el.matches("[data-rptall]")) return setReportState({ projectIds: el.checked ? null : [] });
   if (el.dataset.rptp) {
     const next = el.checked ? [...cur, el.dataset.rptp] : cur.filter((id) => id !== el.dataset.rptp);
@@ -4252,7 +4293,7 @@ function changeSetting(el) {
 
 function onChange(el) {
   const { date: today } = clock();
-  if (S.reportPanel && el.matches?.("[data-rptall],[data-rptp],[data-rptk],[data-rptd]")) { onReportChange(el); return; }
+  if (S.reportPanel && el.matches?.("[data-rptall],[data-rptp],[data-rptk],[data-rptd],[data-rptmt]")) { onReportChange(el); return; }
   if (el.dataset.fileinput !== undefined || el.matches?.("[data-fileinput]")) {
     const file = el.files?.[0];
     if (!file) return;

@@ -95,3 +95,32 @@ test("app.js: 営業日の指定の追加は、入力欄の値を先に取り出
   assert.match(fn, /const edit = \(d\) => addWorkday\(d, \{ date, note \}\)/);
   assert.match(src, /const range = to !== "";/);
 });
+
+test("app.js: 会議の件名のチェック（data-rptmt）は S.reportPanel に持ち、onChange の対象に入り、makeReport が buildReport に渡す。パネルを開くときは設定せず、設定の値から始まる", () => {
+  assert.match(src, /\[data-rptall\],\[data-rptp\],\[data-rptk\],\[data-rptd\],\[data-rptmt\]/);
+  assert.match(src, /el\.matches\("\[data-rptmt\]"\)[^\n]*setReportState\(\{ showMeetingTitles: el\.checked \}\)/);
+  const make = src.slice(src.indexOf("async function makeReport"), src.indexOf("async function makeReport") + 900);
+  assert.match(make, /showMeetingTitles: S\.reportPanel\.showMeetingTitles/);
+  const open = src.slice(src.indexOf('const rb = e.target.closest("[data-report]")'), src.indexOf('const rb = e.target.closest("[data-report]")') + 300);
+  assert.doesNotMatch(open, /showMeetingTitles/);
+});
+
+test("app.js: makeReport は、保存ダイアログを取り消したときパネルを閉じず・描き直さず・トーストも出さない。選んだ保存とダウンロードで文言を分ける", () => {
+  const make = src.slice(src.indexOf("async function makeReport"), src.indexOf("async function makeReport") + 1400);
+  const cancel = make.indexOf("r.cancelled");
+  assert.ok(cancel > 0 && /if \(r\.cancelled\) return;/.test(make), "取り消しの早期 return");
+  assert.ok(cancel < make.indexOf("S.reportPanel = null"), "パネルを閉じる前");
+  assert.match(make, /r\.picked/);
+  assert.ok(make.includes("レポートを保存しました") && make.includes("レポートをダウンロードしました"));
+});
+
+test("app.js: makeReport は保存中に重ねて動かさない（ダイアログが開く前の 2 回目のクリックで二重に保存しない）。選んだ場所に保存できなかったときは、その旨をトーストで伝える", () => {
+  const make = src.slice(src.indexOf("async function makeReport"), src.indexOf("async function makeReport") + 1800);
+  assert.match(make, /if \(S\.saving\) return;/);
+  assert.match(make, /S\.saving = true;/);
+  assert.match(make, /finally \{ S\.saving = false; \}/);
+  assert.match(make, /r\.fallback/);
+  assert.ok(make.includes("選んだ場所に保存できなかったため"));
+  const fs = src.slice(src.indexOf("function focusSelector"), src.indexOf("function focusSelector") + 1600);
+  assert.match(fs, /d.rptmt !== undefined/, "件名のチェックもフォーカスを戻す");
+});

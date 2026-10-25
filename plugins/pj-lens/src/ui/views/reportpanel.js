@@ -2,7 +2,7 @@
 import { PERIOD_KINDS, reportPeriod, reportFileName } from "../../core/reportspec.js";
 import { esc, fmtMD } from "../common.js";
 
-const KIND_LABEL = { thisWeek: "今週", lastWeek: "先週", lastAndThis: "先週と今週", thisMonth: "今月", lastMonth: "先月", custom: "自由指定" };
+const KIND_LABEL = { thisWeek: "今週", lastWeek: "先週", lastAndThis: "先週と今週", thisAndNext: "今週と来週", nextWeek: "来週", thisMonth: "今月", lastMonth: "先月", custom: "自由指定" };
 
 /**
  * 選択（st: { kind, start, end, projectIds(null は全部) }）から、生成に使う値を求める。
@@ -42,6 +42,7 @@ export function renderReportPanel(data, st, today) {
       <label class="chk"><input type="checkbox" data-rptall${t.ids.length === data.projects.length ? " checked" : ""}>全て</label>${projects}
     </fieldset>
     <fieldset class="rpt-set"><legend>期間</legend>${kinds}${custom}</fieldset>
+    <label class="chk"><input type="checkbox" data-rptmt${st.showMeetingTitles ?? data.settings?.reportShowMeetingTitles === true ? " checked" : ""}>会議の件名を載せる</label>
     <div class="rpt-pre">${renderReportPreview(data, st, today)}</div>
     ${st.error ? `<p class="note err" role="alert">${esc(st.error)}</p>` : ""}
     <div class="rp-act"><button class="btn primary" data-rptgo${t.problem ? " disabled" : ""}>HTML で保存</button><button class="btn" data-rptclose>閉じる</button></div>

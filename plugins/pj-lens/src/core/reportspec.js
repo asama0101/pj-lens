@@ -4,7 +4,7 @@ import { sessionKind } from "./sessions.js";
 import { meetingKind } from "./schedule.js";
 import { periodRange } from "./workload.js";
 
-export const PERIOD_KINDS = ["thisWeek", "lastWeek", "lastAndThis", "thisMonth", "lastMonth", "custom"];
+export const PERIOD_KINDS = ["thisWeek", "lastWeek", "lastAndThis", "thisAndNext", "nextWeek", "thisMonth", "lastMonth", "custom"];
 
 const compact = (d) => d.replace(/-/g, "");
 const slash = (d) => d.replace(/-/g, "/");
@@ -26,6 +26,11 @@ export function reportPeriod(kind, today, custom) {
     const [a, b] = [week(addDays(today, -7)), week(today)];
     return make(a.start, b.end, "先週と今週", `${compact(a.start)}--${compact(b.end)}`);
   }
+  if (kind === "thisAndNext") {
+    const [a, b] = [week(today), week(addDays(today, 7))];
+    return make(a.start, b.end, "今週と来週", `${compact(a.start)}--${compact(b.end)}`);
+  }
+  if (kind === "nextWeek") { const r = week(addDays(today, 7)); return make(r.start, r.end, "来週", isoWeekKey(r.start)); }
   if (kind === "thisMonth" || kind === "lastMonth") {
     const r = periodRange("month", kind === "thisMonth" ? today : addDays(periodRange("month", today).start, -1));
     return make(r.start, r.end, kind === "thisMonth" ? "今月" : "先月", r.start.slice(0, 7));

@@ -138,3 +138,34 @@ test("未確認の件数は、渡した現在時刻で判定する（今日の�
   assert.deepEqual(unc({ now: { date: TODAY, time: "15:00" } })?.slice(0, 2), [2, 1], "S9 が未確認(会議 m2 も過ぎている)");
   assert.equal(unc({ now: { date: TODAY, time: "08:00" } })?.[1] ?? 0, 0, "朝なら S9 はまだ予定");
 });
+
+test("buildReport: 今週と来週は金曜に、実績（今日まで）と来週の予定が 1 枚に出る。来週は実績が空で、予定だけが来週分", () => {
+  const FRI = "2026-10-23";
+  const both = buildReport(load(), FRI, { period: reportPeriod("thisAndNext", FRI) });
+  assert.ok(both.includes("3. 今週と来週の実績") && both.includes("4. 今週と来週の予定"));
+  const plan = both.slice(both.indexOf("4. 今週と来週の予定"));
+  assert.ok(plan.includes("10/23(金)") && plan.includes("10/26(月)") && plan.includes("10/28(水)") && plan.includes("ベンダーへ問い合わせ"), "今日（金）と来週の日付・来週の期限");
+  assert.ok(!plan.includes("10/19(") && !plan.includes("10/22("), "今日より前は予定に出さない");
+  const d = load();
+  d.events.push({ id: "m9", date: "2026-10-26", start: "10:00", end: "11:00", title: "来週の定例", source: "manual", skip: false, externalId: null, projectId: "A" });
+  d.tasks.find((t) => t.id === "A5").sessions.push({ id: "S9", date: "2026-10-27", start: "14:00", end: "15:00", kind: "planned" });
+  const more = buildReport(d, FRI, { period: reportPeriod("thisAndNext", FRI), showMeetingTitles: true });
+  const morePlan = more.slice(more.indexOf("4. 今週と来週の予定"));
+  assert.ok(morePlan.includes("来週の定例") && morePlan.includes("14:00〜15:00") && morePlan.includes("切替手順書の作成"), "来週の会議・作業枠");
+  const next = buildReport(load(), FRI, { period: reportPeriod("nextWeek", FRI) });
+  assert.ok(next.includes("3. 来週の実績") && next.includes("4. 来週の予定"));
+  const actual = next.slice(next.indexOf("3. 来週の実績"), next.indexOf("4. 来週の予定"));
+  assert.ok(actual.includes("期間内に作業した実績はありません"), "実績が空");
+  const nextPlan = next.slice(next.indexOf("4. 来週の予定"));
+  assert.ok(nextPlan.includes("10/26") && !nextPlan.includes("10/23("), "予定は来週分だけ");
+});
+
+test("buildReport: opts.showMeetingTitles が設定より優先する（true で設定 false でも載る。false で設定 true でも載らない。省略は設定どおり）", () => {
+  const withSetting = (v) => { const d = load(); d.settings.reportShowMeetingTitles = v; return d; };
+  const titles = (html) => MEETING_TITLES.filter((t) => html.includes(t));
+  assert.deepEqual(titles(buildReport(withSetting(false), TODAY, { showMeetingTitles: true })), MEETING_TITLES);
+  assert.deepEqual(titles(buildReport(withSetting(true), TODAY, { showMeetingTitles: false })), []);
+  assert.deepEqual(titles(buildReport(withSetting(true), TODAY, {})), MEETING_TITLES);
+  assert.deepEqual(titles(buildReport(withSetting(false), TODAY, {})), []);
+  assert.deepEqual(titles(buildReport(withSetting(false), TODAY, { showMeetingTitles: undefined })), []);
+});
