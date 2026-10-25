@@ -438,9 +438,9 @@ body{padding-block:16px 76px}
   <main id="view"></main>
 </div>
 <div id="claudebar"></div>
-<div id="toast" class="toast" hidden></div>
+<div id="toast" class="toast" hidden role="status"></div>
 <script>/* src/core/dates.js */
-const { isDate, isTime, addDays, diffDays, weekday, isWeekend, toMin, toHHMM, today, nowLocal } = (() => {
+const { isDate, isTime, addDays, dueAfter, diffDays, weekday, isWeekend, toMin, toHHMM, today, nowLocal } = (() => {
 // 日付(YYYY-MM-DD)・時刻(HH:MM)の文字列演算。Date の UTC 変換によるずれを避けるため、数値分解で計算する。
 
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -496,6 +496,12 @@ function addDays(date, n) {
   return `${pad(y, 4)}-${pad(m)}-${pad(d)}`;
 }
 
+/** baseDate の days 日後（暦日。days は 0 以上の整数） */
+function dueAfter(baseDate, days) {
+  if (!Number.isInteger(days) || days < 0) throw new Error(`日数は 0 以上の整数にしてください: ${days}`);
+  return addDays(baseDate, days);
+}
+
 /** a - b（日数） */
 function diffDays(a, b) {
   return parse(a) - parse(b);
@@ -530,7 +536,7 @@ function nowLocal() {
   return { date: today(), time: `${pad(n.getHours())}:${pad(n.getMinutes())}` };
 }
 
-return { isDate, isTime, addDays, diffDays, weekday, isWeekend, toMin, toHHMM, today, nowLocal };
+return { isDate, isTime, addDays, dueAfter, diffDays, weekday, isWeekend, toMin, toHHMM, today, nowLocal };
 })();
 
 /* src/core/schema.js */
@@ -1565,12 +1571,12 @@ function transition(data, id, from, to, fn) {
 }
 
 /** 依頼を足す（状態 pending）。履歴は 20 件まで */
-function submitRequest(data, { text, projectId = null, now }) {
+function submitRequest(data, { text, projectId = null, now, working = false }) {
   const t = checkText(text, "依頼");
   if (projectId != null && !(data.projects ?? []).some((p) => p.id === projectId)) throw new Error(`プロジェクト ${projectId} がありません`);
   const reqs = requestsOf(data);
   const n = reqs.reduce((m, r) => Math.max(m, Number(/^R(\d+)$/.exec(r.id)?.[1] ?? 0)), 0) + 1;
-  const r = { id: `R${n}`, at: now, projectId, status: "pending", thread: [{ role: "user", at: now, text: t }], proposal: null, result: null };
+  const r = { id: `R${n}`, at: now, projectId, status: working ? "working" : "pending", thread: [{ role: "user", at: now, text: t }], proposal: null, result: null, ...(working ? { claimedAt: now } : {}) };
   return withInbox(data, { requests: pruneRequests([...reqs, r]) });
 }
 
@@ -1584,7 +1590,7 @@ const replyToRequest = (data, id, text, now) =>
   transition(data, id, ["question", "proposed", "failed"], "pending", (r) => ({ ...r, thread: pushThread(r, "user", now, checkText(text, "返信")), proposal: null }));
 
 const setProposal = (data, id, proposal, now) =>
-  transition(data, id, ["working"], "proposed", (r) => ({ ...r, thread: pushThread(r, "claude", now, checkText(proposal?.summary || "提案を作りました", "提案の要約")), proposal }));
+  transition(data, id, ["working", "proposed"], "proposed", (r) => ({ ...r, thread: pushThread(r, "claude", now, checkText(proposal?.summary || "提案を作りました", "提案の要約")), proposal }));
 
 const rejectRequest = (data, id, now) =>
   transition(data, id, ["pending", "working", "question", "proposed"], "rejected", (r) => ({ ...r, result: { at: now, by: null, summary: "却下" } }));
@@ -2201,14 +2207,38 @@ function simulate(data, ops, today) {
   const resolve = (token) => refs.get(token) ?? token;
 
   // ① addTask（まず全部足し、先行は、足し終えてから結ぶ。ref で別の addTask を指せるように）
+  // days 指定の期限は、先行（既存のタスク、または別の addTask の ref）が決まってから計算する。ops の書く順には依存しない
   const adds = ops.filter((o) => o.op === "addTask");
+  const dueOf = new Map(); // ref → 計算した期限（days 指定のもの）
+  const pending = adds.filter((o) => o.days !== undefined);
   for (const o of adds) {
     const ref = String(o.ref ?? "").trim();
     if (!ref) throw new Error("addTask には ref が必要です");
+    const hasDue = o.due !== undefined, hasDays = o.days !== undefined;
+    if (hasDue === hasDays) throw new Error(`addTask（${ref}）には due か days のどちらか一方が必要です`);
+  }
+  const refDue = new Map(adds.filter((o) => o.due !== undefined).map((o) => [String(o.ref).trim(), o.due]));
+  while (pending.length) {
+    const ready = pending.filter((o) => (o.predecessors ?? []).every((p) => !adds.some((x) => String(x.ref).trim() === p) || refDue.has(p)));
+    if (!ready.length) throw new Error("addTask の先行が循環しています");
+    for (const o of ready) {
+      const open = (o.predecessors ?? []).map((p) => (refDue.has(p) ? { due: refDue.get(p), status: "To Do" } : need(p))).filter((t) => !closed(t));
+      const base = open.map((t) => t.due).reduce(max, "") || today;
+      const ref = String(o.ref).trim();
+      dueOf.set(ref, dueAfter(base, o.days));
+      refDue.set(ref, dueOf.get(ref));
+      pending.splice(pending.indexOf(o), 1);
+    }
+  }
+  const planned = new Map(); // ref → days を due に固定した op
+  for (const o of adds) {
+    const ref = String(o.ref ?? "").trim();
     if (refs.has(ref)) throw new Error(`ref "${ref}" が重複しています`);
+    const due = o.due ?? dueOf.get(ref);
+    planned.set(o, o.days === undefined ? o : (({ days, ...rest }) => ({ ...rest, due }))(o));
     // 開始日: 書かれていればそのとおり。先行があるタスクは入れない（先行から決まる。入れると validate の注意が出る）。なければ今日（期限が過去なら入れない）
-    const start = o.start ?? ((o.predecessors ?? []).length || o.due < today ? null : today);
-    w = addTask(w, { projectId: o.projectId, title: o.title, due: o.due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
+    const start = o.start ?? ((o.predecessors ?? []).length || due < today ? null : today);
+    w = addTask(w, { projectId: o.projectId, title: o.title, due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
     const id = w.tasks.at(-1).id;
     refs.set(ref, id);
     inboxIds.add(id);
@@ -2298,12 +2328,17 @@ function simulate(data, ops, today) {
   const baseTasks = {};
   for (const id of baseIds) { const t = before.get(id); baseTasks[id] = { due: t.due, predecessors: [...(t.predecessors ?? [])], status: t.status }; projects.add(t.projectId); }
 
-  const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, start: t.start ?? null, predecessors: o.predecessors ?? [] }; });
+  // 先行が、その先行の先行に合わせて引き上げられると、days の期限も引き上げられ、日数が吸収される。表の日数と食い違うので知らせる
+  for (const o of adds.filter((x) => x.days !== undefined)) {
+    const ref = String(o.ref).trim();
+    if (T(refs.get(ref)).due !== dueOf.get(ref)) warnings.push(`登録するタスク ${ref}（${o.title}）の日数 ${o.days} は、先行の期限が引き上げられたため反映されていません（期限は ${T(refs.get(ref)).due}）`);
+  }
+  const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, days: o.days ?? null, start: t.start ?? null, predecessors: o.predecessors ?? [] }; });
   const sections = [];
   if (addRows.length) sections.push({ kind: "add", rows: addRows });
   if (predRows.length) sections.push({ kind: "pred", rows: predRows });
   if (dueRows.length) sections.push({ kind: "due", rows: dueRows });
-  return { data: w, sections, warnings, base: { tasks: baseTasks, projects: [...projects].sort() }, moves, inboxIds: [...inboxIds], predCount, addCount };
+  return { data: w, ops: ops.map((o) => planned.get(o) ?? o), sections, warnings, base: { tasks: baseTasks, projects: [...projects].sort() }, moves, inboxIds: [...inboxIds], predCount, addCount };
 }
 
 /** 変更案の表の同一性（提案と、いまのデータでの計算結果の比較用）。登録する開始日の既定（日付で変わる）と、理由の文は含めない */
@@ -2321,7 +2356,7 @@ function summarizeSections(sections) {
 /** 操作の計画（データは変えない）。例外: 不明なタスク・プロジェクト、循環、別のプロジェクトの先行、完了済みの moveDue、不明な op、など */
 function planOps(data, ops, { today }) {
   const s = simulate(data, ops, today);
-  return { ops, sections: s.sections, warnings: s.warnings, base: s.base };
+  return { ops: s.ops, sections: s.sections, warnings: s.warnings, base: s.base };
 }
 
 /** 提案を適用する。base が現在のデータと違えば、code: "stale" の例外（データは変えない） */
@@ -2354,11 +2389,19 @@ return { summarizeSections, planOps, applyProposal };
 })();
 
 /* src/ui/views/prio.js */
-const { renderPrio } = (() => {
+const { statusButtons, renderPrio } = (() => {
 // 「今日の優先」パネル（プロジェクト画面・スケジュール画面で共通）
 
 
 
+
+/** 着手（To Do・Waiting のとき）と完了（Done・Cancelled 以外）のボタン。スケジュール画面の優先と作業枠が使う */
+function statusButtons(t) {
+  const btn = (status, label) => `<button class="btn" data-setstatus="${esc(t.id)}|${status}" aria-label="${esc(t.id)} を${label}にする">${label}</button>`;
+  const start = t.status === "To Do" || t.status === "Waiting" ? btn("In Progress", "着手") : "";
+  const done = t.status !== "Done" && t.status !== "Cancelled" ? btn("Done", "完了") : "";
+  return start || done ? `<span class="bb">${start}${done}</span>` : "";
+}
 
 /**
  * @param opts.sched   true ならスケジュール画面用（全件・ドラッグ可）。false なら上位 4 件
@@ -2374,7 +2417,7 @@ function renderPrio(data, today, opts = {}) {
     const pill = a.count ? ` <span class="pill ok">${a.count}回・実績 ${a.hours.toFixed(1)}h</span>` : "";
     const proj = esc(data.projects.find((p) => p.id === t.projectId)?.name ?? "");
     const drag = sched ? ` draggable="true" data-pick="${esc(t.id)}" tabindex="0"` : "";
-    return `<li${drag} class="${picked === t.id ? "picked" : ""}"><span class="n">${i + 1}</span><span class="pj">${proj}</span><span class="t">${r.action === "chase" ? `<span class="act">${r.reasons.some((x) => x.includes("催促")) ? "催促" : "確認"}</span>` : ""}${esc(t.title)}${pill}</span><span class="why">${esc(r.reasons.join("。"))}</span></li>`;
+    return `<li${drag} class="${picked === t.id ? "picked" : ""}"><span class="n">${i + 1}</span><span class="pj">${proj}</span><span class="t">${r.action === "chase" ? `<span class="act">${r.reasons.some((x) => x.includes("催促")) ? "催促" : "確認"}</span>` : ""}${esc(t.title)}${pill}</span><span class="why">${esc(r.reasons.join("。"))}</span>${sched ? statusButtons(t) : ""}</li>`;
   }).join("");
   const note = sched
     ? "タスクをカレンダーへドラッグして配置します(15分刻み・長さ1時間)。配置済みの枠もドラッグで移動できます。キーボードでは、タスクを選んで日表示の空き枠を押します。"
@@ -2382,7 +2425,7 @@ function renderPrio(data, today, opts = {}) {
   return `<section class="panel prio" aria-labelledby="h-rk"><h2 id="h-rk">今日の優先</h2>${shown.length ? `<ol class="rank">${items}</ol>` : `<p class="muted">優先するタスクはありません。</p>`}<p class="note" style="margin:10px 0 0">${note}</p></section>`;
 }
 
-return { renderPrio };
+return { statusButtons, renderPrio };
 })();
 
 /* src/ui/views/gantt.js */
@@ -2601,7 +2644,7 @@ function sessionBlocks(data, d, full, g, ctx) {
   return allSessions(data).filter((s) => s.date === d).map((s) => {
     const kind = sessionKind(s, ctx.now);
     const c = KIND_CLS[kind];
-    const confirm = full && kind === "unconfirmed" ? `<span class="bb"><button class="btn" data-confirm="${esc(s.id)}">実績にする</button></span>` : "";
+    const confirm = (full && kind === "unconfirmed" ? `<span class="bb"><button class="btn" data-confirm="${esc(s.id)}">実績にする</button></span>` : "") + (full ? statusButtons(data.tasks.find((t) => t.id === s.taskId)) : "");
     return `<div class="blk task ${c} ${ctx.selSess === s.id ? "sel" : ""}" draggable="true" tabindex="0" data-dragsess="${esc(s.id)}" style="top:${g.tp(toMin(s.start))};height:${g.ht(toMin(s.start), toMin(s.end))}" title="${esc(s.title)}(${KIND_JA[c]})"><span class="tm">${full ? `${s.start}-${s.end}` : s.start}${c === "act" ? " ✓" : c === "unconf" ? " 未確認" : ""}</span>${full ? `${esc(s.taskId)} ` : ""}${esc(s.title)}${confirm}<i class="rz" data-rz="${esc(s.id)}" aria-label="終了時刻を変更"></i></div>`;
   }).join("");
 }
@@ -2691,12 +2734,14 @@ function renderSchedule(data, today, opts) {
   const selMtg = (data.events ?? []).find((m) => m.id === opts.selMtg && days.includes(m.date));
   const delLabel = selSess ? `「${esc(selSess.title)}」の枠を削除` : selMtg && selMtg.source === "manual" ? `会議「${esc(selMtg.title)}」を削除` : "枠や会議を選んで削除";
   const delOk = !!selSess || (selMtg && selMtg.source === "manual");
+  const pd = opts.pendingDone;
+  const doneAsk = pd ? `<div class="ask" style="max-width:none">${esc(pd.id)} の未来の予定の枠 ${pd.n} 件を解除して ${esc(pd.status)} にします。<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-doneok="${esc(pd.id)}">解除して ${esc(pd.status)} にする</button><button class="btn" data-doneno>やめる</button></div></div>` : "";
   const calOpts = { ...opts, view, date, now, selSess: selSess?.id ?? null, selMtg: selMtg?.id ?? null };
 
   const nav = `<div class="toolbar"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn" data-nav="${-step}" aria-label="前へ">←</button><button class="btn" data-nav="${step}" aria-label="次へ">→</button><button class="btn" data-sgoto>今日</button><strong style="margin-left:6px">${title}</strong></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" data-mtgadd>＋ 会議を追加</button><div class="seg" role="group" aria-label="表示"><button data-sview="week" aria-pressed="${view === "week"}">週</button><button data-sview="day" aria-pressed="${view === "day"}">日</button></div></div></div>
     <div class="summary"><span>実績 <b class="mono">${hours.toFixed(1)}時間</b></span><span>予定 <b class="mono">${planned}件</b></span>${unconf ? `<span class="pill wait">未確認 ${unconf}件（作業枠 ${unconfS}・会議 ${unconfM}）</span><button class="btn" data-confirmall>未確認をすべて実績にする</button>` : ""}<button class="btn danger" data-delsel ${delOk ? "" : "disabled"}>${delLabel}</button></div>`;
-  return `<div class="cols${opts.showPrio === false ? " one" : ""}"><section class="panel">${nav}<div id="mtgslot">${meetingForm(data, { mtgDraft: opts.mtgDraft, selMtg: selMtg?.id })}</div><div id="calslot">${renderCalendar(data, today, calOpts)}</div></section>${opts.showPrio === false ? "" : renderPrio(data, today, { sched: true, picked: opts.picked })}</div>`;
+  return `<div class="cols${opts.showPrio === false ? " one" : ""}"><section class="panel">${nav}${doneAsk}<div id="mtgslot">${meetingForm(data, { mtgDraft: opts.mtgDraft, selMtg: selMtg?.id })}</div><div id="calslot">${renderCalendar(data, today, calOpts)}</div></section>${opts.showPrio === false ? "" : renderPrio(data, today, { sched: true, picked: opts.picked })}</div>`;
 }
 
 
@@ -2946,8 +2991,8 @@ function sectionHtml(data, s) {
     return `<div class="ib-sec"><b>先行の対応付け</b><ul class="ib-list">${rows}</ul></div>`;
   }
   if (s.kind === "add") {
-    const rows = s.rows.map((r) => `<tr><td>${esc(r.title)}</td><td>${r.group ? esc(r.group) : "（なし）"}${r.subgroup ? ` ▸ ${esc(r.subgroup)}` : ""}</td><td class="mono">${fmtMD(r.due)}</td><td class="mono">${(r.predecessors ?? []).length ? esc(r.predecessors.join(", ")) : "—"}</td></tr>`).join("");
-    return `<div class="ib-sec"><b>タスクの登録（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>件名</th><th>大項目 ▸ 中項目</th><th>期限</th><th>先行</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    const rows = s.rows.map((r, i) => `<tr data-row="${i + 1}"><td class="mono">${i + 1}</td><td>${esc(r.title)}</td><td>${r.group ? esc(r.group) : "（なし）"}${r.subgroup ? ` ▸ ${esc(r.subgroup)}` : ""}</td><td class="mono">${fmtMD(r.due)}</td><td class="mono">${(r.predecessors ?? []).length ? esc(r.predecessors.join(", ")) : "—"}</td></tr>`).join("");
+    return `<div class="ib-sec"><b>タスクの登録（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>#</th><th>件名</th><th>大項目 ▸ 中項目</th><th>期限</th><th>先行</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   return "";
 }
@@ -2965,6 +3010,9 @@ function detailHtml(data, r, ui) {
       <label style="flex:1 1 220px">変更履歴に残す理由<input class="in" data-ib-reason="${esc(r.id)}" value="${esc(reason)}" aria-label="変更履歴に残す理由"></label></div>
       <div class="ib-act"><button class="btn primary" data-ib-approve="${esc(r.id)}">承認して反映する</button><button class="btn" data-ib-reject="${esc(r.id)}">却下する</button></div>
       <div class="ib-ctl"><input class="in" data-ib-reply="${esc(r.id)}" value="${esc(ui.replies?.[r.id] ?? "")}" placeholder="修正の依頼（例: A5 は 5 日にして）" aria-label="修正の依頼" style="flex:1 1 240px"><button class="btn" data-ib-replysend="${esc(r.id)}">修正を依頼する</button></div></div>`;
+  }
+  if ((r.status === "pending" || r.status === "working") && r.thread.length > 1) {
+    return `<div class="ib-card">${threadHtml(r)}</div>`;
   }
   if (r.status === "question") {
     return `<div class="ib-card">${threadHtml(r)}<div class="ib-ctl"><input class="in" data-ib-reply="${esc(r.id)}" value="${esc(ui.replies?.[r.id] ?? "")}" placeholder="返信" aria-label="返信" style="flex:1 1 240px"><button class="btn primary" data-ib-replysend="${esc(r.id)}">返信する</button></div></div>`;
@@ -3309,13 +3357,13 @@ function toast(msg) {
 function startScreen() {
   const canPick = typeof window.showOpenFilePicker === "function";
   return `<section class="panel"><h2>データファイルを開いてください</h2>
-    <p>プロジェクトとタスクのデータ(JSON)を選びます。初めてのときは、<code>data/sample.json</code> を <code>data/data.json</code> にコピーして選んでください。</p>
+    <p>プロジェクトとタスクのデータ(JSON)を選びます。初めてのときは、<code>/pj-lens:init</code> が作った <code>.pj-lens/data.json</code> を選んでください。</p>
     ${canPick ? `${S.last?.name ? `<button class="btn primary" data-reopen>前回のファイル（${esc(S.last.name)}）を開く</button> <button class="btn" data-openfile>別のファイルを開く</button>` : `<button class="btn" data-openfile>ファイルを開く</button>`}${S.last?.error ? `<p class="note">前回のファイルの記憶を読めませんでした（${esc(S.last.error)}）。毎回ファイルを選ぶ必要があります。</p>` : ""}`
       : `<p class="note">このブラウザはファイルへの直接保存に対応していません。読み込みだけできます。変更したときは、画面上部の「JSON を書き出す」で保存してください(Edge か Chrome なら直接保存できます)。</p><input type="file" accept=".json,application/json" data-fileinput aria-label="データファイルを選ぶ">`}
     ${S.openError ? `<p class="ask" style="max-width:none" role="alert">${esc(S.openError)}</p>` : ""}</section>`;
 }
 
-const scheduleOpts = () => ({ view: S.sview, date: S.sdate, now: clock(), selSess: S.selSess, selMtg: S.selMtg, mtgDraft: S.mtgDraft, picked: S.picked, showPrio: S.prefs.showPrio });
+const scheduleOpts = () => ({ view: S.sview, date: S.sdate, now: clock(), selSess: S.selSess, selMtg: S.selMtg, mtgDraft: S.mtgDraft, picked: S.picked, showPrio: S.prefs.showPrio, pendingDone: S.pendingDone });
 
 function renderBody() {
   const { date: today } = clock();
@@ -3583,7 +3631,7 @@ function dueChange(id, base, orig, edit) {
   // 前倒しは、詰められる後続があるときも確認する(既定は詰めない。パネルのチェックで選ぶ)
   const canCompress = delta < 0 && computeImpact(orig, id, delta, { compress: true }).changes.length > 1;
   if (!needsReplan(impact) && !canCompress) return false;
-  S.pendingReplan = { taskId: id, delta, impact, compress: false, cause: "その他", reason: "", edit, base, orig };
+  S.pendingReplan = { taskId: id, delta, impact, compress: false, cause: "その他", reason: "画面で調整", edit, base, orig };
   S.focusSel = '[data-rp="reason"]';
   render();
   return true;
@@ -3731,6 +3779,8 @@ view.addEventListener("click", (e) => {
   if (q("[data-wtoday]")) { S.wdate = today; render(); return; }
 
   /* スケジュール画面 */
+  const ss = q("[data-setstatus]");
+  if (ss) { const [id, status] = ss.dataset.setstatus.split("|"); changeStatus(id, status); return; }
   const sv = q("[data-sview]"); if (sv) { S.sview = sv.dataset.sview; render(); return; }
   const nv = q("[data-nav]"); if (nv) { S.sdate = addDays(S.sdate, +nv.dataset.nav); render(); return; }
   if (q("[data-sgoto]")) { S.sdate = today; render(); return; }
@@ -3783,6 +3833,15 @@ view.addEventListener("click", (e) => {
   }
   if (cleared) render();
 });
+
+/** 状態の変更（リストの select と、スケジュール画面の着手・完了ボタンが共用）。待ち先・未来の予定枠の確認が要るときは、確認待ちにする */
+function changeStatus(id, status) {
+  const t = S.data.tasks.find((x) => x.id === id);
+  if (status === "Waiting" && !t.waitingOn?.party) { S.pendingWait = id; S.focusSel = `[data-waitparty="${id}"]`; render(); return; }
+  const future = status === "Done" || status === "Cancelled" ? futurePlanned(S.data, id, clock()) : [];
+  if (future.length) { S.pendingDone = { id, status, n: future.length, future }; render(); return; } // 未来の予定枠を消すので確認する
+  setStatus(id, status, []);
+}
 
 function setStatus(id, status, future) {
   apply((d) => {
@@ -3894,13 +3953,7 @@ function onChange(el) {
   if (el.dataset.f) {
     const id = el.dataset.id, f = el.dataset.f;
     const t = S.data.tasks.find((x) => x.id === id);
-    if (f === "status") {
-      if (el.value === "Waiting" && !t.waitingOn?.party) { S.pendingWait = id; S.focusSel = `[data-waitparty="${id}"]`; render(); return; }
-      const future = el.value === "Done" || el.value === "Cancelled" ? futurePlanned(S.data, id, clock()) : [];
-      if (future.length) { S.pendingDone = { id, status: el.value, n: future.length, future }; render(); return; } // 未来の予定枠を消すので確認する
-      setStatus(id, el.value, []);
-      return;
-    }
+    if (f === "status") { changeStatus(id, el.value); return; }
     if (f === "party") { apply((d) => updateTask(d, id, { waitingOn: { party: el.value, since: t.waitingOn?.since ?? today } }, today), "変更を保存しました"); return; }
     if (f === "due") {
       const due = el.value;
@@ -4216,7 +4269,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 
 $("claudebar").addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
-  if (q("[data-ib-toggle]")) { captureBar(); S.ib.open = !S.ib.open; renderBar(); if (S.ib.open) pollInbox(true); return; }
+  if (q("[data-ib-toggle]")) { captureBar(); S.ib.open = !S.ib.open; if (S.ib.open && !S.ib.projectId && S.filter !== "all") S.ib.projectId = S.filter; renderBar(); if (S.ib.open) pollInbox(true); return; }
   const ex = q("[data-ib-example]");
   if (ex) {
     captureBar();

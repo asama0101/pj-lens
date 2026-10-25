@@ -207,3 +207,60 @@ test("planOps(addPred): 開始日のあるタスクに先行を足すと、開�
   const warn = (x) => validate(x, { date: TODAY, time: "10:00" }).warnings;
   assert.deepEqual(warn(out).filter((w) => !warn(d).includes(w)), [], "新しい注意が増えない");
 });
+
+// ---- addTask の days（日数から期限を計算する） ----
+const addRows = (p) => p.sections.find((s) => s.kind === "add").rows;
+const addOp = (ref, extra) => ({ op: "addTask", ref, projectId: "A", title: `タスク ${ref}`, ...extra });
+
+test("planOps(addTask days): 先行の期限 + 日数。先行なしは今日 + 日数。表の行に days と期限が出る", () => {
+  const withPred = planOps(load(), [addOp("t1", { days: 10, predecessors: ["A4"] })], { today: TODAY });
+  assert.deepEqual([addRows(withPred)[0].due, addRows(withPred)[0].days], ["2026-12-07", 10]);
+  const alone = planOps(load(), [addOp("t1", { days: 10 })], { today: TODAY });
+  assert.equal(addRows(alone)[0].due, "2026-10-31");
+});
+
+test("planOps(addTask days): 先行がすべて Done・Cancelled なら今日 + 日数（期限が過去にならない）", () => {
+  const d = load();
+  d.tasks.find((t) => t.id === "A4").status = "Done";
+  const p = planOps(d, [addOp("t1", { days: 7, predecessors: ["A4"] })], { today: TODAY });
+  assert.equal(addRows(p)[0].due, "2026-10-28");
+});
+
+test("planOps(addTask days): ops の書く順が逆でも、ref の先行から順に連鎖する", () => {
+  const p = planOps(load(), [addOp("t2", { days: 5, predecessors: ["t1"] }), addOp("t1", { days: 3, predecessors: ["A4"] })], { today: TODAY });
+  const due = Object.fromEntries(addRows(p).map((r) => [r.ref, r.due]));
+  assert.deepEqual(due, { t1: "2026-11-30", t2: "2026-12-05" });
+});
+
+test("planOps(addTask days): due と days の両方・どちらも無い・負・小数・循環する ref は例外", () => {
+  const bad = (op) => assert.throws(() => planOps(load(), [op], { today: TODAY }));
+  bad(addOp("t1", { days: 3, due: "2026-12-10" }));
+  bad(addOp("t1", {}));
+  bad(addOp("t1", { days: -1 }));
+  bad(addOp("t1", { days: 1.5 }));
+  assert.throws(() => planOps(load(), [addOp("a", { days: 1, predecessors: ["b"] }), addOp("b", { days: 1, predecessors: ["a"] })], { today: TODAY }));
+});
+
+test("planOps(addTask days): 提案の ops は days を due に固定する。翌日以降に承認しても stale にならない", () => {
+  const d = load();
+  const plan = planOps(d, [addOp("t1", { days: 10, predecessors: ["A4"] })], { today: TODAY });
+  assert.equal(plan.ops[0].due, "2026-12-07");
+  assert.ok(!("days" in plan.ops[0]));
+  const out = applyProposal(d, plan, { reason: "x", cause: "その他", today: "2026-10-22" });
+  assert.equal(out.tasks.at(-1).due, "2026-12-07");
+  assert.deepEqual(validate(out).errors, []);
+});
+
+test("planOps(addTask days): 先行の期限が引き上げられて日数が吸収されたときは、注意に出す（表の日数と実際の期限が食い違うため）", () => {
+  const p = planOps(load(), [addOp("t1", { due: "2026-10-21", predecessors: ["A7"] }), addOp("t2", { days: 5, predecessors: ["t1"] })], { today: TODAY });
+  assert.ok(p.warnings.some((w) => w.includes("t2") && w.includes("日数")), p.warnings.join(" / "));
+  const ok = planOps(load(), [addOp("t1", { days: 10, predecessors: ["A4"] })], { today: TODAY });
+  assert.ok(!ok.warnings.some((w) => w.includes("日数")));
+});
+
+test("planOps(addTask days): 先行なしでも、提案の翌日以降に承認して stale にならず、提案の期限のまま登録される", () => {
+  const d = load();
+  const plan = planOps(d, [addOp("t1", { days: 10 })], { today: TODAY });
+  const out = applyProposal(d, plan, { reason: "x", cause: "その他", today: "2026-10-25" });
+  assert.equal(out.tasks.at(-1).due, "2026-10-31");
+});

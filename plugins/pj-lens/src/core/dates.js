@@ -53,6 +53,12 @@ export function addDays(date, n) {
   return `${pad(y, 4)}-${pad(m)}-${pad(d)}`;
 }
 
+/** baseDate の days 日後（暦日。days は 0 以上の整数） */
+export function dueAfter(baseDate, days) {
+  if (!Number.isInteger(days) || days < 0) throw new Error(`日数は 0 以上の整数にしてください: ${days}`);
+  return addDays(baseDate, days);
+}
+
 /** a - b（日数） */
 export function diffDays(a, b) {
   return parse(a) - parse(b);

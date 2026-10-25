@@ -30,13 +30,13 @@ function toast(msg) {
 function startScreen() {
   const canPick = typeof window.showOpenFilePicker === "function";
   return `<section class="panel"><h2>データファイルを開いてください</h2>
-    <p>プロジェクトとタスクのデータ(JSON)を選びます。初めてのときは、<code>data/sample.json</code> を <code>data/data.json</code> にコピーして選んでください。</p>
+    <p>プロジェクトとタスクのデータ(JSON)を選びます。初めてのときは、<code>/pj-lens:init</code> が作った <code>.pj-lens/data.json</code> を選んでください。</p>
     ${canPick ? `${S.last?.name ? `<button class="btn primary" data-reopen>前回のファイル（${esc(S.last.name)}）を開く</button> <button class="btn" data-openfile>別のファイルを開く</button>` : `<button class="btn" data-openfile>ファイルを開く</button>`}${S.last?.error ? `<p class="note">前回のファイルの記憶を読めませんでした（${esc(S.last.error)}）。毎回ファイルを選ぶ必要があります。</p>` : ""}`
       : `<p class="note">このブラウザはファイルへの直接保存に対応していません。読み込みだけできます。変更したときは、画面上部の「JSON を書き出す」で保存してください(Edge か Chrome なら直接保存できます)。</p><input type="file" accept=".json,application/json" data-fileinput aria-label="データファイルを選ぶ">`}
     ${S.openError ? `<p class="ask" style="max-width:none" role="alert">${esc(S.openError)}</p>` : ""}</section>`;
 }
 
-const scheduleOpts = () => ({ view: S.sview, date: S.sdate, now: clock(), selSess: S.selSess, selMtg: S.selMtg, mtgDraft: S.mtgDraft, picked: S.picked, showPrio: S.prefs.showPrio });
+const scheduleOpts = () => ({ view: S.sview, date: S.sdate, now: clock(), selSess: S.selSess, selMtg: S.selMtg, mtgDraft: S.mtgDraft, picked: S.picked, showPrio: S.prefs.showPrio, pendingDone: S.pendingDone });
 
 function renderBody() {
   const { date: today } = clock();
@@ -304,7 +304,7 @@ function dueChange(id, base, orig, edit) {
   // 前倒しは、詰められる後続があるときも確認する(既定は詰めない。パネルのチェックで選ぶ)
   const canCompress = delta < 0 && computeImpact(orig, id, delta, { compress: true }).changes.length > 1;
   if (!needsReplan(impact) && !canCompress) return false;
-  S.pendingReplan = { taskId: id, delta, impact, compress: false, cause: "その他", reason: "", edit, base, orig };
+  S.pendingReplan = { taskId: id, delta, impact, compress: false, cause: "その他", reason: "画面で調整", edit, base, orig };
   S.focusSel = '[data-rp="reason"]';
   render();
   return true;
@@ -452,6 +452,8 @@ view.addEventListener("click", (e) => {
   if (q("[data-wtoday]")) { S.wdate = today; render(); return; }
 
   /* スケジュール画面 */
+  const ss = q("[data-setstatus]");
+  if (ss) { const [id, status] = ss.dataset.setstatus.split("|"); changeStatus(id, status); return; }
   const sv = q("[data-sview]"); if (sv) { S.sview = sv.dataset.sview; render(); return; }
   const nv = q("[data-nav]"); if (nv) { S.sdate = addDays(S.sdate, +nv.dataset.nav); render(); return; }
   if (q("[data-sgoto]")) { S.sdate = today; render(); return; }
@@ -504,6 +506,15 @@ view.addEventListener("click", (e) => {
   }
   if (cleared) render();
 });
+
+/** 状態の変更（リストの select と、スケジュール画面の着手・完了ボタンが共用）。待ち先・未来の予定枠の確認が要るときは、確認待ちにする */
+function changeStatus(id, status) {
+  const t = S.data.tasks.find((x) => x.id === id);
+  if (status === "Waiting" && !t.waitingOn?.party) { S.pendingWait = id; S.focusSel = `[data-waitparty="${id}"]`; render(); return; }
+  const future = status === "Done" || status === "Cancelled" ? futurePlanned(S.data, id, clock()) : [];
+  if (future.length) { S.pendingDone = { id, status, n: future.length, future }; render(); return; } // 未来の予定枠を消すので確認する
+  setStatus(id, status, []);
+}
 
 function setStatus(id, status, future) {
   apply((d) => {
@@ -615,13 +626,7 @@ function onChange(el) {
   if (el.dataset.f) {
     const id = el.dataset.id, f = el.dataset.f;
     const t = S.data.tasks.find((x) => x.id === id);
-    if (f === "status") {
-      if (el.value === "Waiting" && !t.waitingOn?.party) { S.pendingWait = id; S.focusSel = `[data-waitparty="${id}"]`; render(); return; }
-      const future = el.value === "Done" || el.value === "Cancelled" ? futurePlanned(S.data, id, clock()) : [];
-      if (future.length) { S.pendingDone = { id, status: el.value, n: future.length, future }; render(); return; } // 未来の予定枠を消すので確認する
-      setStatus(id, el.value, []);
-      return;
-    }
+    if (f === "status") { changeStatus(id, el.value); return; }
     if (f === "party") { apply((d) => updateTask(d, id, { waitingOn: { party: el.value, since: t.waitingOn?.since ?? today } }, today), "変更を保存しました"); return; }
     if (f === "due") {
       const due = el.value;
@@ -937,7 +942,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 
 $("claudebar").addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
-  if (q("[data-ib-toggle]")) { captureBar(); S.ib.open = !S.ib.open; renderBar(); if (S.ib.open) pollInbox(true); return; }
+  if (q("[data-ib-toggle]")) { captureBar(); S.ib.open = !S.ib.open; if (S.ib.open && !S.ib.projectId && S.filter !== "all") S.ib.projectId = S.filter; renderBar(); if (S.ib.open) pollInbox(true); return; }
   const ex = q("[data-ib-example]");
   if (ex) {
     captureBar();

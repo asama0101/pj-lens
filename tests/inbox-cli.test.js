@@ -151,3 +151,34 @@ test("wait: 待っている間に届いた依頼と、提案の承認（decision
   assert.ok(ev.some((e) => e.event === "request" && e.id === "R1"), JSON.stringify(ev));
   assert.ok(ev.some((e) => e.event === "decision" && e.id === "R1" && e.status === "applied" && e.by === "claude"), JSON.stringify(ev));
 });
+
+test("submit --working: working の依頼ができ、days 入りの propose → approve で登録される。wait は request として知らせない", async () => {
+  const w = work();
+  const s = run("submit", w.data, "A", "文章の要約", "--working");
+  assert.equal(s.status, 0, s.err);
+  assert.equal(s.out.status, "working");
+  const ops = [{ op: "addTask", ref: "t1", projectId: "A", title: "文章から登録", days: 10, predecessors: ["A4"] }];
+  const p = run("propose", w.data, "R1", w.put("ops.json", ops), "--summary", "仮日程の案");
+  assert.equal(p.status, 0, p.err);
+  const proposed = w.json().inbox.requests[0].proposal;
+  assert.ok(proposed.ops[0].due && !("days" in proposed.ops[0]));
+  assert.equal(run("approve", w.data, "R1").status, 0);
+  const t = w.json().tasks.find((x) => x.title === "文章から登録");
+  assert.equal(t.due, proposed.ops[0].due);
+  assert.equal(t.due, "2026-12-07");
+  const w2 = work();
+  run("submit", w2.data, "A", "横取りされない依頼", "--working");
+  const ev = await startWait(w2, ["--timeout", "1"]).done;
+  assert.ok(!ev.some((e) => e.event === "request"), JSON.stringify(ev));
+});
+
+test("propose は、提案済みの依頼にもう一度できる（直した ops で差し替わり、approve は直した方を反映する）", () => {
+  const w = work();
+  run("submit", w.data, "A", "文章の要約", "--working");
+  const ops = (days) => [{ op: "addTask", ref: "t1", projectId: "A", title: "再提案のタスク", days, predecessors: ["A4"] }];
+  assert.equal(run("propose", w.data, "R1", w.put("o1.json", ops(10))).status, 0);
+  const again = run("propose", w.data, "R1", w.put("o2.json", ops(3)));
+  assert.equal(again.status, 0, again.err);
+  assert.equal(run("approve", w.data, "R1").status, 0);
+  assert.equal(w.json().tasks.find((x) => x.title === "再提案のタスク").due, "2026-11-30");
+});

@@ -629,3 +629,48 @@ test("受信箱: 依頼・質問・提案の文字は escape される。inbox �
   assert.doesNotThrow(() => ib(load(), { open: true }));
   assert.doesNotThrow(() => ib(load()));
 });
+
+test("受信箱の提案カード: 登録の行に 1 始まりの行番号（data-row）が出る", () => {
+  const rows = [
+    { ref: "t1", title: "機器の発注", projectId: "A", group: null, subgroup: null, due: "2026-11-03", days: 14, start: "2026-10-21", predecessors: [] },
+    { ref: "t2", title: "納品確認", projectId: "A", group: null, subgroup: null, due: "2026-11-08", days: 5, start: null, predecessors: ["t1"] },
+  ];
+  const html = ib(withInbox([reqOf("R1", "proposed", { proposal: { ...PROPOSAL, sections: [{ kind: "add", rows }] } })]), { open: true });
+  assert.ok(html.includes('data-row="1"') && html.includes('data-row="2"') && !html.includes('data-row="3"'));
+});
+
+test("受信箱の履歴: 処理待ち・処理中でも、2 件目以降のやりとり（修正の依頼）を出す。依頼文は 1 回だけ", () => {
+  for (const status of ["pending", "working"]) {
+    const thread = [{ role: "user", at: T0, text: "最初の依頼文" }, { role: "claude", at: T0, text: "提案の要約です" }, { role: "user", at: T0, text: "3 行目を 10 日にして" }];
+    const html = ib(withInbox([reqOf("R1", status, { thread })]), { open: true });
+    assert.ok(html.includes("3 行目を 10 日にして") && html.includes("提案の要約です"), status);
+    assert.equal(count(html, /最初の依頼文/g), 1, status);
+  }
+});
+
+// ---- スケジュール画面の着手・完了 ----
+test("renderPrio(sched): 着手は To Do・Waiting だけ、完了は Done・Cancelled 以外。sched でなければ出さない", async () => {
+  const { rankTasks } = await import("../plugins/pj-lens/src/core/schedule.js");
+  const d = load();
+  const ranked = rankTasks(d, TODAY).map((r) => d.tasks.find((t) => t.id === r.taskId));
+  assert.ok(ranked.some((t) => t.status === "In Progress") && ranked.some((t) => ["To Do", "Waiting"].includes(t.status)), "検査に使う状態が優先に並んでいる");
+  const html = renderPrio(d, TODAY, { sched: true });
+  for (const t of ranked) {
+    assert.ok(html.includes(`data-setstatus="${t.id}|Done"`), `${t.id} 完了`);
+    assert.equal(html.includes(`data-setstatus="${t.id}|In Progress"`), ["To Do", "Waiting"].includes(t.status), `${t.id} 着手`);
+  }
+  assert.ok(!renderPrio(d, TODAY, { sched: false }).includes("data-setstatus"));
+});
+
+test("renderSchedule: 日表示の作業枠に着手・完了。週表示には出さない。pendingDone があれば確認を出す", () => {
+  const d = load();
+  d.tasks.find((t) => t.id === "A5").sessions.push({ id: "S9", date: TODAY, start: "11:00", end: "12:00", kind: "planned" });
+  d.tasks.find((t) => t.id === "A7").sessions.push({ id: "S10", date: TODAY, start: "14:00", end: "15:00", kind: "planned" });
+  const day = sched(d, { showPrio: false });
+  assert.ok(day.includes('data-setstatus="A5|Done"') && !day.includes('data-setstatus="A5|In Progress"'), "In Progress は完了だけ");
+  assert.ok(day.includes('data-setstatus="A7|In Progress"') && day.includes('data-setstatus="A7|Done"'), "To Do は両方");
+  assert.ok(!renderSchedule(d, TODAY, { view: "week", date: TODAY, now: NOW, showPrio: false }).includes("data-setstatus"));
+  const ask = sched(d, { showPrio: false, pendingDone: { id: "A5", status: "Done", n: 1, future: ["S3"] } });
+  assert.ok(ask.includes('data-doneok="A5"') && ask.includes("未来の予定の枠 1 件"));
+  assert.ok(!day.includes("data-doneok"));
+});

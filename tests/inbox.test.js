@@ -114,3 +114,20 @@ test("isWatching: 89 秒前は true、91 秒前・null・印なしは false。to
   assert.equal(isWatching(base(), ms), false);
   assert.equal(isWatching({ ...base(), inbox: { watching: null, requests: [] } }, ms), false);
 });
+
+test("submitRequest: working を指定すると、working・claimedAt つきで作る。そのまま提案まで進める", () => {
+  const d = submitRequest(base(), { text: "文章の要約", projectId: "A", now: NOW, working: true });
+  const r = getRequest(d, "R1");
+  assert.equal(r.status, "working");
+  assert.equal(r.claimedAt, NOW);
+  assert.equal(status(setProposal(d, "R1", { summary: "案", sections: [], ops: [] }, later(1))), "proposed");
+  assert.equal(getRequest(submitRequest(base(), { text: "x", now: NOW }), "R1").status, "pending");
+});
+
+test("setProposal: 提案済み（proposed）の依頼にも、直した提案を差し替えられる（行番号で直してもう一度 propose）", () => {
+  const first = setProposal(withReq("working"), "R1", { summary: "1 回目", sections: [], ops: [] }, later(1));
+  const second = setProposal(first, "R1", { summary: "直した案", sections: [], ops: [] }, later(2));
+  assert.equal(status(second), "proposed");
+  assert.equal(getRequest(second, "R1").proposal.summary, "直した案");
+  assert.throws(() => setProposal(withReq("applied"), "R1", { summary: "x", sections: [], ops: [] }, later(3)), /applied/);
+});

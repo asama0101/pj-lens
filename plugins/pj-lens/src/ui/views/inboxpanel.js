@@ -31,8 +31,8 @@ function sectionHtml(data, s) {
     return `<div class="ib-sec"><b>先行の対応付け</b><ul class="ib-list">${rows}</ul></div>`;
   }
   if (s.kind === "add") {
-    const rows = s.rows.map((r) => `<tr><td>${esc(r.title)}</td><td>${r.group ? esc(r.group) : "（なし）"}${r.subgroup ? ` ▸ ${esc(r.subgroup)}` : ""}</td><td class="mono">${fmtMD(r.due)}</td><td class="mono">${(r.predecessors ?? []).length ? esc(r.predecessors.join(", ")) : "—"}</td></tr>`).join("");
-    return `<div class="ib-sec"><b>タスクの登録（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>件名</th><th>大項目 ▸ 中項目</th><th>期限</th><th>先行</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    const rows = s.rows.map((r, i) => `<tr data-row="${i + 1}"><td class="mono">${i + 1}</td><td>${esc(r.title)}</td><td>${r.group ? esc(r.group) : "（なし）"}${r.subgroup ? ` ▸ ${esc(r.subgroup)}` : ""}</td><td class="mono">${fmtMD(r.due)}</td><td class="mono">${(r.predecessors ?? []).length ? esc(r.predecessors.join(", ")) : "—"}</td></tr>`).join("");
+    return `<div class="ib-sec"><b>タスクの登録（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>#</th><th>件名</th><th>大項目 ▸ 中項目</th><th>期限</th><th>先行</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   return "";
 }
@@ -50,6 +50,9 @@ function detailHtml(data, r, ui) {
       <label style="flex:1 1 220px">変更履歴に残す理由<input class="in" data-ib-reason="${esc(r.id)}" value="${esc(reason)}" aria-label="変更履歴に残す理由"></label></div>
       <div class="ib-act"><button class="btn primary" data-ib-approve="${esc(r.id)}">承認して反映する</button><button class="btn" data-ib-reject="${esc(r.id)}">却下する</button></div>
       <div class="ib-ctl"><input class="in" data-ib-reply="${esc(r.id)}" value="${esc(ui.replies?.[r.id] ?? "")}" placeholder="修正の依頼（例: A5 は 5 日にして）" aria-label="修正の依頼" style="flex:1 1 240px"><button class="btn" data-ib-replysend="${esc(r.id)}">修正を依頼する</button></div></div>`;
+  }
+  if ((r.status === "pending" || r.status === "working") && r.thread.length > 1) {
+    return `<div class="ib-card">${threadHtml(r)}</div>`;
   }
   if (r.status === "question") {
     return `<div class="ib-card">${threadHtml(r)}<div class="ib-ctl"><input class="in" data-ib-reply="${esc(r.id)}" value="${esc(ui.replies?.[r.id] ?? "")}" placeholder="返信" aria-label="返信" style="flex:1 1 240px"><button class="btn primary" data-ib-replysend="${esc(r.id)}">返信する</button></div></div>`;

@@ -2,7 +2,7 @@
 // 計画（planOps）は、操作を作業用のコピーに当てて、変更案の表・警告・適用前の確認用の値（base）を作る。データは変えない。
 // 適用（applyProposal）は、base が現在のデータと同じときだけ、同じ手順で操作を当てて、変更履歴を足す。
 // 当てる順: addTask → addPred・removePred → moveDue（それぞれ書かれた順）。後続の動きは computeImpact の規則に合わせる。
-import { diffDays } from "../core/dates.js";
+import { diffDays, dueAfter } from "../core/dates.js";
 import { computeImpact } from "../core/impact.js";
 import { CAUSES, OP_KINDS, validate } from "../core/schema.js";
 import { addTask, updateTask } from "./edit.js";
@@ -45,14 +45,38 @@ function simulate(data, ops, today) {
   const resolve = (token) => refs.get(token) ?? token;
 
   // ① addTask（まず全部足し、先行は、足し終えてから結ぶ。ref で別の addTask を指せるように）
+  // days 指定の期限は、先行（既存のタスク、または別の addTask の ref）が決まってから計算する。ops の書く順には依存しない
   const adds = ops.filter((o) => o.op === "addTask");
+  const dueOf = new Map(); // ref → 計算した期限（days 指定のもの）
+  const pending = adds.filter((o) => o.days !== undefined);
   for (const o of adds) {
     const ref = String(o.ref ?? "").trim();
     if (!ref) throw new Error("addTask には ref が必要です");
+    const hasDue = o.due !== undefined, hasDays = o.days !== undefined;
+    if (hasDue === hasDays) throw new Error(`addTask（${ref}）には due か days のどちらか一方が必要です`);
+  }
+  const refDue = new Map(adds.filter((o) => o.due !== undefined).map((o) => [String(o.ref).trim(), o.due]));
+  while (pending.length) {
+    const ready = pending.filter((o) => (o.predecessors ?? []).every((p) => !adds.some((x) => String(x.ref).trim() === p) || refDue.has(p)));
+    if (!ready.length) throw new Error("addTask の先行が循環しています");
+    for (const o of ready) {
+      const open = (o.predecessors ?? []).map((p) => (refDue.has(p) ? { due: refDue.get(p), status: "To Do" } : need(p))).filter((t) => !closed(t));
+      const base = open.map((t) => t.due).reduce(max, "") || today;
+      const ref = String(o.ref).trim();
+      dueOf.set(ref, dueAfter(base, o.days));
+      refDue.set(ref, dueOf.get(ref));
+      pending.splice(pending.indexOf(o), 1);
+    }
+  }
+  const planned = new Map(); // ref → days を due に固定した op
+  for (const o of adds) {
+    const ref = String(o.ref ?? "").trim();
     if (refs.has(ref)) throw new Error(`ref "${ref}" が重複しています`);
+    const due = o.due ?? dueOf.get(ref);
+    planned.set(o, o.days === undefined ? o : (({ days, ...rest }) => ({ ...rest, due }))(o));
     // 開始日: 書かれていればそのとおり。先行があるタスクは入れない（先行から決まる。入れると validate の注意が出る）。なければ今日（期限が過去なら入れない）
-    const start = o.start ?? ((o.predecessors ?? []).length || o.due < today ? null : today);
-    w = addTask(w, { projectId: o.projectId, title: o.title, due: o.due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
+    const start = o.start ?? ((o.predecessors ?? []).length || due < today ? null : today);
+    w = addTask(w, { projectId: o.projectId, title: o.title, due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
     const id = w.tasks.at(-1).id;
     refs.set(ref, id);
     inboxIds.add(id);
@@ -142,12 +166,17 @@ function simulate(data, ops, today) {
   const baseTasks = {};
   for (const id of baseIds) { const t = before.get(id); baseTasks[id] = { due: t.due, predecessors: [...(t.predecessors ?? [])], status: t.status }; projects.add(t.projectId); }
 
-  const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, start: t.start ?? null, predecessors: o.predecessors ?? [] }; });
+  // 先行が、その先行の先行に合わせて引き上げられると、days の期限も引き上げられ、日数が吸収される。表の日数と食い違うので知らせる
+  for (const o of adds.filter((x) => x.days !== undefined)) {
+    const ref = String(o.ref).trim();
+    if (T(refs.get(ref)).due !== dueOf.get(ref)) warnings.push(`登録するタスク ${ref}（${o.title}）の日数 ${o.days} は、先行の期限が引き上げられたため反映されていません（期限は ${T(refs.get(ref)).due}）`);
+  }
+  const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, days: o.days ?? null, start: t.start ?? null, predecessors: o.predecessors ?? [] }; });
   const sections = [];
   if (addRows.length) sections.push({ kind: "add", rows: addRows });
   if (predRows.length) sections.push({ kind: "pred", rows: predRows });
   if (dueRows.length) sections.push({ kind: "due", rows: dueRows });
-  return { data: w, sections, warnings, base: { tasks: baseTasks, projects: [...projects].sort() }, moves, inboxIds: [...inboxIds], predCount, addCount };
+  return { data: w, ops: ops.map((o) => planned.get(o) ?? o), sections, warnings, base: { tasks: baseTasks, projects: [...projects].sort() }, moves, inboxIds: [...inboxIds], predCount, addCount };
 }
 
 /** 変更案の表の同一性（提案と、いまのデータでの計算結果の比較用）。登録する開始日の既定（日付で変わる）と、理由の文は含めない */
@@ -165,7 +194,7 @@ export function summarizeSections(sections) {
 /** 操作の計画（データは変えない）。例外: 不明なタスク・プロジェクト、循環、別のプロジェクトの先行、完了済みの moveDue、不明な op、など */
 export function planOps(data, ops, { today }) {
   const s = simulate(data, ops, today);
-  return { ops, sections: s.sections, warnings: s.warnings, base: s.base };
+  return { ops: s.ops, sections: s.sections, warnings: s.warnings, base: s.base };
 }
 
 /** 提案を適用する。base が現在のデータと違えば、code: "stale" の例外（データは変えない） */

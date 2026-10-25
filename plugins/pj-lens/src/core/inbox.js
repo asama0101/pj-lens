@@ -46,12 +46,12 @@ function transition(data, id, from, to, fn) {
 }
 
 /** 依頼を足す（状態 pending）。履歴は 20 件まで */
-export function submitRequest(data, { text, projectId = null, now }) {
+export function submitRequest(data, { text, projectId = null, now, working = false }) {
   const t = checkText(text, "依頼");
   if (projectId != null && !(data.projects ?? []).some((p) => p.id === projectId)) throw new Error(`プロジェクト ${projectId} がありません`);
   const reqs = requestsOf(data);
   const n = reqs.reduce((m, r) => Math.max(m, Number(/^R(\d+)$/.exec(r.id)?.[1] ?? 0)), 0) + 1;
-  const r = { id: `R${n}`, at: now, projectId, status: "pending", thread: [{ role: "user", at: now, text: t }], proposal: null, result: null };
+  const r = { id: `R${n}`, at: now, projectId, status: working ? "working" : "pending", thread: [{ role: "user", at: now, text: t }], proposal: null, result: null, ...(working ? { claimedAt: now } : {}) };
   return withInbox(data, { requests: pruneRequests([...reqs, r]) });
 }
 
@@ -65,7 +65,7 @@ export const replyToRequest = (data, id, text, now) =>
   transition(data, id, ["question", "proposed", "failed"], "pending", (r) => ({ ...r, thread: pushThread(r, "user", now, checkText(text, "返信")), proposal: null }));
 
 export const setProposal = (data, id, proposal, now) =>
-  transition(data, id, ["working"], "proposed", (r) => ({ ...r, thread: pushThread(r, "claude", now, checkText(proposal?.summary || "提案を作りました", "提案の要約")), proposal }));
+  transition(data, id, ["working", "proposed"], "proposed", (r) => ({ ...r, thread: pushThread(r, "claude", now, checkText(proposal?.summary || "提案を作りました", "提案の要約")), proposal }));
 
 export const rejectRequest = (data, id, now) =>
   transition(data, id, ["pending", "working", "question", "proposed"], "rejected", (r) => ({ ...r, result: { at: now, by: null, summary: "却下" } }));

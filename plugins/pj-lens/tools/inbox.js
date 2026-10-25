@@ -10,7 +10,7 @@ import {
 import { planOps, applyProposal, summarizeSections } from "../src/ui/inboxops.js";
 
 const USAGE = `使い方: node tools/inbox.js <コマンド> <data.json> ...
-  submit  <data.json> <projectId|-> <text>        依頼を足す（テスト・手動用）
+  submit  <data.json> <projectId|-> <text> [--working]   依頼を足す（--working は処理中として作る。文章の取り込み用）
   list    <data.json>                             依頼の一覧
   get     <data.json> <id>                        依頼 1 件（やりとり・提案つき）
   wait    <data.json> [--timeout <秒>]            依頼を待つ。1 行 1 イベントの JSON を出し続ける
@@ -34,8 +34,8 @@ function save(path, data) {
 }
 
 const COMMANDS = {
-  submit: [3, (d, [path, pid, text]) => {
-    const next = submitRequest(d, { text, projectId: pid === "-" ? null : pid, now: now() });
+  submit: [3, (d, [path, pid, text], o) => {
+    const next = submitRequest(d, { text, projectId: pid === "-" ? null : pid, now: now(), working: o.working === true });
     save(path, next);
     const r = next.inbox.requests.at(-1);
     out({ ok: true, id: r.id, status: r.status });
@@ -109,7 +109,7 @@ const opts = {};
 const rest = [];
 for (let i = 0; i < argv.length; i++) {
   const f = /^--(\w+)$/.exec(argv[i])?.[1];
-  if (f && FLAGS.includes(f)) { opts[f] = argv[++i]; } else rest.push(argv[i]);
+  if (f === "working") { opts.working = true; } else if (f && FLAGS.includes(f)) { opts[f] = argv[++i]; } else rest.push(argv[i]);
 }
 const [cmd, ...args] = rest;
 if (cmd === "wait") {
