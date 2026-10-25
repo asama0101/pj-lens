@@ -62,7 +62,7 @@ pj-lens.html: 作りました
 | `.pj-lens/data.json` | あなたのデータ |
 | `.gitignore` の `.pj-lens/` の 1 行 | そのフォルダか親フォルダに `.git` があるときだけ追記します（UTF-8 以外の `.gitignore` は触らず、追記を案内します） |
 
-### アンインストール
+### アンインストールで消えるもの・残るもの
 
 プラグインを削除すると、プラグイン専用のフォルダ（`~/.claude/plugins/data/` の下）の、Excel 用の Python 環境（venv）と、予定表の MCP の指定 `pj-lens-mcp.json` が消えます。作業フォルダの `.pj-lens/data.json`・`pj-lens.html`・保存したレポートは残るので、不要なら手で消してください。再インストールしたときは、venv と MCP の指定をもう一度作ります（Excel の取り込み時の承認、`/pj-lens:mcp`）。
 

@@ -2,65 +2,120 @@
 
 pj-lens の開発者向けの情報です。利用者向けの説明は、リポジトリ直下の [README.md](../README.md) にあります。
 
+- [構成](#構成)
+- [開発の手順](#開発の手順)
+- [設計判断](#設計判断)
+- [データ形式](#データ形式)
+- [算出の規則](#算出の規則)
+- [画面の動き](#画面の動き)
+- [取り込み（intake）](#取り込みintake)
+- [HTML からの依頼（inbox）](#html-からの依頼inbox)
+- [レポート](#レポート)
+- [補助コマンド](#補助コマンド)
+- [変更履歴](#変更履歴)
+
 ## 構成
 
-プラグイン本体は `plugins/pj-lens/`、tests・docs はリポジトリ直下にあります。
+プラグイン本体は `plugins/pj-lens/`、テストと文書はリポジトリ直下にある。
 
 | パス | 内容 |
 |---|---|
 | `.claude-plugin/marketplace.json` | マーケットプレイスの定義 |
-| `plugins/pj-lens/` | プラグイン本体（`.claude-plugin/plugin.json`・`skills/`・`agents/`・`src/`・`tools/`・`assets/`・`data/sample.json`・`requirements.txt`・`package.json`） |
+| `plugins/pj-lens/` | プラグイン本体 |
+| `plugins/pj-lens/.claude-plugin/plugin.json` | プラグインの定義（`version` はここ） |
+| `plugins/pj-lens/skills/` | スラッシュコマンド（`init`・`replan`・`intake`・`mcp`・`watch`・`inbox`・`holidays`） |
+| `plugins/pj-lens/agents/` | サブエージェント（`replan`・`intake`・`inbox`） |
+| `plugins/pj-lens/src/` | 画面と計算のソース（`core/` 計算、`import/` 取り込み、`ui/` 画面） |
+| `plugins/pj-lens/tools/` | スキル・エージェントが呼ぶ CLI と `build.js` |
+| `plugins/pj-lens/assets/pj-lens.html` | `src/` から作る、同梱の完成版（コミットする） |
+| `plugins/pj-lens/data/sample.json` | データの雛形（形式の正本） |
+| `plugins/pj-lens/requirements.txt` | Excel 用の venv に入れる Python パッケージ（版とハッシュを固定） |
 | `tests/` | テスト（`fixtures/` は Excel のサンプル） |
 | `docs/development.md` | このファイル。`docs/` のほかのファイルは gitignore 済みで、ローカルにだけある |
 
-## テストとビルド
+## 開発の手順
 
 ```
 npm test        # node --test
-npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱する完成版）
+npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱する完成版）を作る
 ```
 
-- ソース（`plugins/pj-lens/src/`）を変えたら `npm run build` を実行し、`assets/pj-lens.html` をコミットする（古いと `npm test` が失敗する）。
+- `plugins/pj-lens/src/` を変えたら `npm run build` を実行し、`assets/pj-lens.html` をコミットする。古いと `npm test` が失敗する。
 - このリポジトリを直接開いてプラグインを試すときは、`claude --plugin-dir ./plugins/pj-lens` で起動する。
-- 環境変数 `PJ_LENS_HOME` は、テストや開発用に、プラグイン専用のフォルダの場所を固定する。`claude --plugin-dir` で読み込むと置き場が本番と別（`pj-lens-inline`）になるので、開発時はこれで固定する。
-- プラグインの `version`（`plugins/pj-lens/.claude-plugin/plugin.json`）を変えないと、利用者に更新が届かない。公開のたびに、同じフォルダの `package.json` と一緒に上げる。
+- 環境変数 `PJ_LENS_HOME` は、プラグイン専用のフォルダ（`${CLAUDE_PLUGIN_DATA}`）の場所を固定する。テストと開発用。`--plugin-dir` で読み込むと置き場が本番と別（`pj-lens-inline`）になるので、開発時はこれで固定する。
+- 公開するときは、`plugins/pj-lens/.claude-plugin/plugin.json` の `version` を上げる（変えないと、利用者に更新が届かない）。同じフォルダの `package.json` の `version` も一緒に上げる。
 
 ## 設計判断
 
 - **1 人で使う前提**: 複数人が同じ `data.json` を同時に編集する用途は想定しない。保存前に更新日時を比べて上書きを止めるが、ロックや統合はしない。共有にはレポートを使う。
-- **`replan`・`intake` のスキルに `disable-model-invocation` を付けていません**（外している）。理由は、自然な言い方（「A3 が 5 日遅れた」など）で起動するのが主な入口で、データを書くのは変更案を見せて承認を得たあとだけだから。いずれも、変更案を示して承認を得てからデータを書き換え、書き込み後に検証（`validate`）を実行する。書き込みは検証に通ったときだけで、通らなければ何も書かない。`init` と `mcp` は、自分のスクリプトだけを事前に許可している。
-- **MCP を同梱しない**: 予定表の MCP（Outlook など）は、利用者が Claude Code に用意したものを使う（`.mcp.json` はない）。指定は `/pj-lens:mcp` で `${CLAUDE_PLUGIN_DATA}`（`~/.claude/plugins/data/` の下）の `pj-lens-mcp.json` に保存し、`data.json` には入れない。このファイルには `schema_version`（現在 1）を入れる。`schema_version` の無い既存のファイルは 1 として読む。保存形式を変える版では、この節に移行手順を書く。
+- **スキルの起動**
+  - `replan`・`intake` のスキルには `disable-model-invocation` を付けていません。自然な言い方（「A3 が 5 日遅れた」など）で起動するのが主な入口で、データを書くのは変更案を見せて承認を得たあとだけだから。
+  - いずれも、変更案を示して承認を得てからデータを書き換え、書き込み後に検証（`validate`）を実行する。書き込みは検証に通ったときだけで、通らなければ何も書かない。
+  - `init`・`mcp`・`holidays`・`inbox`・`watch` は `disable-model-invocation: true`（利用者が明示して呼ぶ）。`init` と `mcp` は、自分のスクリプトだけを `allowed-tools` で事前に許可している。
+- **MCP を同梱しない**
+  - 予定表の MCP（Outlook など）は、利用者が Claude Code に用意したものを使う（`.mcp.json` はない）。
+  - 指定は `/pj-lens:mcp` で `${CLAUDE_PLUGIN_DATA}`（`~/.claude/plugins/data/` の下）の `pj-lens-mcp.json` に保存し、`data.json` には入れない。
+  - このファイルには `schema_version`（現在 1）を入れる。無い既存のファイルは 1 として読む。保存形式を変える版では、この節に移行手順を書く。
 - **PDF 生成ライブラリを入れない**: レポート(PDF)を廃止した。PDF が要るときは、保存した HTML をブラウザで開いて印刷画面から「PDF として保存」を選ぶ。
 - **外部パッケージを使わない**: ローカルサーバー・常駐プロセス・データベースも使わない。Excel の取り込みだけ、専用の venv の `openpyxl` を使う。
 - **専用の venv**: 版とハッシュを `requirements.txt` で固定し、`pip install --require-hashes -r requirements.txt` で入れる（ハッシュは PyPI の配布ファイルから `pip hash` で求めた値）。作る前に、場所と内容を示して承認を求める。
 
-## 画面の動き
+## データ形式
 
-- 画面上部のナビは、プロジェクト・スケジュール・稼働・設定の 4 つ。ヘッダー、プロジェクト画面のフィルタの行、右側の列（今日のタスク・今日の優先）、リストの表の列見出しは、スクロールしても上端に固定する。右上の「今日の優先」「ガント実績」のスイッチの設定は、このブラウザに保存する。
-- ガントの「完了を隠す」は、Done のタスクの行に加えて、複数のプロジェクトを出しているときは、完了したプロジェクト（状態が「完了」、またはタスクが全部 Done）も隠す。1 つを選んでいるときは隠さない。
-- ガント・リストは、(大項目 ▸ 中項目) ごとに区切り行を出す。並びは、大項目の登場順、その中は中項目の登場順で、未設定は末尾の「（なし）」。表示だけの並べ替えで、保存ファイルの並びは変わらない。見出しの呼び名は `settings.labels` で変える。
-- 日程変更の確認パネルは、期限を変えて、後続が動く・プロジェクト期限を超える・前倒しで詰められる後続がある、のいずれかのときに出る。反映するときは、原因（ベンダー／社内／自分／その他）と理由を入れる。
-- 「今日のタスク」（`views/prio.js` の `renderTodayTasks`。今日の日付に作業枠があるタスクを枠から導く。保存しない）が、プロジェクト画面・スケジュール画面の右の列（`renderSide`。`showPrio` に従う）で「今日の優先」の上に出る。行に状態の pill と、「着手」（To Do・Waiting のとき。In Progress にする）・「完了」（Done・Cancelled 以外。Done にする）のボタンがある。Done・Cancelled は薄く、ボタン無しで末尾。今日のタスクに入ったタスクは、`renderPrio` が一覧から除く（`rankTasks` は変えない）。ボタンはリストの状態の select と同じ関数（`app.js` の `changeStatus`）を通る。まだ開始していない予定枠があるときの確認（`doneAskHtml`。`futurePlanned`＝開始前の予定枠だけ。進行中の枠は残り、終わったあとに実績にできる）は、対象が今日のタスクにいればパネルの行に、いなければ（リストの select から）リストの行に出る。日表示の作業枠は、ボタンの代わりにタスクの状態の文字を出す。
-- 枠・会議のドラッグと下端ドラッグの間、`app.js` の `showTip` がポインタの近くに「開始–終了」を出す（`hideTip` が drop・dragend・離したとき・描き直しで消す）。週表示のブロックも開始–終了を出す。
-- 設定タブの「日本の祝日」（`settings.nationalHolidays`。読み取り専用。取得は `tools/holidays.js`）、「休み（手動）」（`settings.holidays`＝`{date, kind, note}`。`addHoliday`・`addHolidayRange`・`removeHoliday`。終了日を入れると期間を 1 日ずつに展開し、土日と取得済みの日本の祝日を除く。`holidayRangeDays` が除外の数を返し、`app.js` が通知する）、「営業日として扱う日」（`settings.workdays`。`addWorkday`・`removeWorkday`）の 3 節がある。`validate` は 3 つの形が違うとき注意（warning）にし、画面は壊れた値を空として描いて節の上に注意を出す。
-- スケジュール画面の「置ける日」は、`core/holidays.js` の `offDayChecker(settings)`（土日・`holidays`・`nationalHolidays` の日は休み。`workdays` の日は休みでない）で決める。休みの日は `freeOf` が空き時間を出さず（週表示の列は `weekend` 扱いで「—」）、`sessions.js` の `check`（`addSession`・`moveSession`・`resizeSession`）が「置けません」を返す。すでに休みの日にある枠はそのまま残り、同じ日の中なら伸縮・移動もできる（`check` の `ignoreId`。新しく置く・別の日から動かすときだけ止める）。
-- 日本の祝日の取得は `tools/holidays.js`（`update` は内閣府の `syukujitsu.csv`［Shift_JIS］を取得して前年以降だけを `nationalHolidays` に書く。失敗したら `data.json` を変えず終了コード 1。`status` は取得日・件数・範囲・`ageDays`。取得先は環境変数 `PJ_LENS_HOLIDAYS_URL` で変えられる）。ブラウザからは CORS で取れないため、画面は取得しない。`/pj-lens:holidays` が手動の入口で、`intake`・`inbox` の指示文が営業日を使う前に `status` を見て（未取得・30 日超・見積もりが範囲外なら）`update` を実行する。解析は `core/holidays.js`（`parseHolidayCsv`・`pickRecent`・`decodeHolidayCsv`）の純関数。
-- 設定タブの「基本の設定」は、勤務時間・待ち長期化の日数・見出しの呼び名を、その場で保存する（`updateSettings`）。勤務時間は開始・終了を組で保存する（`type="time"` は時・分を打つたびに change が起きるので、打ち終わる［0.8 秒止まる］か入力欄を離れてから保存する［`changeSettingSoon`］。保存に成功したら描き直さない［描き直すと入力の位置が「時」に戻る］。不正な値は、先に検査して通知し、入力欄だけを保存された値［形が違えば既定値］に戻す［`restoreSettingInputs`。描き直すとフォーカスが消える］）。形が違う値は `validate` が注意（warning）にし、設定タブは既定値を入力欄に出して横に注意を出す（読む側に fallback は無く、勤務時間が `HH:MM` でないとスケジュール画面は動かない）。キーワード規則は↑↓で並べ替えられる（`moveProjectRule`。上の規則が先に当たるため、並べ替えたら会議へ付け直す）。
-- スケジュールの枠は、予定（青緑）・実績（緑）・未確認（橙の点線）。会議は紫。枠は実績時間の記録だけで、タスクの状態は変えない。予定表から取得した会議は、「参加しない」とプロジェクトだけ変更できる。
-- 会議のプロジェクトは、規則（件名のキーワード → プロジェクト）で自動に付き（`projectBy` が `rule`）、手動で付けたもの（`manual`）は規則を変えても動かない。
-- 稼働は、プロジェクト別のタスクの時間（実績の作業枠）と会議の時間（確認済みで、参加するもの）を集計する。プロジェクト未設定の会議は「プロジェクト未設定の会議」にまとめる。未確認の枠・会議は含まない。
-- URL に `?today=2026-10-20&time=10:15` を付けると、現在日時を固定して開ける（動作確認用）。
+`.pj-lens/data.json`（雛形は `plugins/pj-lens/data/sample.json`。迷ったらこれが正本）は、`version`（現在は 1）と次のキーで構成する。
 
-### 保存と競合
+- `projects`・`tasks`・`events`・`changeLog` は必須の配列。
+- `settings`・`inbox` は省略できる（`settings` は既定値が使われる）。
+- 日付は `YYYY-MM-DD`、時刻は `HH:MM` の文字列。
 
-- `data.json` が他の手段で更新されていると、保存時に「他で更新されました。再読込してください」と出る（上書きはしない）。読み直すと、画面の保存できていない変更は消える。
-- 直接保存に対応しないブラウザでは、読み込みだけできる。変更は「JSON を書き出す」で保存する。
-- 前回のファイルの記憶は、Edge で `file://` から開いて効くことを確認した。権限の確認の文言は Edge のバージョンで違う想定で、実際の文言と「何も押さずに開く」動きは未確認。
-- 画面は、ファイルを自動で読み直す（帯が開いている間や依頼の処理中は 4 秒、そうでなければ 16 秒ごと。保存できる環境のとき）。
+| キー | 内容 |
+|---|---|
+| `projects` | `id`、`name`、`type`（増設／更改／改善／不具合対処／その他）、`status`、`start`、`due`、`milestones`（`name`、`date`） |
+| `tasks` | 下の「tasks の項目」 |
+| `events` | 会議。`id`、`date`、`start`、`end`、`title`、`source`（`manual`／`mcp`）、`skip`、`externalId`、`projectId`、`projectBy`（`rule`／`manual`）、`confirmed`（過ぎたあと確認すると稼働に数える） |
+| `changeLog` | 日程変更と取り込みの履歴。`at`、`taskIds`、`reason`、`cause`、`deltaDays`。取り込みの記録には、`source`（`wbs`／`calendar`／`inbox`）が付く（それ以外の `source` は検証がエラーにする） |
+| `settings` | 下の「settings の項目」 |
+| `inbox` | HTML から Claude Code への依頼の受信箱。下の「inbox の項目」 |
 
-## 優先順位の算出
+### tasks の項目
 
-対象は `Done`／`Cancelled` 以外で、先行タスクがすべて完了しているもの。点数の合計が高い順。
+- `id`、`projectId`、`title`、`due`、`start`、`status`、`memo`、`predecessors`、`doneAt`
+- `waitingOn`: `party`、`since`
+- `importance`: `high`／`mid`／`low`／`null`
+- `sessions`: 作業枠。`id`、`date`、`start`、`end`、`kind`（`planned`／`actual`）
+- `group`（大項目）、`subgroup`（中項目）: 表示と絞り込み用の文字列。親の期限や進捗は集計しない
+- `wbsKey`: WBS 上の項目名の連結。再取り込みの照合用
+
+### settings の項目
+
+| 項目 | 内容 |
+|---|---|
+| `workday` | 勤務時間（`start`・`end`。既定 09:00〜18:00） |
+| `waitingLongDays` | `Waiting` を長いとみなす日数 |
+| `labels` | 見出しの呼び名（`group`・`subgroup`） |
+| `projectRules` | 会議のプロジェクト規則（`keyword`・`projectId`） |
+| `holidays` | 手動の休み（`date`・`kind`＝祝日／有給／その他・`note`）。営業日の計算で飛ばす |
+| `workdays` | 営業日として扱う日（`date`・`note`） |
+| `nationalHolidays` | 取得した日本の祝日（`fetchedAt`・`source`・`dates`［`date`・`name`］。前年以降だけ） |
+| `reportShowMeetingTitles` | レポートのパネルの「会議の件名を載せる」の最初の状態（画面では変えない） |
+| `wbsMappings` | WBS の列の対応（プロジェクト ID → 項目 → Excel の列見出し） |
+| `wbsImports` | WBS の取り込み記録（プロジェクト ID → `file`・`at`・`added`・`updated`。最後の 1 件。`wbs-apply` が書く） |
+
+### inbox の項目
+
+- `watching.at`: Claude Code が見ている印の日時（30 秒ごとに更新）
+- `requests`: 最新 20 件。各依頼は次を持つ。
+  - `id`（`R1` など）、`at`、`projectId`
+  - `status`: `pending`／`working`／`question`／`proposed`／`applied`／`rejected`／`failed`
+  - `thread`: やりとり。`role`（`user`／`claude`）・`at`・`text`
+  - `proposal`: `summary`・`reason`・`cause`・`ops`（`moveDue`／`addPred`／`removePred`／`addTask`）・`sections`・`warnings`・`base`
+  - `result`: `at`・`by`（`html`／`claude`）・`summary`
+
+## 算出の規則
+
+### 優先順位（今日の優先）
+
+対象は `Done`／`Cancelled` 以外で、先行タスクがすべて完了しているもの。点数の合計が高い順（実装は `core/schedule.js`）。
 
 | 項目 | 点数 |
 |---|---|
@@ -72,73 +127,167 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 
 同点は期限の早い順、次に ID 順。
 
-## 日程変更の計算
+### 日程変更
 
-先行（`predecessors`）をたどり、後続を**最小限だけ**動かす（先行の新しい期限を超えないようにするだけで、余裕のある後続は動かない）。`Done`／`Cancelled` は動かさない。前倒しのときは、「詰める」を選ぶと、後続も同じ日数だけ前倒しする（先行の新しい期限より前にはしない）。依存が入力されていないタスクは動かない。
+- 先行（`predecessors`）をたどり、後続を**最小限だけ**動かす。先行の新しい期限を超えないようにするだけで、余裕のある後続は動かない。
+- `Done`／`Cancelled` は動かさない。依存が入力されていないタスクも動かない。
+- 前倒しのときは、「詰める」を選ぶと、後続も同じ日数だけ前倒しする（先行の新しい期限より前にはしない）。
 
-## 状態と進捗
+### 状態と進捗
 
 - タスクの状態は `To Do`／`In Progress`／`Waiting`（待ち先を持つ）／`Done`／`Cancelled`（進捗率の分母から除く）。
 - プロジェクトの状態は `計画中`／`進行中`／`保留`／`完了`／`中止`。
-- 遅延・リスクは状態ではなく自動判定のバッジ（「期限超過 N件」「待ち長期化」＝`Waiting` が `settings.waitingLongDays` 日以上、「プロジェクト期限超過」）。
+- 遅延・リスクは状態ではなく自動判定のバッジ。「期限超過 N件」、「待ち長期化」（`Waiting` が `settings.waitingLongDays` 日以上）、「プロジェクト期限超過」。
 - 進捗率は `Done` ÷（`Cancelled` を除く全タスク）。
 
-## データ形式
+## 画面の動き
 
-`.pj-lens/data.json`（雛形は `plugins/pj-lens/data/sample.json`。迷ったらこれが正本）は、`version`（現在は 1）と次の 5 つで構成する。`projects`・`tasks`・`events`・`changeLog` は必須の配列で、`settings` は省略できる（既定値が使われる）。日付は `YYYY-MM-DD`、時刻は `HH:MM` の文字列。
+画面上部のナビは、プロジェクト・スケジュール・稼働・設定の 4 つ。
 
-| キー | 内容 |
-|---|---|
-| `settings` | 手動の休み（`holidays`＝`{date, kind: 祝日|有給|その他, note}` の配列。営業日の計算で飛ばす）、営業日として扱う日（`workdays`＝`{date, note}`）、取得した日本の祝日（`nationalHolidays`＝`fetchedAt`・`source`・`dates`［`date`・`name`］。前年以降だけ）、勤務時間（`workday`。既定 09:00〜18:00）、待ちを長いとみなす日数（`waitingLongDays`）、レポートのパネルの「会議の件名を載せる」の最初の状態（`reportShowMeetingTitles`。画面では変えない）、会議のプロジェクト規則（`projectRules`＝`keyword`、`projectId`）、見出しの呼び名（`labels`＝`group`、`subgroup`）、WBS の列の対応（`wbsMappings`＝プロジェクト ID → 項目 → Excel の列見出し）、WBS の取り込み記録（`wbsImports`＝プロジェクト ID → `file`・`at`・`added`・`updated`。最後の 1 件。`wbs-apply` が書く） |
-| `projects` | `id`、`name`、`type`（増設／更改／改善／不具合対処／その他）、`status`、`start`、`due`、`milestones`（`name`、`date`） |
-| `tasks` | `id`、`projectId`、`title`、`due`、`start`、`status`、`memo`、`predecessors`、`waitingOn`、`importance`（`high`／`mid`／`low`／`null`）、`doneAt`、`sessions`（作業枠。`id`、`date`、`start`、`end`、`kind`＝`planned`／`actual`）、`group`（大項目）、`subgroup`（中項目）、`wbsKey`（WBS 上の項目名の連結。再取り込みの照合用）。`waitingOn` は `party`、`since`。大項目・中項目は表示と絞り込み用の文字列で、親の期限や進捗は集計しない |
-| `events` | 会議。`id`、`date`、`start`、`end`、`title`、`source`（`manual`／`mcp`）、`skip`、`externalId`、`projectId`、`projectBy`（`rule`／`manual`）、`confirmed`（過ぎたあと確認すると稼働に数える） |
-| `inbox` | 任意。HTML から Claude Code への依頼の受信箱。`watching`（`at`: Claude Code が見ている印の日時。30 秒ごとに更新）、`requests`（最新 20 件。`id`＝`R1` など、`at`、`projectId`、`status`＝`pending`／`working`／`question`／`proposed`／`applied`／`rejected`／`failed`、`thread`＝`role`（`user`／`claude`）・`at`・`text` のやりとり、`proposal`＝`summary`・`reason`・`cause`・`ops`（`moveDue`／`addPred`／`removePred`／`addTask`）・`sections`・`warnings`・`base`、`result`＝`at`・`by`（`html`／`claude`）・`summary`） |
-| `changeLog` | 日程変更と取り込みの履歴。`at`、`taskIds`、`reason`、`cause`、`deltaDays`。取り込みの記録には、`source`（`wbs`／`calendar`／`inbox`）が付く |
+### 全体
+
+- ヘッダー、プロジェクト画面のフィルタの行、右側の列（今日のタスク・今日の優先）、リストの表の列見出しは、スクロールしても上端に固定する。
+- 右上の「今日の優先」「ガント実績」のスイッチの設定は、このブラウザに保存する。
+- URL に `?today=2026-10-20&time=10:15` を付けると、現在日時を固定して開ける（動作確認用）。
+
+### プロジェクト（ガントとリスト）
+
+- ガント・リストは、(大項目 ▸ 中項目) ごとに区切り行を出す。並びは、大項目の登場順、その中は中項目の登場順で、未設定は末尾の「（なし）」。表示だけの並べ替えで、保存ファイルの並びは変わらない。見出しの呼び名は `settings.labels` で変える。
+- ガントの「完了を隠す」は、Done のタスクの行に加えて、複数のプロジェクトを出しているときは、完了したプロジェクト（状態が「完了」、またはタスクが全部 Done）も隠す。1 つを選んでいるときは隠さない。
+- 日程変更の確認パネルは、期限を変えて、後続が動く・プロジェクト期限を超える・前倒しで詰められる後続がある、のいずれかのときに出る。反映するときは、原因（ベンダー／社内／自分／その他）と理由を入れる。
+
+### 今日のタスクとスケジュール
+
+- 「今日のタスク」は、`views/prio.js` の `renderTodayTasks` が、今日の日付に作業枠があるタスクを枠から導く（保存しない）。プロジェクト画面・スケジュール画面の右の列（`renderSide`。`showPrio` に従う）で、「今日の優先」の上に出る。
+  - 行に状態の pill と、「着手」（To Do・Waiting のとき。In Progress にする）・「完了」（Done・Cancelled 以外。Done にする）のボタンがある。
+  - Done・Cancelled は薄く、ボタン無しで末尾に出る。
+  - 今日のタスクに入ったタスクは、`renderPrio` が一覧から除く（`rankTasks` は変えない）。
+  - ボタンは、リストの状態の select と同じ関数（`app.js` の `changeStatus`）を通る。
+  - 日表示の作業枠は、ボタンの代わりにタスクの状態の文字を出す。
+- まだ開始していない予定枠があるときの確認（`doneAskHtml`）は、対象が今日のタスクにいればパネルの行に、いなければ（リストの select から）リストの行に出る。解除されるのは開始前の予定枠だけ（`futurePlanned`）。進行中の枠は残り、終わったあとに実績にできる。
+- 枠・会議のドラッグと下端ドラッグの間、`app.js` の `showTip` がポインタの近くに「開始–終了」を出す（`hideTip` が drop・dragend・離したとき・描き直しで消す）。週表示のブロックも開始–終了を出す。
+- スケジュールの枠は、予定（青緑）・実績（緑）・未確認（橙の点線）。会議は紫。枠は実績時間の記録だけで、タスクの状態は変えない。
+- 「置ける日」は、`core/holidays.js` の `offDayChecker(settings)` で決める。土日・`holidays`・`nationalHolidays` の日は休み、`workdays` の日は休みでない。
+  - 休みの日は、`freeOf` が空き時間を出さず（週表示の列は `weekend` 扱いで「—」）、`sessions.js` の `check`（`addSession`・`moveSession`・`resizeSession`）が「置けません」を返す。
+  - すでに休みの日にある枠はそのまま残り、同じ日の中なら伸縮・移動もできる（`check` の `ignoreId`。新しく置く・別の日から動かすときだけ止める）。
+
+### 会議と稼働
+
+- 予定表から取得した会議は、「参加しない」とプロジェクトだけ変更できる。
+- 会議のプロジェクトは、規則（件名のキーワード → プロジェクト）で自動に付き（`projectBy` が `rule`）、手動で付けたもの（`manual`）は規則を変えても動かない。
+- 稼働は、プロジェクト別のタスクの時間（実績の作業枠）と会議の時間（確認済みで、参加するもの）を集計する。プロジェクト未設定の会議は「プロジェクト未設定の会議」にまとめる。未確認の枠・会議は含まない。
+
+### 設定タブ
+
+- **基本の設定**: 勤務時間・待ち長期化の日数・見出しの呼び名を、その場で保存する（`updateSettings`）。
+  - 勤務時間は開始・終了を組で保存する。`type="time"` は時・分を打つたびに change が起きるので、打ち終わる（0.8 秒止まる）か入力欄を離れてから保存する（`changeSettingSoon`）。
+  - 保存に成功したら描き直さない（描き直すと入力の位置が「時」に戻る）。
+  - 不正な値は、先に検査して通知し、入力欄だけを保存された値（形が違えば既定値）に戻す（`restoreSettingInputs`。描き直すとフォーカスが消えるため）。
+  - 形が違う値は `validate` が注意（warning）にし、設定タブは既定値を入力欄に出して横に注意を出す。読む側に fallback は無く、勤務時間が `HH:MM` でないとスケジュール画面は動かない。
+- **キーワード規則**: ↑↓で並べ替えられる（`moveProjectRule`）。上の規則が先に当たるので、並べ替えたら会議へ付け直す。
+- **日本の祝日・休み・営業日**: 3 つの節がある。`validate` は 3 つの形が違うとき注意（warning）にし、画面は壊れた値を空として描いて節の上に注意を出す。
+  - 「日本の祝日」: `settings.nationalHolidays`。読み取り専用。取得は `tools/holidays.js`。
+  - 「休み（手動）」: `settings.holidays`（`{date, kind, note}`）。`addHoliday`・`addHolidayRange`・`removeHoliday`。終了日を入れると期間を 1 日ずつに展開し、土日と取得済みの日本の祝日を除く。`holidayRangeDays` が除外の数を返し、`app.js` が通知する。
+  - 「営業日として扱う日」: `settings.workdays`。`addWorkday`・`removeWorkday`。
+
+### 日本の祝日の取得
+
+- `tools/holidays.js` の `update` が、内閣府の `syukujitsu.csv`（Shift_JIS）を取得して、前年以降だけを `nationalHolidays` に書く。失敗したら `data.json` を変えず終了コード 1。
+- `status` は、取得日・件数・範囲・`ageDays` を出す。取得先は環境変数 `PJ_LENS_HOLIDAYS_URL` で変えられる。
+- ブラウザからは CORS で取れないため、画面は取得しない。
+- `/pj-lens:holidays` が手動の入口。`intake`・`inbox` の指示文は、営業日を使う前に `status` を見て、未取得・30 日超・見積もりが範囲外なら `update` を実行する。
+- 解析は `core/holidays.js` の純関数（`parseHolidayCsv`・`pickRecent`・`decodeHolidayCsv`）。
+
+### 保存と競合
+
+- `data.json` が他の手段で更新されていると、保存時に「他で更新されました。再読込してください」と出る（上書きはしない）。読み直すと、画面の保存できていない変更は消える。
+- 直接保存に対応しないブラウザでは、読み込みだけできる。変更は「JSON を書き出す」で保存する。
+- 画面は、ファイルを自動で読み直す（保存できる環境のとき）。帯が開いている間や依頼の処理中は 4 秒、そうでなければ 16 秒ごと。
+- 前回のファイルの記憶は、Edge で `file://` から開いて効くことを確認した。権限の確認の文言は Edge のバージョンで違う想定で、実際の文言と「何も押さずに開く」動きは未確認。
 
 ## 取り込み（intake）
 
-どれも「読み取り → 変更案の表 → 利用者の承認 → 書き込み」の順で、承認の前はタスクを変えない（文章の取り込みは、承認前に `data.json` の受信箱へ依頼と提案を書くが、タスクは承認後の `approve` まで変わらない）。
+どれも「読み取り → 変更案の表 → 利用者の承認 → 書き込み」の順で、承認の前はタスクを変えない。
 
-- 文章（メール・議事録・メモ）の取り込みは、書き込みを受信箱の経路に乗せる（`submit --working` → `propose` → `approve`。「HTML からの依頼（inbox）」を参照）。期限が書かれていないタスクは、Claude が先行と `businessDays` で仮に置き、日付の足し算は `propose` が行う。行番号で直して再提案し、承認後に登録する。重要度は受信箱の登録が受けないので入れない。待ち先（`Waiting`）は、取り込みでは設定せず、報告だけする。
-- WBS の取り込みは、列の対応と変更案を一緒に見せて承認を 1 回にする（承認後に `mapping-set` → `wbs-apply`）。プロジェクト画面とレポートの変更履歴は、`source` があり日数が 0 の記録を出さない。
+- **文章（メール・議事録・メモ）**
+  - 書き込みを受信箱の経路に乗せる（`submit --working` → `propose` → `approve`。「HTML からの依頼（inbox）」を参照）。承認前に `data.json` の受信箱へ依頼と提案を書くが、タスクは承認後の `approve` まで変わらない。
+  - 期限が書かれていないタスクは、Claude が先行と `businessDays` で仮に置き、日付の足し算は `propose` が行う。行番号で直して再提案し、承認後に登録する。
+  - 重要度は受信箱の登録が受けないので入れない。待ち先（`Waiting`）は、取り込みでは設定せず、報告だけする。
+- **WBS**: 列の対応と変更案を一緒に見せて承認を 1 回にする（承認後に `mapping-set` → `wbs-apply`）。プロジェクト画面とレポートの変更履歴は、`source` があり日数が 0 の記録を出さない。
+- **予定表**: 取り込みの結果に、使った MCP 名を出す。
 
 ### Excel の WBS
 
 - 列の意味（大項目・中項目・件名・期限・先行など）は Claude が見出しと内容から判断し、対応表を見せて確認を取る。承認された対応表はプロジェクトごとに保存する（`settings.wbsMappings`）。
 - 階層は、列・結合セル・インデント・番号のどれで表されていても読める。末尾の行（子を持たない行）をタスク（小項目）にし、その上の 2 段を大項目・中項目にする。
-- 再取り込みでは、`wbsKey`（大項目/中項目/件名の連結）で同じタスクを探し、期限などを更新する。`wbsKey` を持たない手入力のタスクは、同じ件名のものが 1 つだけなら同じタスクとして扱い、取り込みで `wbsKey` を付ける（重複して追加しない）。画面で直した件名は上書きしない。WBS に無くなった既存のタスクは削除せず、一覧で知らせる。
+- 再取り込みでは、`wbsKey`（大項目/中項目/件名の連結）で同じタスクを探し、期限などを更新する。
+  - `wbsKey` を持たない手入力のタスクは、同じ件名のものが 1 つだけなら同じタスクとして扱い、取り込みで `wbsKey` を付ける（重複して追加しない）。
+  - 画面で直した件名は上書きしない。
+  - WBS に無くなった既存のタスクは削除せず、一覧で知らせる。
 - Python 3.8 以上（venv と ensurepip が使えるもの）が要る。初回だけ、プラグイン専用のフォルダに venv を作り、`openpyxl` と依存の `et_xmlfile` を入れる（ネットワークが必要。約 20 MB、約 10 秒）。承認なしには作らない。
-- `tools/xlsx.js` のサブコマンド: `doctor`（診断のみ。何も変更せず、使う Python のパスと置き場を表示）、`setup`（`--yes` なしは作成先と内容を表示して終了コード 3、`--yes` で作成）。終了コードは 0 成功・1 実行時のエラー・2 引数・設定のエラー（置き場が決まらないなど）・3 専用環境が使えない（未作成・版のずれ・壊れている・承認待ち・Python が無い）。3 のときは、利用者に確認して `setup --yes` を実行する。
+- `tools/xlsx.js` のサブコマンド:
+  - `doctor`: 診断のみ。何も変更せず、使う Python のパスと置き場を表示する。
+  - `setup`: `--yes` なしは作成先と内容を表示して終了コード 3、`--yes` で作成する。
+- `tools/xlsx.js` の終了コード: 0 成功、1 実行時のエラー、2 引数・設定のエラー（置き場が決まらないなど）、3 専用環境が使えない（未作成・版のずれ・壊れている・承認待ち・Python が無い）。3 のときは、利用者に確認して `setup --yes` を実行する。
 - 置き場の優先順: 環境変数 `PJ_LENS_HOME` → 引数（`--data "${CLAUDE_PLUGIN_DATA}"`、従来の先頭の位置引数でもよい）→ なければ終了コード 2。`tools/mcpconf.js` も同じ。
-
-### 予定表
-
-- 取り込みの結果に、使った MCP 名を出す。
 
 ## HTML からの依頼（inbox）
 
+### 動き
+
 - 画面の下端の帯「Claude Code に依頼する」から、期限の見直し・先行の対応付け・タスクの登録を依頼する。依頼は `data.json` の `inbox` に書かれ、見張っている Claude Code が提案（変更案）を作る。承認するまで、タスクの日程・先行・一覧は変わらない。
-- 変更履歴には、期限を動かす操作ごとに 1 件（日数・理由つき）と、先行・登録をまとめた 1 件（`source` が `inbox`。画面の「日程変更の履歴」には出ない）が残る。
-- 後続の動き: 先行を足したとき、後続の期限が先行より前なら、先行の期限と同じ日まで動かす（`replan` と同じ規則）。操作は、登録→先行→期限の順に当てる。開始日のあるタスクに先行を足すと、開始日は先行から決まるので外す（提案の注意に出る）。
-- 提案のあとにデータが変わったとき: 反映せず、依頼が「失敗」になる。「もう一度提案してもらう」で作り直す。先に Claude Code の画面で承認・却下した依頼を、HTML でもう一度承認しても、何も変わらない（二重には反映されない）。
-- 期限を動かす `moveDue` と、`businessDays` 指定の `addTask` は、同じ依頼にできない（`planOps` が例外を投げる。先行の期限が動くと、営業日が吸収されるため）。`agents/inbox.md` は、期限の移動だけを提案し、登録は承認後にもう一度依頼してもらう。`moveDue` と `due`（日付）指定の `addTask` は一緒にできる。
-- 登録（`addTask`）の期限は、`due`（日付）か `businessDays`（営業日の整数）のどちらか一方。`businessDays` は、完了していない先行の期限の最大値（無ければ今日）から数えて、土日と休みを除いた日数後の日付（`core/dates.js` の `dueAfter(base, businessDays, cal)`。`cal` は `core/holidays.js` の `calendarOf(settings)`＝`{off, on}`。`on`［`workdays`］の日は営業日、`off`［`holidays` と `nationalHolidays`］と土日は飛ばす。`on` が最優先）。営業日の計算は受信箱の登録だけで、`replan`・`impact.js`・ドラッグの期限変更は暦日のまま。`propose` が `businessDays` を `due` に置き換えて提案の `ops` に保存するので、承認が翌日以降でも `stale` にならない（提案の表の `add` 行には `businessDays` が残る）。HTML の提案カードの登録の表には、行番号（`data-row`）と営業日の列が出て、「修正を依頼する」は暖色（`btn warm`）。
-- `tools/inbox.js submit ... --working` は、依頼を `working`（処理中）で作る。`wait` は `pending` だけを知らせるので、`/pj-lens:watch` が動いていても `inbox` エージェントに横取りされない。`intake` の文章の取り込みが使う。
 - できないこと: タスクの削除・状態の変更、プロジェクトや会議の追加・削除。重要度は、依頼では設定しない。
 - 履歴は最新の 20 件まで（処理中のものは消えない）。1 件の文章は 4000 文字まで、やりとりは 40 件まで。
-- 見張りの仕組み: `/pj-lens:watch` は、Claude Code の Monitor で `node tools/inbox.js wait` を動かす。30 分ごとに終わるので、そのたびに再起動する。作業中の Claude Code が、依頼のイベントを受け取って動くことは確認済み。Claude Code が入力待ちの間に自動で起きることは、未確認（確認できないときは `/pj-lens:inbox` で、今ある分を処理する）。見張りが止まると、90 秒ほどで、帯が「見ていません」になる。
+- 変更履歴には、期限を動かす操作ごとに 1 件（日数・理由つき）と、先行・登録をまとめた 1 件（`source` が `inbox`。画面の「日程変更の履歴」には出ない）が残る。
+
+### 反映の規則
+
+- 操作は、登録→先行→期限の順に当てる。
+- 先行を足したとき、後続の期限が先行より前なら、先行の期限と同じ日まで動かす（`replan` と同じ規則）。開始日のあるタスクに先行を足すと、開始日は先行から決まるので外す（提案の注意に出る）。
+- 提案のあとにデータが変わったときは、反映せず、依頼が「失敗」になる。「もう一度提案してもらう」で作り直す。先に Claude Code の画面で承認・却下した依頼を、HTML でもう一度承認しても、何も変わらない（二重には反映されない）。
+- 期限を動かす `moveDue` と、`businessDays` 指定の `addTask` は、同じ依頼にできない。`planOps` が例外を投げる（先行の期限が動くと、営業日が吸収されるため）。`agents/inbox.md` は、期限の移動だけを提案し、登録は承認後にもう一度依頼してもらう。`moveDue` と `due`（日付）指定の `addTask` は一緒にできる。
+
+### 登録（`addTask`）の期限
+
+- `due`（日付）か `businessDays`（営業日の整数）のどちらか一方。
+- `businessDays` は、完了していない先行の期限の最大値（無ければ今日）から数えて、土日と休みを除いた日数後の日付になる。計算は `core/dates.js` の `dueAfter(base, businessDays, cal)`。
+  - `cal` は `core/holidays.js` の `calendarOf(settings)`（`{off, on}`）。
+  - `on`（`workdays`）の日は営業日、`off`（`holidays` と `nationalHolidays`）と土日は飛ばす。`on` が最優先。
+- 営業日の計算は受信箱の登録だけで、`replan`・`impact.js`・ドラッグの期限変更は暦日のまま。
+- `propose` が `businessDays` を `due` に置き換えて提案の `ops` に保存するので、承認が翌日以降でも `stale` にならない（提案の表の `add` 行には `businessDays` が残る）。
+- HTML の提案カードの登録の表には、行番号（`data-row`）と営業日の列が出る。「修正を依頼する」は暖色（`btn warm`）。
+
+### 見張りと競合
+
+- `tools/inbox.js submit ... --working` は、依頼を `working`（処理中）で作る。`wait` は `pending` だけを知らせるので、`/pj-lens:watch` が動いていても `inbox` エージェントに横取りされない。`intake` の文章の取り込みが使う。
+- `/pj-lens:watch` は、Claude Code の Monitor で `node tools/inbox.js wait` を動かす。30 分ごとに終わるので、そのたびに再起動する。見張りが止まると、90 秒ほどで、帯が「見ていません」になる。
+  - 作業中の Claude Code が、依頼のイベントを受け取って動くことは確認済み。
+  - Claude Code が入力待ちの間に自動で起きることは、未確認。確認できないときは `/pj-lens:inbox` で、今ある分を処理する。
 - 保存の競合: Claude Code が、受信箱や見ている印（30 秒ごとに更新）を書くので、画面での編集と、ファイルの更新が重なることがある。そのときは、画面が最新のファイルを読み直して、同じ編集を当ててから、もう一度保存する（編集は消えない）。
 
 ## レポート
 
 - 進捗は、完了日（`doneAt`）から数える近似。タスクには作成日と中止日がないので、期間のあとに追加したタスクも総数に入る（Cancelled は除く）。
 - 会議は、選んだプロジェクトに紐づくものだけを載せる。プロジェクト未設定の会議は、全プロジェクトを選んだときだけ載せる（実績では「プロジェクト未設定の会議」の行にして、合計に入れる）。未確認の件数は、画面の「稼働」と同じく、保存した時点の時刻で数える。
-- 会議の件名は載せず、時間枠だけ。件名も載せるかは、`buildReport` の `opts.showMeetingTitles`（保存ごとの選択。パネルの「会議の件名を載せる」＝`data-rptmt`。`S.reportPanel` にだけ持ち、`saveReportPrefs` は項目を限定するので記憶されない）が決め、省略時は `settings.reportShowMeetingTitles`（画面では変えず、`data.json` に直接書く。既定 `false`）。
+- 会議の件名は載せず、時間枠だけ。件名も載せるかは、`buildReport` の `opts.showMeetingTitles` が決める。
+  - 保存ごとの選択（パネルの「会議の件名を載せる」＝`data-rptmt`）。`S.reportPanel` にだけ持ち、`saveReportPrefs` は項目を限定するので記憶されない。
+  - 省略時は `settings.reportShowMeetingTitles`（画面では変えず、`data.json` に直接書く。既定 `false`）。
 - 期間は `reportPeriod`（`core/reportspec.js`）の 8 種類。「今週と来週」（今週の月曜〜来週の日曜）は、実績は今日まで・予定は今日以降という既存の規則で、金曜に「今週の実績＋来週の予定」が 1 枚になる。「来週」は実績の節が空で予定だけが並ぶ。
-- 保存は `saveHtmlFile`（`ui/savefile.js`）。`showSaveFilePicker` があれば、`startIn: "downloads"` で保存先を選ばせ（初期の場所はダウンロードフォルダ。`id` は付けないので前回の場所は覚えない）、`{ ok, name, picked: true }`。取り消し（`AbortError`）は `{ ok: false, cancelled: true }` で、`makeReport` はパネルを閉じずトーストも出さない。取り消しは保存ダイアログを閉じたときだけ（書き込み中の `AbortError` は失敗）。ダイアログ自体の失敗（権限拒否など）と、picker の無いブラウザは、`<a download>` に落とす（`picked: false`）。場所を選んだあとに書けなかったときは、書きかけを破棄して `<a download>` に落とし、`fallback: true` を付ける（`makeReport` が「選んだ場所に保存できなかったため…ダウンロード先に保存しました」とトーストで伝える）。`makeReport` は `S.saving` で重ねて動かさない。
 - 節の構成: 1. 全体一覧／2. プロジェクト別の詳細／3. 〇〇の実績／4. 〇〇の予定（期間がすべて過去のときは出ない）。
-- ファイル名は `pj-lens_report_<対象>_<期間>_<作成日>.html`（HTML の `<title>` も同じ）。
+
+### 保存
+
+保存は `saveHtmlFile`（`ui/savefile.js`）。
+
+- `showSaveFilePicker` があれば、`startIn: "downloads"` で保存先を選ばせ、`{ ok, name, picked: true }` を返す。初期の場所はダウンロードフォルダ。`id` は付けないので前回の場所は覚えない。
+- 取り消し（`AbortError`）は `{ ok: false, cancelled: true }`。`makeReport` はパネルを閉じずトーストも出さない。取り消しは保存ダイアログを閉じたときだけで、書き込み中の `AbortError` は失敗として扱う。
+- ダイアログ自体の失敗（権限拒否など）と、picker の無いブラウザは、`<a download>` に落とす（`picked: false`）。
+- 場所を選んだあとに書けなかったときは、書きかけを破棄して `<a download>` に落とし、`fallback: true` を付ける。`makeReport` が「選んだ場所に保存できなかったため…ダウンロード先に保存しました」とトーストで伝える。
+- `makeReport` は `S.saving` で重ねて動かさない。
+
+### ファイル名
+
+`pj-lens_report_<対象>_<期間>_<作成日>.html`（HTML の `<title>` も同じ）。
 
 | 項目 | 規則 | 例 |
 |---|---|---|
@@ -150,11 +299,12 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 
 ## 補助コマンド
 
-プラグインとして使うときは、エージェントとコマンドが呼ぶので意識する必要はない。このリポジトリを直接開いて手で実行する場合の例（`data/data.json` は `data/sample.json` のコピー。`plugins/pj-lens/` で実行する）。
+プラグインとして使うときは、エージェントとコマンドが呼ぶので意識する必要はない。このリポジトリを直接開いて手で実行する場合の例（`plugins/pj-lens/` で実行する。`data/data.json` は `data/sample.json` のコピーで、gitignore 済み）。
 
 ```
 node tools/validate.js data/data.json                  # 検証（errors があれば終了コード 1）
 node tools/impact.js data/data.json A3 5 [--compress]  # A3 が 5 日遅れたときの影響範囲（負の日数は前倒し。--compress で後続も詰める）
+node tools/init.js [--sample]                          # 作業フォルダに pj-lens.html と .pj-lens/data.json を用意する
 node tools/intake.js                                   # 取り込み・会議の規則・WBS の列の対応のコマンド一覧
 node tools/inbox.js                                    # 受信箱（HTML からの依頼）のコマンド一覧（wait・claim・propose・approve など）
 node tools/holidays.js <update|status> <data.json>     # 日本の祝日（内閣府の一覧）を取得して settings.nationalHolidays に保存／取得状況を表示
