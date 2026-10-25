@@ -36,7 +36,7 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 
 ## 画面の動き
 
-- 画面上部のナビは、プロジェクト・スケジュール・稼働・設定の 4 つ。ヘッダー、プロジェクト画面のフィルタの行、右側の「今日の優先」、リストの表の列見出しは、スクロールしても上端に固定する。右上の「今日の優先」「ガント実績」のスイッチの設定は、このブラウザに保存する。
+- 画面上部のナビは、プロジェクト・スケジュール・稼働・設定の 4 つ。ヘッダー、プロジェクト画面のフィルタの行、右側の列（今日のタスク・今日の優先）、リストの表の列見出しは、スクロールしても上端に固定する。右上の「今日の優先」「ガント実績」のスイッチの設定は、このブラウザに保存する。
 - ガントの「完了を隠す」は、Done のタスクの行に加えて、複数のプロジェクトを出しているときは、完了したプロジェクト（状態が「完了」、またはタスクが全部 Done）も隠す。1 つを選んでいるときは隠さない。
 - ガント・リストは、(大項目 ▸ 中項目) ごとに区切り行を出す。並びは、大項目の登場順、その中は中項目の登場順で、未設定は末尾の「（なし）」。表示だけの並べ替えで、保存ファイルの並びは変わらない。見出しの呼び名は `settings.labels` で変える。
 - 日程変更の確認パネルは、期限を変えて、後続が動く・プロジェクト期限を超える・前倒しで詰められる後続がある、のいずれかのときに出る。反映するときは、原因（ベンダー／社内／自分／その他）と理由を入れる。
@@ -89,7 +89,7 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 
 | キー | 内容 |
 |---|---|
-| `settings` | 手動の休み（`holidays`＝`{date, kind: 祝日|有給|その他, note}` の配列。営業日の計算で飛ばす）、営業日として扱う日（`workdays`＝`{date, note}`）、取得した日本の祝日（`nationalHolidays`＝`fetchedAt`・`source`・`dates`［`date`・`name`］。前年以降だけ）、勤務時間（`workday`。既定 09:00〜18:00）、待ちを長いとみなす日数（`waitingLongDays`）、レポートに会議の件名を載せるか（`reportShowMeetingTitles`）、会議のプロジェクト規則（`projectRules`＝`keyword`、`projectId`）、見出しの呼び名（`labels`＝`group`、`subgroup`）、WBS の列の対応（`wbsMappings`＝プロジェクト ID → 項目 → Excel の列見出し）、WBS の取り込み記録（`wbsImports`＝プロジェクト ID → `file`・`at`・`added`・`updated`。最後の 1 件。`wbs-apply` が書く） |
+| `settings` | 手動の休み（`holidays`＝`{date, kind: 祝日|有給|その他, note}` の配列。営業日の計算で飛ばす）、営業日として扱う日（`workdays`＝`{date, note}`）、取得した日本の祝日（`nationalHolidays`＝`fetchedAt`・`source`・`dates`［`date`・`name`］。前年以降だけ）、勤務時間（`workday`。既定 09:00〜18:00）、待ちを長いとみなす日数（`waitingLongDays`）、レポートのパネルの「会議の件名を載せる」の最初の状態（`reportShowMeetingTitles`。画面では変えない）、会議のプロジェクト規則（`projectRules`＝`keyword`、`projectId`）、見出しの呼び名（`labels`＝`group`、`subgroup`）、WBS の列の対応（`wbsMappings`＝プロジェクト ID → 項目 → Excel の列見出し）、WBS の取り込み記録（`wbsImports`＝プロジェクト ID → `file`・`at`・`added`・`updated`。最後の 1 件。`wbs-apply` が書く） |
 | `projects` | `id`、`name`、`type`（増設／更改／改善／不具合対処／その他）、`status`、`start`、`due`、`milestones`（`name`、`date`） |
 | `tasks` | `id`、`projectId`、`title`、`due`、`start`、`status`、`memo`、`predecessors`、`waitingOn`、`importance`（`high`／`mid`／`low`／`null`）、`doneAt`、`sessions`（作業枠。`id`、`date`、`start`、`end`、`kind`＝`planned`／`actual`）、`group`（大項目）、`subgroup`（中項目）、`wbsKey`（WBS 上の項目名の連結。再取り込みの照合用）。`waitingOn` は `party`、`since`。大項目・中項目は表示と絞り込み用の文字列で、親の期限や進捗は集計しない |
 | `events` | 会議。`id`、`date`、`start`、`end`、`title`、`source`（`manual`／`mcp`）、`skip`、`externalId`、`projectId`、`projectBy`（`rule`／`manual`）、`confirmed`（過ぎたあと確認すると稼働に数える） |
@@ -159,6 +159,7 @@ node tools/validate.js data/data.json                  # 検証（errors があ�
 node tools/impact.js data/data.json A3 5 [--compress]  # A3 が 5 日遅れたときの影響範囲（負の日数は前倒し。--compress で後続も詰める）
 node tools/intake.js                                   # 取り込み・会議の規則・WBS の列の対応のコマンド一覧
 node tools/inbox.js                                    # 受信箱（HTML からの依頼）のコマンド一覧（wait・claim・propose・approve など）
+node tools/holidays.js <update|status> <data.json>     # 日本の祝日（内閣府の一覧）を取得して settings.nationalHolidays に保存／取得状況を表示
 node tools/mcpconf.js <保存先> show                    # メール・予定表の MCP の指定（保存先は PJ_LENS_HOME か --data でも指定できる）
 node tools/xlsx.js doctor --data <保存先>              # Excel 用の環境の診断のみ（Python のパスと置き場を表示。使えなければ終了コード 3）
 node tools/xlsx.js setup [--yes] --data <保存先>       # 環境を作る（--yes なしは作成先と内容を表示して終了コード 3）
@@ -172,6 +173,7 @@ node tools/xlsx.js --data <保存先> plan.xlsx           # Excel を JSON で�
 - 追加: レポートの期間に「今週と来週」「来週」。週末に「今週の実績＋来週の予定」を 1 枚で出せます。レポートのパネルに「会議の件名を載せる」（保存ごとの選択。記憶しません）を足しました。「レポート」を押すと、画面の一番上へ移動します。
 - 変更: レポートの保存は、保存ダイアログが使えるブラウザ（Edge・Chrome）で保存先と名前を選べます（最初に開くのはダウンロードフォルダで、取り消すとレポートのパネルのまま残ります）。対応しないブラウザでは、これまでどおりダウンロードです。
 - 追加: `/pj-lens:intake` の文章の取り込みを、受信箱の経路（`submit --working` → `propose` → `approve`）に乗せました。期限が書かれていないタスクは、Claude が先行と営業日（`businessDays`）で日程を仮に置き、行番号つきの表で見せます。「3 行目を 10 営業日に」のように直してからもう一度提案し、承認すると登録されます。受信箱の `addTask` が `businessDays`（営業日。土日と設定の祝日を除く）を受け付けます。
+- 変更: スケジュール画面で、土日・日本の祝日・休み（手動）の日には作業枠を置けず、空き時間も出ません。「営業日として扱う日」に指定した日には置けます（すでに休みの日にある枠は、同じ日の中なら伸縮・移動できます）。
 - 追加: 「今日のタスク」のパネル（プロジェクト画面・スケジュール画面の右の列）。今日の日付に作業枠があるタスクを、状態と「着手」「完了」のボタンつきで出します。今日のタスクに入ったタスクは「今日の優先」から外れます。日表示の作業枠は、ボタンの代わりに状態の文字を出します。
 - 追加: 枠・会議のドラッグと長さの変更の間、ポインタの近くに「10:00–11:00」を出します。週表示のブロックも開始–終了を出します。
 - 追加: 受信箱の登録の期限を営業日（土日と、日本の祝日・登録した休みを除く）で数えます。日本の祝日は `/pj-lens:holidays`（`tools/holidays.js`）で内閣府の一覧から取得します。設定タブに「日本の祝日」「休み（手動。祝日／有給／その他の区分と期間登録）」「営業日として扱う日」の節を足しました。HTML の提案カードの登録の表に営業日の列を足し、「修正を依頼する」を暖色にしました。
