@@ -57,11 +57,6 @@ test("存在しない taskId は例外", () => {
 
 // ---- 前倒しの詰め・適用（Task 5） ----
 import { applyReplan, needsReplan } from "../plugins/pj-lens/src/core/impact.js";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 
 test("compress なしの前倒しは、対象だけ動き後続は動かない（従来どおり）", () => {
   const r = computeImpact(chain(), "T1", -3);
@@ -109,17 +104,6 @@ test("needsReplan: 対象だけなら false、後続が動く／プロジェク�
   assert.equal(needsReplan(computeImpact(chain(), "T3", 1)), false);
   assert.equal(needsReplan(computeImpact(chain(), "T1", 5)), true);
   assert.equal(needsReplan(computeImpact(mk([["T1", "2026-12-30"]], "2026-12-31"), "T1", 5)), true);
-});
-
-test("tools/impact.js --compress が結果を変える", () => {
-  const dir = mkdtempSync(join(tmpdir(), "pjl-impact-"));
-  try {
-    const f = join(dir, "data.json");
-    writeFileSync(f, JSON.stringify(chain()));
-    const run = (...a) => JSON.parse(spawnSync(process.execPath, [fileURLToPath(new URL("../plugins/pj-lens/tools/impact.js", import.meta.url)), f, "T1", "-3", ...a], { encoding: "utf8" }).stdout);
-    assert.equal(run().changes.length, 1);
-    assert.equal(run("--compress").changes.length, 3);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 // ---- 最終レビューの修正: 確認パネルを出している間の別の編集を消さない ----

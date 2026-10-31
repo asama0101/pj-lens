@@ -1,8 +1,6 @@
 // タスクの期限が動いたときの影響範囲。後続は「最小限だけ」動かす（先行の新しい期限を超えないようにする）。
 import { addDays } from "./dates.js";
-import { CAUSES } from "./schema.js";
-
-const closed = (t) => t.status === "Done" || t.status === "Cancelled";
+import { CAUSES, isClosed } from "./schema.js";
 
 /**
  * opts.compress: 前倒し(deltaDays < 0)のとき、後続も同じ日数だけ前倒しする(先行の新しい期限より前にはしない)
@@ -28,7 +26,7 @@ export function computeImpact(data, taskId, deltaDays, { compress = false } = {}
     while (queue.length) {
       const cur = queue.shift();
       for (const s of successors.get(cur) ?? []) {
-        if (s.id === taskId || closed(s)) continue;
+        if (s.id === taskId || isClosed(s)) continue;
         const lower = s.predecessors.map((p) => newDue.get(p) ?? byId.get(p)?.due).filter(Boolean).reduce((a, b) => (a > b ? a : b), "");
         const shifted = addDays(s.due, deltaDays);
         const cand = lower > shifted ? lower : shifted;
@@ -45,7 +43,7 @@ export function computeImpact(data, taskId, deltaDays, { compress = false } = {}
   while (queue.length) {
     const cur = queue.shift();
     for (const s of successors.get(cur) ?? []) {
-      if (s.id === taskId || closed(s)) continue;
+      if (s.id === taskId || isClosed(s)) continue;
       let best = s.due;
       let by = null;
       for (const p of s.predecessors) {

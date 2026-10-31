@@ -93,7 +93,7 @@ test("統合: fixtures/wbs-merged.xlsx を読むと結合セルが展開され�
   const fixture = fileURLToPath(new URL("fixtures/wbs-merged.xlsx", import.meta.url));
   assert.ok(existsSync(fixture), "fixture がありません");
   const dataDir = join(tmpdir(), "pjlens-test-xlsx"); // 2回目以降は venv を使い回す
-  const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), dataDir, fixture, "--yes"], { encoding: "utf8", timeout: 300000 });
+  const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), "--data", dataDir, fixture, "--yes"], { encoding: "utf8", timeout: 300000 });
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
   assert.equal(out.sheets.length, 3);
@@ -119,7 +119,7 @@ test("統合: 非表示の行・列は読み取らず、件数を hiddenRows・h
   const real = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8" });
   if (!pickPython(real)) return t.skip("Python 3 が見つかりません");
   const dataDir = join(tmpdir(), "pjlens-test-xlsx");
-  const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), dataDir, fileURLToPath(new URL("fixtures/wbs-merged.xlsx", import.meta.url)), "--yes"], { encoding: "utf8", timeout: 300000 });
+  const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), "--data", dataDir, fileURLToPath(new URL("fixtures/wbs-merged.xlsx", import.meta.url)), "--yes"], { encoding: "utf8", timeout: 300000 });
   assert.equal(r.status, 0, r.stderr);
   const sh = JSON.parse(r.stdout).sheets[2];
   const flat = sh.rows.flat();
@@ -155,16 +155,15 @@ test("引数の誤りは終了コード 2（引数なし・サブコマンドに
   assert.equal(cli(["doctor", "余分", "--data", join(scratch, "a")]).status, 2);
 });
 
-test("置き場の優先順: PJ_LENS_HOME が --data と従来の位置引数に勝つ", () => {
+test("置き場の優先順: PJ_LENS_HOME が --data に勝つ。位置引数では渡せない（終了コード 2）", () => {
   const home = join(scratch, "env home");
-  for (const args of [["doctor", "--data", join(scratch, "arg")], [join(scratch, "arg"), "doctor"]]) {
-    const r = cli(args, { PJ_LENS_HOME: home });
-    assert.equal(r.status, 3);
-    assert.ok(r.stdout.includes(home), r.stdout);
-    assert.ok(!r.stdout.includes(join(scratch, "arg")));
-  }
-  const r = cli(["doctor", "--data", join(scratch, "arg")]);
-  assert.ok(r.stdout.includes(join(scratch, "arg")), "環境変数がなければ --data");
+  const r = cli(["doctor", "--data", join(scratch, "arg")], { PJ_LENS_HOME: home });
+  assert.equal(r.status, 3);
+  assert.ok(r.stdout.includes(home), r.stdout);
+  assert.ok(!r.stdout.includes(join(scratch, "arg")));
+  assert.ok(cli(["doctor", "--data", join(scratch, "arg")]).stdout.includes(join(scratch, "arg")), "環境変数がなければ --data");
+  assert.equal(cli([join(scratch, "arg"), "doctor"]).status, 2);
+  assert.equal(cli([join(scratch, "arg"), "x.xlsx"]).status, 2);
 });
 
 test("diagnose: 環境がなければ usable:false で案内、固定した版が入っていれば usable:true。何も実行・変更しない", () => {
@@ -197,7 +196,7 @@ test("統合: 空白と日本語を含む置き場で doctor が動き、setup �
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /使えます/);
   const fixture = fileURLToPath(new URL("fixtures/wbs-merged.xlsx", import.meta.url));
-  r = cli([home, fixture]); // 従来の呼び出し（<置き場> <ファイル>）
+  r = cli([fixture, "--data", home]);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(JSON.parse(r.stdout).sheets.length, 3);
 });

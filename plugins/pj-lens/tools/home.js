@@ -1,5 +1,5 @@
 // 置き場（${CLAUDE_PLUGIN_DATA}）の決め方を、xlsx.js と mcpconf.js で共有する。
-// 優先順: 環境変数 PJ_LENS_HOME → 引数（--data <パス>、または従来の先頭の位置引数）→ なし（呼び出し側が終了コード 2）。
+// 優先順: 環境変数 PJ_LENS_HOME → 引数（--data <パス>）→ なし（呼び出し側が終了コード 2）。
 
 /** `--data <パス>` を引数から取り除く。値が無ければ data は ""（未指定と同じ扱い） */
 export function takeData(args) {

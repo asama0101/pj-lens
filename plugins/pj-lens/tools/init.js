@@ -3,6 +3,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_WORKDAY } from "../src/core/schema.js";
 
 /** この目印があるファイルだけを、pj-lens が作ったものとみなして更新する */
 export const MARKER = '<meta name="generator" content="pj-lens">';
@@ -13,7 +14,7 @@ const IGNORE = ".pj-lens/";
 
 const SKELETON = {
   version: 1,
-  settings: { workday: { start: "09:00", end: "18:00" }, waitingLongDays: 7, reportShowMeetingTitles: false, projectRules: [], labels: { group: "大項目", subgroup: "中項目" } },
+  settings: { workday: DEFAULT_WORKDAY, waitingLongDays: 7, reportShowMeetingTitles: false, projectRules: [], labels: { group: "大項目", subgroup: "中項目" } },
   projects: [], tasks: [], events: [], changeLog: [],
 };
 

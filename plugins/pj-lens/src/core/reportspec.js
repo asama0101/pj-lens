@@ -1,8 +1,8 @@
 // レポートの対象（プロジェクト・期間）の規則と、期間の集計（純関数）。
-import { addDays, diffDays, isDate, toMin } from "./dates.js";
+import { addDays, diffDays, isDate } from "./dates.js";
 import { sessionKind } from "./sessions.js";
 import { meetingKind } from "./schedule.js";
-import { periodRange } from "./workload.js";
+import { periodRange, hours } from "./workload.js";
 
 export const PERIOD_KINDS = ["thisWeek", "lastWeek", "lastAndThis", "thisAndNext", "nextWeek", "thisMonth", "lastMonth", "custom"];
 
@@ -55,7 +55,6 @@ export function reportFileName({ projectIds, allIds, period, today }) {
   return `pj-lens_report_${target}_${period.key}_${compact(today)}`.replace(/[\\/:*?"<>|\s]/g, "_");
 }
 
-const hours = (x) => (toMin(x.end) - toMin(x.start)) / 60;
 const inRange = (d, r) => d >= r.start && d <= r.end;
 
 /**

@@ -22,6 +22,7 @@ export const MODULES = [
   "src/core/groups.js",
   "src/core/inbox.js",
   "src/ui/store.js",
+  "src/ui/sync.js",
   "src/ui/prefs.js",
   "src/ui/savefile.js",
   "src/ui/common.js",

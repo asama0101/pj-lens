@@ -1,8 +1,8 @@
 // 使い方:
 //   node tools/xlsx.js doctor [--data <置き場>]            診断のみ（何も変更しない）。使う Python のパスと置き場を表示する
 //   node tools/xlsx.js setup [--yes] [--data <置き場>]     専用環境（venv + openpyxl）を作る。--yes なしは作成先と内容を表示して終了コード 3
-//   node tools/xlsx.js <置き場> <ファイル.xlsx> [--yes]    Excel を JSON（全シートの行）で標準出力へ出す（従来の呼び出し。--data <置き場> <ファイル> でもよい）
-// 置き場は、環境変数 PJ_LENS_HOME が最優先、次に引数（${CLAUDE_PLUGIN_DATA}）。どちらもなければ終了コード 2。
+//   node tools/xlsx.js <ファイル.xlsx> [--yes] [--data <置き場>]  Excel を JSON（全シートの行）で標準出力へ出す
+// 置き場は、環境変数 PJ_LENS_HOME が最優先、次に --data（${CLAUDE_PLUGIN_DATA}）。どちらもなければ終了コード 2。
 // 読み取りは Python（openpyxl）で行い、openpyxl は置き場の venv に入れる（プロジェクトのフォルダは汚さない）。
 // 版とハッシュは requirements.txt で固定する。環境が無い・版がずれているときは、承認（setup --yes）が付くまで作らない。
 // 終了コード 0: 成功 / 1: 実行時のエラー / 2: 引数・設定のエラー / 3: 専用環境が使えない（未作成・版のずれ・壊れている・承認待ち・Python が無い）。
@@ -99,20 +99,16 @@ export function ensureEnv(dir, { run = realRun, python, exists = existsSync, pla
 }
 
 const SUBCOMMANDS = ["doctor", "setup"];
-const USAGE = "使い方: node tools/xlsx.js doctor | setup [--yes] | <置き場> <ファイル.xlsx> [--yes]（置き場は PJ_LENS_HOME か --data <置き場>）";
+const USAGE = "使い方: node tools/xlsx.js doctor | setup [--yes] | <ファイル.xlsx> [--yes]（置き場は PJ_LENS_HOME か --data <置き場>）";
 
 function main() {
   const { data, rest: all } = takeData(process.argv.slice(2));
   const approve = all.includes("--yes");
   const rest = all.filter((a) => a !== "--yes");
-  let sub = SUBCOMMANDS.includes(rest[0]) ? rest.shift() : null;
-  let legacyDir = null;
-  if (!sub && rest.length === 2 && SUBCOMMANDS.includes(rest[1])) { legacyDir = rest.shift(); sub = rest.shift(); } // <置き場> doctor
-  else if (!sub && rest.length >= 2) legacyDir = rest.shift(); // 従来の「<置き場> <ファイル>」
+  const sub = SUBCOMMANDS.includes(rest[0]) ? rest.shift() : null;
   const file = sub ? null : rest[0];
-  if (sub && rest.length) { console.error(USAGE); process.exit(2); }
-  if (!sub && !file) { console.error(USAGE); process.exit(2); }
-  const home = pickHome(data || legacyDir);
+  if (rest.length !== (sub ? 0 : 1)) { console.error(USAGE); process.exit(2); }
+  const home = pickHome(data);
   if (!home) { console.error(NO_HOME_MESSAGE); process.exit(2); }
   const dir = resolve(home);
   const python = pickPython();

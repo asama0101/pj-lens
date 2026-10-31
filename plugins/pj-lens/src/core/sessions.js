@@ -1,12 +1,13 @@
 // 作業枠（予定／実績）の規則。枠は「作業した時間の記録」で、タスクの状態は変えない。すべて不変更新。
 import { toMin, toHHMM, isWeekend } from "./dates.js";
 import { offDayChecker } from "./holidays.js";
+import { DEFAULT_WORKDAY } from "./schema.js";
 
 const MIN_LEN = 15;
-const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 
 const workdayOf = (data) => data.settings?.workday ?? DEFAULT_WORKDAY;
-const allSessions = (data) => data.tasks.flatMap((t) => (t.sessions ?? []).map((s) => ({ ...s, taskId: t.id })));
+/** 全タスクの枠に taskId・title を付けて平らに */
+export const allSessions = (data) => data.tasks.flatMap((t) => (t.sessions ?? []).map((s) => ({ ...s, taskId: t.id, title: t.title })));
 const findSession = (data, id) => allSessions(data).find((s) => s.id === id);
 const clash = (a, b) => a.date === b.date && toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end);
 const isPast = (slot, now) => slot.date < now.date || (slot.date === now.date && slot.end <= now.time);

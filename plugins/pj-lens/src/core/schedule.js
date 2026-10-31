@@ -1,9 +1,7 @@
 // 空き時間・優先順位・会議の操作（純関数、不変更新）
 import { toMin, toHHMM, diffDays, isDate, isTime } from "./dates.js";
 import { assignMeetingProjects } from "./rules.js";
-
-const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
-const closed = (t) => t.status === "Done" || t.status === "Cancelled";
+import { DEFAULT_WORKDAY, isClosed } from "./schema.js";
 
 /** 対象日の空き時間。skip の会議は無視し、重なりを統合して勤務時間内に切り詰める */
 export function freeSlots(events, date, workday = DEFAULT_WORKDAY) {
@@ -35,7 +33,7 @@ function openDownstream(tasks, id) {
       if (seen.has(t.id)) continue;
       seen.add(t.id);
       stack.push(t.id);
-      if (!closed(t)) n++;
+      if (!isClosed(t)) n++;
     }
   }
   return n;
@@ -49,8 +47,8 @@ export function rankTasks(data, today) {
   const byId = new Map(data.tasks.map((t) => [t.id, t]));
   const out = [];
   for (const t of data.tasks) {
-    if (closed(t)) continue;
-    if ((t.predecessors ?? []).some((p) => byId.has(p) && !closed(byId.get(p)))) continue;
+    if (isClosed(t)) continue;
+    if ((t.predecessors ?? []).some((p) => byId.has(p) && !isClosed(byId.get(p)))) continue;
     const left = diffDays(t.due, today);
     const reasons = [];
     let score = 0;

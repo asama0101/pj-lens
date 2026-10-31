@@ -3,7 +3,7 @@ import { addDays, toMin, weekday } from "./dates.js";
 import { sessionKind } from "./sessions.js";
 import { meetingKind } from "./schedule.js";
 
-const hours = (x) => (toMin(x.end) - toMin(x.start)) / 60;
+export const hours = (x) => (toMin(x.end) - toMin(x.start)) / 60;
 const inRange = (d, r) => !r || (d >= r.start && d <= r.end);
 const sumBy = (list, f) => list.reduce((a, x) => a + f(x), 0);
 

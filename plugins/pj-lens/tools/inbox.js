@@ -1,9 +1,9 @@
 // 使い方: node tools/inbox.js <コマンド> <data.json> ...   （コマンドの一覧は引数なしで実行すると出る）
 // HTML の「Claude Code に依頼する」の受信箱（data.json の inbox）を、Claude Code から扱う。結果は JSON で標準出力へ。
 // list・get は data.json を書かない。それ以外は、書く直前にファイルを読み直して、検証に通ったときだけ書く。
-import { readFileSync, writeFileSync } from "node:fs";
-import { validate, CAUSES } from "../src/core/schema.js";
+import { CAUSES } from "../src/core/schema.js";
 import { today } from "../src/core/dates.js";
+import { readJson, out, save } from "./cli.js";
 import {
   submitRequest, claimRequest, askQuestion, setProposal, rejectRequest, markApplied, markFailed, touchWatching, getRequest,
 } from "../src/core/inbox.js";
@@ -21,17 +21,8 @@ const USAGE = `使い方: node tools/inbox.js <コマンド> <data.json> ...
   reject  <data.json> <id>                        却下する
   fail    <data.json> <id> <message>              できない・失敗として返す`;
 
-const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
-const out = (v) => console.log(JSON.stringify(v, null, 2));
 const now = () => new Date().toISOString();
 const usage = () => { console.error(USAGE); process.exit(2); };
-
-/** 検証に通ったときだけ書く */
-function save(path, data) {
-  const { errors } = validate(data);
-  if (errors.length) throw new Error(errors.join(" / "));
-  writeFileSync(path, JSON.stringify(data, null, 2) + "\n");
-}
 
 const COMMANDS = {
   submit: [3, (d, [path, pid, text], o) => {

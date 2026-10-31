@@ -1,16 +1,15 @@
-// 使い方: node tools/mcpconf.js <保存先フォルダ> show | set calendar key=value ... | clear calendar
+// 使い方: node tools/mcpconf.js --data <保存先フォルダ> show | set calendar key=value ... | clear calendar
 // 予定表の MCP の指定を、保存先フォルダ（${CLAUDE_PLUGIN_DATA}）の pj-lens-mcp.json に読み書きする。
-// 保存先は、環境変数 PJ_LENS_HOME が最優先、次に引数（先頭の <保存先フォルダ>、または --data <保存先フォルダ>）。どちらもなければ終了コード 2。
+// 保存先は、環境変数 PJ_LENS_HOME が最優先、次に --data <保存先フォルダ>。どちらもなければ終了コード 2。
 import { readMcpConfig, setMcpRole, clearMcpRole, ROLES } from "../src/import/mcpconf.js";
 import { takeData, pickHome, NO_HOME_MESSAGE } from "./home.js";
 
 const { data, rest } = takeData(process.argv.slice(2));
 const COMMANDS = ["show", "set", "clear"];
-const legacyDir = COMMANDS.includes(rest[0]) ? null : rest.shift(); // 従来の「<保存先> <コマンド>」
-const dir = pickHome(data || legacyDir);
+const dir = pickHome(data);
 const [cmd, role, ...pairs] = rest;
 const usage = () => {
-  console.error("使い方: node tools/mcpconf.js <保存先フォルダ> show | set calendar key=value ... | clear calendar\n  calendar: server・listTool");
+  console.error("使い方: node tools/mcpconf.js --data <保存先フォルダ> show | set calendar key=value ... | clear calendar\n  calendar: server・listTool");
   process.exit(2);
 };
 if (!COMMANDS.includes(cmd)) usage();

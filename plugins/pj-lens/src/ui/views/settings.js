@@ -1,6 +1,6 @@
 // 「設定」タブ: 基本の設定（勤務時間・待ち長期化の日数・見出しの呼び名）と、日本の祝日（表示のみ）・休み（手動）・営業日として扱う日と、キーワード規則（会議名。編集できる）と、WBS の取り込み記録（表示のみ）。
 import { ruleMeetingCounts } from "../../core/rules.js";
-import { validate, HOLIDAY_KINDS } from "../../core/schema.js";
+import { validate, HOLIDAY_KINDS, DEFAULT_WORKDAY } from "../../core/schema.js";
 import { isDate, isTime, toMin } from "../../core/dates.js";
 import { groupLabels } from "../../core/groups.js";
 import { esc } from "../common.js";
@@ -9,7 +9,7 @@ import { esc } from "../common.js";
 export function settingsInputValues(data) {
   const st = data.settings ?? {};
   const ok = st.workday && isTime(st.workday.start) && isTime(st.workday.end) && toMin(st.workday.start) < toMin(st.workday.end);
-  const wd = ok ? st.workday : { start: "09:00", end: "18:00" };
+  const wd = ok ? st.workday : DEFAULT_WORKDAY;
   const lb = groupLabels(st);
   return { workdayStart: wd.start, workdayEnd: wd.end, waitingLongDays: Number.isInteger(st.waitingLongDays) && st.waitingLongDays >= 1 ? st.waitingLongDays : 7, labelGroup: lb.group, labelSubgroup: lb.subgroup };
 }

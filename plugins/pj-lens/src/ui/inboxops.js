@@ -5,10 +5,9 @@
 import { diffDays, dueAfter } from "../core/dates.js";
 import { calendarOf } from "../core/holidays.js";
 import { computeImpact } from "../core/impact.js";
-import { CAUSES, OP_KINDS, validate } from "../core/schema.js";
+import { CAUSES, OP_KINDS, isClosed, validate } from "../core/schema.js";
 import { addTask, updateTask } from "./edit.js";
 
-const closed = (t) => t.status === "Done" || t.status === "Cancelled";
 const max = (a, b) => (a > b ? a : b);
 
 function simulate(data, ops, today) {
@@ -38,7 +37,7 @@ function simulate(data, ops, today) {
   /** id の期限を minDue 以上にする。動いたら、後続も先行の新しい期限を超えないように連鎖させる */
   const raise = (id, minDue, reason, group) => {
     const t = need(id);
-    if (closed(t) || t.due >= minDue) return;
+    if (isClosed(t) || t.due >= minDue) return;
     setDue(id, minDue, reason);
     group.add(id);
     for (const s of w.tasks.filter((x) => (x.predecessors ?? []).includes(id))) raise(s.id, minDue, `先行 ${id} の遅れ`, group);
@@ -66,7 +65,7 @@ function simulate(data, ops, today) {
     const ready = pending.filter((o) => (o.predecessors ?? []).every((p) => !adds.some((x) => String(x.ref).trim() === p) || refDue.has(p)));
     if (!ready.length) throw new Error("addTask の先行が循環しています");
     for (const o of ready) {
-      const open = (o.predecessors ?? []).map((p) => (refDue.has(p) ? { due: refDue.get(p), status: "To Do" } : need(p))).filter((t) => !closed(t));
+      const open = (o.predecessors ?? []).map((p) => (refDue.has(p) ? { due: refDue.get(p), status: "To Do" } : need(p))).filter((t) => !isClosed(t));
       const base = open.map((t) => t.due).reduce(max, "") || today;
       const ref = String(o.ref).trim();
       dueOf.set(ref, dueAfter(base, o.businessDays, calendarOf(w.settings)));
@@ -99,7 +98,7 @@ function simulate(data, ops, today) {
       if (before.has(p)) touched.add(p);
     }
     w = updateTask(w, id, { predecessors: preds }, today);
-    const lower = preds.map((p) => T(p)).filter((p) => !closed(p)).map((p) => p.due).reduce(max, "");
+    const lower = preds.map((p) => T(p)).filter((p) => !isClosed(p)).map((p) => p.due).reduce(max, "");
     if (lower > T(id).due) {
       warnings.push(`登録するタスク ${id}（${T(id).title}）の期限は、先行より前なので ${lower} に合わせました`);
       raise(id, lower, "先行の期限に合わせた", inboxIds);
@@ -122,7 +121,7 @@ function simulate(data, ops, today) {
       w = updateTask(w, taskId, patch, today);
       predRows.push({ taskId, predId, action: "add" });
       predCount++; inboxIds.add(taskId);
-      if (!closed(p)) raise(taskId, p.due, `先行 ${predId} を追加`, inboxIds);
+      if (!isClosed(p)) raise(taskId, p.due, `先行 ${predId} を追加`, inboxIds);
     } else {
       if (!has) { predRows.push({ taskId, predId, action: "same" }); warnings.push(`${predId} は、${taskId} の先行ではありません`); continue; }
       w = updateTask(w, taskId, { predecessors: t.predecessors.filter((x) => x !== predId) }, today);
@@ -135,7 +134,7 @@ function simulate(data, ops, today) {
   for (const o of ops.filter((x) => x.op === "moveDue")) {
     const id = resolve(o.taskId);
     const t = need(id);
-    if (closed(t)) throw new Error(`タスク ${id} は完了しているので、期限を動かせません`);
+    if (isClosed(t)) throw new Error(`タスク ${id} は完了しているので、期限を動かせません`);
     let delta;
     if (Number.isInteger(o.deltaDays)) delta = o.deltaDays;
     else if (typeof o.newDue === "string") delta = diffDays(o.newDue, t.due);
@@ -145,7 +144,7 @@ function simulate(data, ops, today) {
     const ids = [];
     for (const c of impact.changes) { setDue(c.taskId, c.newDue, c.reason); ids.push(c.taskId); }
     // この計画が触った（動かした・先行に足した）先行の期限より前には、手動の前倒しでもしない（遅い方を採る）
-    const lower = (T(id).predecessors ?? []).filter((p) => changed.has(p) || touched.has(p)).map((p) => T(p)).filter((p) => !closed(p)).map((p) => ({ id: p.id, due: p.due }));
+    const lower = (T(id).predecessors ?? []).filter((p) => changed.has(p) || touched.has(p)).map((p) => T(p)).filter((p) => !isClosed(p)).map((p) => ({ id: p.id, due: p.due }));
     const need2 = lower.reduce((a, b) => (b.due > a.due ? b : a), { id: null, due: "" });
     if (need2.id && need2.due > T(id).due) {
       warnings.push(`${id} は、先行 ${need2.id} の新しい期限より前にできないので、${need2.due} にしました`);

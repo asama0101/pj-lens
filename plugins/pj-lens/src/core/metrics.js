@@ -1,5 +1,6 @@
 // 進捗率・遅延判定・ガント用の算出（純関数）
 import { addDays, diffDays, weekday, isWeekend, isDate } from "./dates.js";
+import { isClosed } from "./schema.js";
 
 const WINDOW_DAYS = { m1: 31, m3: 92, m6: 183, y1: 365 };
 const MARGIN_DAYS = 7;
@@ -20,7 +21,7 @@ export function taskStart(data, taskId) {
 function actualSpan(t, today) {
   const days = (t.sessions ?? []).filter((s) => s.kind === "actual").map((s) => s.date).sort();
   if (!days.length) return null;
-  const finished = t.status === "Done" || t.status === "Cancelled";
+  const finished = isClosed(t);
   let end = finished ? (t.doneAt ?? days[days.length - 1]) : today;
   if (end < days[0]) end = days[0];
   return { start: days[0], end };

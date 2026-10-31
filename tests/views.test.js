@@ -230,6 +230,13 @@ test("renderSchedule(week): 7 日分の列と会議の時間枠・件名（画�
   assert.ok(html.includes("class=\"blk mtg"));
 });
 
+test("renderSchedule(week): 不明な状態のタスクが期限欄にあっても例外にしない（validate が注意を出す。画面は白くしない）", () => {
+  const d = load();
+  d.tasks.find((t) => t.id === "B2").status = "Doing"; // 期限 2026-10-23 は表示中の週
+  const html = renderSchedule(d, TODAY, { view: "week", date: TODAY, now: NOW });
+  assert.ok(html.includes("ルータ設定の作成"));
+});
+
 test("renderSchedule: 未確認 0 件なら『すべて実績にする』は出ない／選択がなければ『枠を削除』は無効", () => {
   const d = load();
   const html = sched(d);

@@ -13,7 +13,7 @@ after(() => rmSync(base, { recursive: true, force: true }));
 let n = 0;
 const dir = (name = "d") => join(base, `${++n}-${name}`, "data dir"); // 空白を含み、まだ存在しない
 const cli = (d, ...args) => {
-  const r = spawnSync(process.execPath, [join(REPO, "tools/mcpconf.js"), d, ...args], { encoding: "utf8" });
+  const r = spawnSync(process.execPath, [join(REPO, "tools/mcpconf.js"), "--data", d, ...args], { encoding: "utf8" });
   let out = null;
   try { out = JSON.parse(r.stdout); } catch { /* JSON でない出力 */ }
   return { status: r.status, out, err: r.stderr };
@@ -100,13 +100,14 @@ test("schema_version: 無い既存ファイルは 1 として読め、次に保�
   assert.equal(cli(d, "show").status, 1);
 });
 
-test("置き場: PJ_LENS_HOME が最優先、次に --data か従来の位置引数。どれも無ければ終了コード 2", () => {
+test("置き場: PJ_LENS_HOME が最優先、次に --data。どちらも無ければ終了コード 2（位置引数では渡せない）", () => {
   const env = dir("env"), arg = dir("arg");
-  assert.equal(cliEnv({ PJ_LENS_HOME: env }, arg, "set", ...CAL).status, 0);
+  assert.equal(cliEnv({ PJ_LENS_HOME: env }, "--data", arg, "set", ...CAL).status, 0);
   assert.equal(existsSync(join(env, "pj-lens-mcp.json")), true);
-  assert.equal(existsSync(arg), false, "位置引数の置き場には書かない");
+  assert.equal(existsSync(arg), false, "--data の置き場には書かない");
   assert.equal(cliEnv({}, "--data", arg, "set", ...CAL).status, 0);
   assert.equal(existsSync(join(arg, "pj-lens-mcp.json")), true);
   assert.equal(cliEnv({}, "show").status, 2);
+  assert.equal(cliEnv({}, arg, "show").status, 2, "位置引数は受け付けない");
   assert.equal(cliEnv({ PJ_LENS_HOME: env }, "show").status, 0, "環境変数だけでも動く");
 });

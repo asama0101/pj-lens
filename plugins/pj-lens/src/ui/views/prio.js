@@ -1,11 +1,11 @@
 // 「今日のタスク」「今日の優先」パネル（プロジェクト画面・スケジュール画面で共通。右の列に並ぶ）
 import { rankTasks } from "../../core/schedule.js";
 import { taskActual } from "../../core/sessions.js";
+import { isClosed } from "../../core/schema.js";
 import { esc } from "../common.js";
 
 const PILL = { "To Do": "off", "In Progress": "ok", Waiting: "wait", Done: "done", Cancelled: "off" };
 const statusPill = (t) => `<span class="pill ${PILL[t.status] ?? "off"}">${esc(t.status)}</span>`;
-const isClosed = (t) => t.status === "Done" || t.status === "Cancelled";
 
 /** 着手（To Do・Waiting のとき）と完了（Done・Cancelled 以外）のボタン。今日のタスクが使う */
 function statusButtons(t) {

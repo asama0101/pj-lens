@@ -1,9 +1,8 @@
 // 使い方: node tools/intake.js <コマンド> <data.json> ...   （コマンドの一覧は引数なしで実行すると出る）
 // 取り込み（WBS・予定表）と、会議のプロジェクト規則、WBS の列の対応を扱う。結果は JSON で標準出力へ。
 // *-plan・*-list・*-get は data.json を書かない。*-apply・*-set・*-remove は検証に通ったときだけ書く。
-import { readFileSync, writeFileSync } from "node:fs";
-import { validate } from "../src/core/schema.js";
 import { today, isDate } from "../src/core/dates.js";
+import { readJson, out, save } from "./cli.js";
 import { assignMeetingProjects, setProjectRule, removeProjectRule } from "../src/core/rules.js";
 import { planWbsImport, applyWbsImport, getWbsMapping, setWbsMapping } from "../src/import/wbs.js";
 import { planCalendarSync, applyCalendarSync } from "../src/import/calendar.js";
@@ -17,16 +16,7 @@ const USAGE = `使い方: node tools/intake.js <コマンド> <data.json> ...
   mapping-get            <data.json> <projectId>
   mapping-set            <data.json> <projectId> <mapping.json>`;
 
-const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
-const out = (v) => console.log(JSON.stringify(v, null, 2));
 const usage = () => { console.error(USAGE); process.exit(2); };
-
-/** 検証に通ったときだけ書く */
-function save(path, data) {
-  const { errors } = validate(data);
-  if (errors.length) throw new Error(errors.join(" / "));
-  writeFileSync(path, JSON.stringify(data, null, 2) + "\n");
-}
 
 // コマンド名 → [必要な引数の数(コマンド名を除く), 実行]
 const COMMANDS = {

@@ -609,7 +609,7 @@ return { calendarOf, offDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecen
 })();
 
 /* src/core/schema.js */
-const { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, HOLIDAY_KINDS, REQUEST_STATUS, OP_KINDS, validate } = (() => {
+const { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, HOLIDAY_KINDS, REQUEST_STATUS, OP_KINDS, DEFAULT_WORKDAY, isClosed, validate } = (() => {
 // data.json の検証。errors は保存してはいけない不整合、warnings は保存を止めない注意。
 
 
@@ -621,11 +621,13 @@ const CAUSES = ["ベンダー", "社内", "自分", "その他"];
 const HOLIDAY_KINDS = ["祝日", "有給", "その他"];
 const REQUEST_STATUS = ["pending", "working", "question", "proposed", "applied", "rejected", "failed"];
 const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask"];
+const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 
-const isDone = (t) => t.status === "Done" || t.status === "Cancelled";
+/** 終わったタスク（Done・Cancelled）か */
+const isClosed = (t) => t.status === "Done" || t.status === "Cancelled";
 
 /** 同じ日の枠が重なるか（端が接するだけは重ならない） */
-const overlap = (a, b) => a.date === b.date && toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end);
+const overlap = (a, b) => toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end);
 
 /** 先行の循環を DFS で探す。循環に含まれるタスク ID の一覧を返す */
 function findCycle(tasks) {
@@ -715,19 +717,27 @@ function validate(data, now = nowLocal()) {
       if (toMin(s.end) <= toMin(s.start)) err(`${label}: 終了が開始以前です`);
       if (!["planned", "actual"].includes(s.kind)) err(`${label}: 不明な kind "${s.kind}"`);
       const notStarted = s.date > now.date || (s.date === now.date && s.start > now.time); // 進行中の枠は、完了にしても残す（futurePlanned）
-      if (isDone(t) && s.kind === "planned" && notStarted) warn(`タスク ${t.id}: ${t.status} なのに未来の予定枠 ${s.id} が残っています`);
+      if (isClosed(t) && s.kind === "planned" && notStarted) warn(`タスク ${t.id}: ${t.status} なのに未来の予定枠 ${s.id} が残っています`);
     }
   }
 
   const cycle = findCycle(data.tasks);
   if (cycle) err(`先行が循環しています: ${cycle.join(" → ")}`);
 
-  // 同じ日の枠どうしの重なり（タスクをまたいで判定）
-  const all = data.tasks.flatMap((t) => (t.sessions ?? []).map((s) => ({ ...s, taskId: t.id })))
-    .filter((s) => isDate(s.date) && isTime(s.start) && isTime(s.end));
-  for (let i = 0; i < all.length; i++) {
-    for (let j = i + 1; j < all.length; j++) {
-      if (overlap(all[i], all[j])) err(`枠 ${all[i].id} と ${all[j].id} が重なっています (${all[i].date})`);
+  // 同じ日の枠どうしの重なり（タスクをまたいで判定）。日付で束ねて、同じ日の中だけ総当たりにする（全枠の総当たりは、数年分で秒単位になる）
+  const byDay = new Map();
+  for (const t of data.tasks) {
+    for (const s of t.sessions ?? []) {
+      if (!isDate(s.date) || !isTime(s.start) || !isTime(s.end)) continue;
+      if (!byDay.has(s.date)) byDay.set(s.date, []);
+      byDay.get(s.date).push(s);
+    }
+  }
+  for (const [date, list] of byDay) {
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        if (overlap(list[i], list[j])) err(`枠 ${list[i].id} と ${list[j].id} が重なっています (${date})`);
+      }
     }
   }
 
@@ -817,12 +827,13 @@ function validate(data, now = nowLocal()) {
   return { errors, warnings };
 }
 
-return { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, HOLIDAY_KINDS, REQUEST_STATUS, OP_KINDS, validate };
+return { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, HOLIDAY_KINDS, REQUEST_STATUS, OP_KINDS, DEFAULT_WORKDAY, isClosed, validate };
 })();
 
 /* src/core/metrics.js */
 const { taskStart, ganttRows, ganttLayout, timeTicks, projectProgress, taskFlags, projectFlags } = (() => {
 // 進捗率・遅延判定・ガント用の算出（純関数）
+
 
 
 const WINDOW_DAYS = { m1: 31, m3: 92, m6: 183, y1: 365 };
@@ -844,7 +855,7 @@ function taskStart(data, taskId) {
 function actualSpan(t, today) {
   const days = (t.sessions ?? []).filter((s) => s.kind === "actual").map((s) => s.date).sort();
   if (!days.length) return null;
-  const finished = t.status === "Done" || t.status === "Cancelled";
+  const finished = isClosed(t);
   let end = finished ? (t.doneAt ?? days[days.length - 1]) : today;
   if (end < days[0]) end = days[0];
   return { start: days[0], end };
@@ -941,16 +952,17 @@ return { taskStart, ganttRows, ganttLayout, timeTicks, projectProgress, taskFlag
 })();
 
 /* src/core/sessions.js */
-const { sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, runningPlanned, futurePlanned } = (() => {
+const { allSessions, sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, runningPlanned, futurePlanned } = (() => {
 // 作業枠（予定／実績）の規則。枠は「作業した時間の記録」で、タスクの状態は変えない。すべて不変更新。
 
 
 
+
 const MIN_LEN = 15;
-const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 
 const workdayOf = (data) => data.settings?.workday ?? DEFAULT_WORKDAY;
-const allSessions = (data) => data.tasks.flatMap((t) => (t.sessions ?? []).map((s) => ({ ...s, taskId: t.id })));
+/** 全タスクの枠に taskId・title を付けて平らに */
+const allSessions = (data) => data.tasks.flatMap((t) => (t.sessions ?? []).map((s) => ({ ...s, taskId: t.id, title: t.title })));
 const findSession = (data, id) => allSessions(data).find((s) => s.id === id);
 const clash = (a, b) => a.date === b.date && toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end);
 const isPast = (slot, now) => slot.date < now.date || (slot.date === now.date && slot.end <= now.time);
@@ -1056,7 +1068,7 @@ function futurePlanned(data, taskId, now) {
   return (t?.sessions ?? []).filter((s) => s.kind === "planned" && notStarted(s)).map((s) => s.id);
 }
 
-return { sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, runningPlanned, futurePlanned };
+return { allSessions, sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, runningPlanned, futurePlanned };
 })();
 
 /* src/core/impact.js */
@@ -1064,8 +1076,6 @@ const { computeImpact, needsReplan, applyReplan, commitReplan } = (() => {
 // タスクの期限が動いたときの影響範囲。後続は「最小限だけ」動かす（先行の新しい期限を超えないようにする）。
 
 
-
-const closed = (t) => t.status === "Done" || t.status === "Cancelled";
 
 /**
  * opts.compress: 前倒し(deltaDays < 0)のとき、後続も同じ日数だけ前倒しする(先行の新しい期限より前にはしない)
@@ -1091,7 +1101,7 @@ function computeImpact(data, taskId, deltaDays, { compress = false } = {}) {
     while (queue.length) {
       const cur = queue.shift();
       for (const s of successors.get(cur) ?? []) {
-        if (s.id === taskId || closed(s)) continue;
+        if (s.id === taskId || isClosed(s)) continue;
         const lower = s.predecessors.map((p) => newDue.get(p) ?? byId.get(p)?.due).filter(Boolean).reduce((a, b) => (a > b ? a : b), "");
         const shifted = addDays(s.due, deltaDays);
         const cand = lower > shifted ? lower : shifted;
@@ -1108,7 +1118,7 @@ function computeImpact(data, taskId, deltaDays, { compress = false } = {}) {
   while (queue.length) {
     const cur = queue.shift();
     for (const s of successors.get(cur) ?? []) {
-      if (s.id === taskId || closed(s)) continue;
+      if (s.id === taskId || isClosed(s)) continue;
       let best = s.due;
       let by = null;
       for (const p of s.predecessors) {
@@ -1271,8 +1281,6 @@ const { freeSlots, rankTasks, addMeeting, updateMeeting, meetingKind, confirmMee
 
 
 
-const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
-const closed = (t) => t.status === "Done" || t.status === "Cancelled";
 
 /** 対象日の空き時間。skip の会議は無視し、重なりを統合して勤務時間内に切り詰める */
 function freeSlots(events, date, workday = DEFAULT_WORKDAY) {
@@ -1304,7 +1312,7 @@ function openDownstream(tasks, id) {
       if (seen.has(t.id)) continue;
       seen.add(t.id);
       stack.push(t.id);
-      if (!closed(t)) n++;
+      if (!isClosed(t)) n++;
     }
   }
   return n;
@@ -1318,8 +1326,8 @@ function rankTasks(data, today) {
   const byId = new Map(data.tasks.map((t) => [t.id, t]));
   const out = [];
   for (const t of data.tasks) {
-    if (closed(t)) continue;
-    if ((t.predecessors ?? []).some((p) => byId.has(p) && !closed(byId.get(p)))) continue;
+    if (isClosed(t)) continue;
+    if ((t.predecessors ?? []).some((p) => byId.has(p) && !isClosed(byId.get(p)))) continue;
     const left = diffDays(t.due, today);
     const reasons = [];
     let score = 0;
@@ -1439,7 +1447,7 @@ return { freeSlots, rankTasks, addMeeting, updateMeeting, meetingKind, confirmMe
 })();
 
 /* src/core/workload.js */
-const { projectHours, workload, periodRange } = (() => {
+const { hours, projectHours, workload, periodRange } = (() => {
 // 稼働の集計（純関数）: 実績の作業枠（タスク）と、確認済みで参加する会議の時間をプロジェクト別に集める。
 
 
@@ -1495,7 +1503,7 @@ function periodRange(period, date) {
   return { start, end: addDays(next, -1) };
 }
 
-return { projectHours, workload, periodRange };
+return { hours, projectHours, workload, periodRange };
 })();
 
 /* src/core/reportspec.js */
@@ -1557,7 +1565,6 @@ function reportFileName({ projectIds, allIds, period, today }) {
   return `pj-lens_report_${target}_${period.key}_${compact(today)}`.replace(/[\\/:*?"<>|\s]/g, "_");
 }
 
-const hours = (x) => (toMin(x.end) - toMin(x.start)) / 60;
 const inRange = (d, r) => d >= r.start && d <= r.end;
 
 /**
@@ -1888,6 +1895,88 @@ function createStore(deps = {}) {
 }
 
 return { createStore };
+})();
+
+/* src/ui/sync.js */
+const { createSync } = (() => {
+// 保存と読み直しの順序づけ。画面の編集（data → data）を、他（Claude Code など）の更新と競合したら最新のファイルに当て直して保存し、
+// 他の更新を定期的に読み直す。保存と読み直しは 1 本の列（chain）に並べ、古い内容で上書きしない。DOM には触れず、描画・通知は deps で受ける。
+const CONFLICT ="他で更新されました。再読込してください。(再読込すると、保存できていない画面の変更は消えます)";
+
+/**
+ * deps: { store, getData, setData, render, renderBar, banner, toast, visible, wantFast }
+ *   visible: 画面が見えているか（隠れている間は読み直さない）/ wantFast: 帯が開いているか（4 秒ごとに読み直す。そうでなければ 16 秒ごと）
+ * 戻り値: { persist(edit), pollInbox(force), whenIdle(), reset(), failed }。failed は保存に失敗したまま（バナーが出ている）か
+ */
+function createSync({ store, getData, setData, render, renderBar, banner, toast, visible, wantFast }) {
+  let chain = Promise.resolve();
+  let pending = []; // 保存がまだ済んでいない編集（data → data）。競合したとき、最新のファイルに当て直す
+  let inflight = 0; // 保存・読み直しの待ち・実行中の数
+  let polling = false, tick = 0;
+
+  const sync = {
+    failed: false,
+    /** 編集を保存する。競合したら、最新のファイルに、まだ保存していない編集をすべて当て直して保存する */
+    persist(edit) {
+      if (edit) pending.push(edit);
+      inflight++;
+      chain = chain.then(async () => {
+        try {
+          if (!store.hasFile) { banner("このブラウザでは直接保存できません。変更は「JSON を書き出す」で保存してください。", { download: true }); return; }
+          const edits = pending.slice();
+          const r = await store.saveMerged((d) => edits.reduce((acc, e) => e(acc), d), getData());
+          if (r.ok) {
+            pending = pending.filter((e) => !edits.includes(e));
+            if (r.data !== getData()) { // 最新のファイルに当て直して保存した。あとから足された編集を、その上に重ねて、画面に出す
+              setData(r.data);
+              try { setData(pending.reduce((acc, e) => e(acc), r.data)); } catch { pending = []; toast("他の更新と重なったため、直前の操作は反映されませんでした"); }
+              render();
+            }
+            if (sync.failed) banner("");
+            sync.failed = false;
+            return;
+          }
+          sync.failed = true;
+          banner(r.reason === "conflict" ? CONFLICT : r.message, { reload: r.reason === "conflict", download: true });
+        } finally { inflight--; }
+      });
+    },
+    /** ファイルを読み直して、他の更新（受け取り・提案・見ている印）を画面に出す。保存と同じ列に並べる（読んでいる間に済んだ保存を、古い内容で上書きしないように） */
+    pollInbox(force = false) {
+      const data = getData();
+      if (polling || !data || !store.hasFile || !visible()) return;
+      const busy = (data.inbox?.requests ?? []).some((r) => ["pending", "working", "question", "proposed"].includes(r.status));
+      if (!force && !wantFast() && !busy && ++tick % 4 !== 0) return;
+      if (sync.failed || inflight || pending.length) return;
+      polling = true;
+      inflight++;
+      chain = chain.then(async () => {
+        try {
+          if (sync.failed || pending.length) return; // 並んでいる間に編集があった。その保存を先にする
+          const strip = (d) => JSON.stringify({ ...d, inbox: undefined });
+          const probe = await store.peek(); // 読むだけ（読み込んだことにしない）。他の更新があるときだけ、読み込み直す
+          if (JSON.stringify(probe) === JSON.stringify(getData())) { renderBar(); return; }
+          const fresh = await store.reload();
+          if (pending.length) { // 読んでいる間に、画面で編集があった。最新のファイルの上に重ねる（保存は、その編集の保存が行う）
+            try { setData(pending.reduce((d, e) => e(d), fresh)); } catch { sync.failed = true; banner(CONFLICT, { reload: true, download: true }); return; }
+            render();
+            return;
+          }
+          const bodyChanged = strip(fresh) !== strip(getData());
+          setData(fresh);
+          if (bodyChanged) render(); else renderBar();
+        } catch { /* 読めないときは、次の回に */ } finally { polling = false; inflight--; }
+      });
+    },
+    /** 並んでいる保存・読み直しが終わるまで待つ */
+    whenIdle: () => chain,
+    /** ファイルを開き直したとき: 保存していない編集を捨て、失敗の印を消す */
+    reset() { pending = []; sync.failed = false; },
+  };
+  return sync;
+}
+
+return { createSync };
 })();
 
 /* src/ui/prefs.js */
@@ -2404,7 +2493,6 @@ const { summarizeSections, planOps, applyProposal } = (() => {
 
 
 
-const closed = (t) => t.status === "Done" || t.status === "Cancelled";
 const max = (a, b) => (a > b ? a : b);
 
 function simulate(data, ops, today) {
@@ -2434,7 +2522,7 @@ function simulate(data, ops, today) {
   /** id の期限を minDue 以上にする。動いたら、後続も先行の新しい期限を超えないように連鎖させる */
   const raise = (id, minDue, reason, group) => {
     const t = need(id);
-    if (closed(t) || t.due >= minDue) return;
+    if (isClosed(t) || t.due >= minDue) return;
     setDue(id, minDue, reason);
     group.add(id);
     for (const s of w.tasks.filter((x) => (x.predecessors ?? []).includes(id))) raise(s.id, minDue, `先行 ${id} の遅れ`, group);
@@ -2462,7 +2550,7 @@ function simulate(data, ops, today) {
     const ready = pending.filter((o) => (o.predecessors ?? []).every((p) => !adds.some((x) => String(x.ref).trim() === p) || refDue.has(p)));
     if (!ready.length) throw new Error("addTask の先行が循環しています");
     for (const o of ready) {
-      const open = (o.predecessors ?? []).map((p) => (refDue.has(p) ? { due: refDue.get(p), status: "To Do" } : need(p))).filter((t) => !closed(t));
+      const open = (o.predecessors ?? []).map((p) => (refDue.has(p) ? { due: refDue.get(p), status: "To Do" } : need(p))).filter((t) => !isClosed(t));
       const base = open.map((t) => t.due).reduce(max, "") || today;
       const ref = String(o.ref).trim();
       dueOf.set(ref, dueAfter(base, o.businessDays, calendarOf(w.settings)));
@@ -2495,7 +2583,7 @@ function simulate(data, ops, today) {
       if (before.has(p)) touched.add(p);
     }
     w = updateTask(w, id, { predecessors: preds }, today);
-    const lower = preds.map((p) => T(p)).filter((p) => !closed(p)).map((p) => p.due).reduce(max, "");
+    const lower = preds.map((p) => T(p)).filter((p) => !isClosed(p)).map((p) => p.due).reduce(max, "");
     if (lower > T(id).due) {
       warnings.push(`登録するタスク ${id}（${T(id).title}）の期限は、先行より前なので ${lower} に合わせました`);
       raise(id, lower, "先行の期限に合わせた", inboxIds);
@@ -2518,7 +2606,7 @@ function simulate(data, ops, today) {
       w = updateTask(w, taskId, patch, today);
       predRows.push({ taskId, predId, action: "add" });
       predCount++; inboxIds.add(taskId);
-      if (!closed(p)) raise(taskId, p.due, `先行 ${predId} を追加`, inboxIds);
+      if (!isClosed(p)) raise(taskId, p.due, `先行 ${predId} を追加`, inboxIds);
     } else {
       if (!has) { predRows.push({ taskId, predId, action: "same" }); warnings.push(`${predId} は、${taskId} の先行ではありません`); continue; }
       w = updateTask(w, taskId, { predecessors: t.predecessors.filter((x) => x !== predId) }, today);
@@ -2531,7 +2619,7 @@ function simulate(data, ops, today) {
   for (const o of ops.filter((x) => x.op === "moveDue")) {
     const id = resolve(o.taskId);
     const t = need(id);
-    if (closed(t)) throw new Error(`タスク ${id} は完了しているので、期限を動かせません`);
+    if (isClosed(t)) throw new Error(`タスク ${id} は完了しているので、期限を動かせません`);
     let delta;
     if (Number.isInteger(o.deltaDays)) delta = o.deltaDays;
     else if (typeof o.newDue === "string") delta = diffDays(o.newDue, t.due);
@@ -2541,7 +2629,7 @@ function simulate(data, ops, today) {
     const ids = [];
     for (const c of impact.changes) { setDue(c.taskId, c.newDue, c.reason); ids.push(c.taskId); }
     // この計画が触った（動かした・先行に足した）先行の期限より前には、手動の前倒しでもしない（遅い方を採る）
-    const lower = (T(id).predecessors ?? []).filter((p) => changed.has(p) || touched.has(p)).map((p) => T(p)).filter((p) => !closed(p)).map((p) => ({ id: p.id, due: p.due }));
+    const lower = (T(id).predecessors ?? []).filter((p) => changed.has(p) || touched.has(p)).map((p) => T(p)).filter((p) => !isClosed(p)).map((p) => ({ id: p.id, due: p.due }));
     const need2 = lower.reduce((a, b) => (b.due > a.due ? b : a), { id: null, due: "" });
     if (need2.id && need2.due > T(id).due) {
       warnings.push(`${id} は、先行 ${need2.id} の新しい期限より前にできないので、${need2.due} にしました`);
@@ -2635,9 +2723,9 @@ const { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide } = 
 
 
 
+
 const PILL = { "To Do": "off", "In Progress": "ok", Waiting: "wait", Done: "done", Cancelled: "off" };
 const statusPill = (t) => `<span class="pill ${PILL[t.status] ?? "off"}">${esc(t.status)}</span>`;
-const isClosed = (t) => t.status === "Done" || t.status === "Cancelled";
 
 /** 着手（To Do・Waiting のとき）と完了（Done・Cancelled 以外）のボタン。今日のタスクが使う */
 function statusButtons(t) {
@@ -2874,7 +2962,7 @@ const { snapStart, weekStartOf, calendarGeometry, renderCalendar, renderSchedule
 
 
 
-const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
+
 const SLOT_STEP = 15;
 
 /** 15 分刻みに丸め、勤務時間内に収める（開始の分を返す） */
@@ -2894,7 +2982,6 @@ function calendarGeometry(data) {
   return { wd, h0, span, pc, tp: (m) => `${pc(m).toFixed(3)}%`, ht: (a, b) => `calc(${(pc(b) - pc(a)).toFixed(3)}% - 2px)` };
 }
 
-const allSessions = (data) => data.tasks.flatMap((t) => (t.sessions ?? []).map((s) => ({ ...s, taskId: t.id, title: t.title })));
 const hoursHtml = (g) => {
   let s = "";
   for (let h = Math.ceil(g.h0 / 60); h * 60 <= g.h0 + g.span; h++) s += `<div class="hour" style="top:${(((h * 60 - g.h0) / g.span) * 100).toFixed(3)}%"><span>${h}:00</span></div>`;
@@ -2979,7 +3066,7 @@ function renderCalendar(data, today, opts) {
     const cols = days.map((d) => `<div class="col dz ${d === today ? "today" : ""} ${isOff(d) ? "weekend" : ""}" data-date="${d}">${meetingBlocks(data, d, false, g, ctx)}${sessionBlocks(data, d, false, g, ctx)}</div>`).join("");
     const dues = days.map((d) => {
       const due = data.tasks.filter((t) => t.due === d && t.status !== "Done" && t.status !== "Cancelled");
-      return `<div class="duecell">${due.map((t) => `<div style="display:flex;gap:6px;align-items:baseline"><i class="dot ${STATUS_UI[t.status].dot}${t.due < today ? " is-late" : ""}"></i><span>${esc(t.title)}</span></div>`).join("") || '<span class="muted">—</span>'}</div>`;
+      return `<div class="duecell">${due.map((t) => `<div style="display:flex;gap:6px;align-items:baseline"><i class="dot ${STATUS_UI[t.status]?.dot ?? ""}${t.due < today ? " is-late" : ""}"></i><span>${esc(t.title)}</span></div>`).join("") || '<span class="muted">—</span>'}</div>`;
     }).join("");
     cal = `<div class="cal wk"><div class="week"><div></div>${heads}<div class="hrs">${hoursHtml(g)}</div>${cols}</div><div class="week" style="margin-top:8px"><div class="note" style="padding-top:6px">期限</div>${dues}</div></div>
       <p class="note" style="margin:8px 0 0">日付を押すと1日表示に切り替わります。枠をクリックして選び、「枠を削除」か Delete キーで削除できます。</p>`;
@@ -3203,7 +3290,7 @@ const { settingsInputValues, renderSettings } = (() => {
 function settingsInputValues(data) {
   const st = data.settings ?? {};
   const ok = st.workday && isTime(st.workday.start) && isTime(st.workday.end) && toMin(st.workday.start) < toMin(st.workday.end);
-  const wd = ok ? st.workday : { start: "09:00", end: "18:00" };
+  const wd = ok ? st.workday : DEFAULT_WORKDAY;
   const lb = groupLabels(st);
   return { workdayStart: wd.start, workdayEnd: wd.end, waitingLongDays: Number.isInteger(st.waitingLongDays) && st.waitingLongDays >= 1 ? st.waitingLongDays : 7, labelGroup: lb.group, labelSubgroup: lb.subgroup };
 }
@@ -3491,7 +3578,7 @@ function renderList(data, p, today, opts) {
     <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="note">変更はその場でファイルに保存されます。後続の日程をまとめて見直すときは、Claude Code の replan に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>
     <div class="mslist">${ms}<div><button class="btn" data-msadd="${esc(p.id)}">＋ マイルストーンを追加</button> <span class="note">ガントに◆で表示されます。</span></div></div>
-    <h2 style="margin:18px 0 2px;font-size:13px">日程変更の履歴</h2><p class="note" style="margin:0 0 8px">日程が動いたとき、いつ・何が・なぜ動いたか(原因: ベンダー／社内／自分)の記録です。Claude Code の replan が日程を更新したときだけ記録され、画面での日付変更は記録されません。</p><ul class="log">${log}</ul>
+    <h2 style="margin:18px 0 2px;font-size:13px">日程変更の履歴</h2><p class="note" style="margin:0 0 8px">日程が動いたとき、いつ・何が・なぜ動いたか(原因: ベンダー／社内／自分)の記録です。画面の確認パネルで「後続も反映して履歴に残す」を選んだとき、Claude Code の replan・受信箱で反映したときに記録されます。</p><ul class="log">${log}</ul>
     <div style="margin-top:18px">${delProj}</div></section>`;
 }
 
@@ -3678,7 +3765,7 @@ const params = new URLSearchParams(location.search);
 const clock = () => (params.get("today") ? { date: params.get("today"), time: params.get("time") ?? "10:15" } : nowLocal());
 
 const S = {
-  data: null, openError: "", saveFailed: false,
+  data: null, openError: "",
   screen: "project",
   filter: "all", pview: "gantt", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
@@ -3842,34 +3929,11 @@ async function saveReport() {
   toast(r.picked ? `レポートを保存しました（${r.name}）` : r.fallback ? `選んだ場所に保存できなかったため、ブラウザのダウンロード先のフォルダに保存しました（${r.name}）` : `レポートをダウンロードしました（${r.name}）。保存先は、ブラウザのダウンロード先のフォルダです`);
 }
 
-let saveChain = Promise.resolve();
-let pendingEdits = []; // 保存がまだ済んでいない編集（data → data）。競合したとき、最新のファイルに当て直す
-let inflight = 0;      // 保存・読み直しの待ち・実行中の数
-const CONFLICT = "他で更新されました。再読込してください。(再読込すると、保存できていない画面の変更は消えます)";
-function persist(edit) {
-  if (edit) pendingEdits.push(edit);
-  inflight++;
-  saveChain = saveChain.then(async () => {
-    try {
-      if (!store.hasFile) { banner("このブラウザでは直接保存できません。変更は「JSON を書き出す」で保存してください。", { download: true }); return; }
-      const edits = pendingEdits.slice();
-      const r = await store.saveMerged((d) => edits.reduce((acc, e) => e(acc), d), S.data);
-      if (r.ok) {
-        pendingEdits = pendingEdits.filter((e) => !edits.includes(e));
-        if (r.data !== S.data) { // 最新のファイルに当て直して保存した。あとから足された編集を、その上に重ねて、画面に出す
-          S.data = r.data;
-          try { S.data = pendingEdits.reduce((acc, e) => e(acc), r.data); } catch { pendingEdits = []; toast("他の更新と重なったため、直前の操作は反映されませんでした"); }
-          render();
-        }
-        if (S.saveFailed) banner("");
-        S.saveFailed = false;
-        return;
-      }
-      S.saveFailed = true;
-      banner(r.reason === "conflict" ? CONFLICT : r.message, { reload: r.reason === "conflict", download: true });
-    } finally { inflight--; }
-  });
-}
+/** 保存と読み直し（競合の当て直しを含む）。中身は ui/sync.js */
+const sync = createSync({
+  store, getData: () => S.data, setData: (d) => { S.data = d; }, render, renderBar, banner, toast,
+  visible: () => document.visibilityState !== "hidden", wantFast: () => S.ib.open,
+});
 
 /** 編集を適用して描画・保存する。edit は、いまのデータへの差分（data → data）で、例外を投げたら理由を表示して、データは変えない。
  *  決まった結果を返す編集（() => data）は、競合のとき、最新のファイルに当て直すと、他の更新を消すので、書かない */
@@ -3879,7 +3943,7 @@ function apply(edit, msg, { partial = false, quiet = false } = {}) {
   S.data = next;
   if (partial) renderCal(); else if (!quiet) render();
   if (msg) toast(msg);
-  persist(edit);
+  sync.persist(edit);
   return true;
 }
 /** { data, error, warning } を返す編集関数を、apply に渡せる形（data → data）にする */
@@ -3891,7 +3955,7 @@ function loaded(data) {
     if (!Array.isArray(data?.[k])) throw new Error(`データの形が違います（${k} がありません）`);
   }
   S.data = data;
-  pendingEdits = [];
+  sync.reset();
   S.pendingReplan = null;
   S.ruleError = "";
   S.openError = "";
@@ -4070,10 +4134,10 @@ $("filebar").addEventListener("click", async (e) => {
   const pf = e.target.closest("[data-pref]");
   if (pf) { S.pendingDone = null; const k = pf.dataset.pref === "prio" ? "showPrio" : "showActual"; S.prefs = { ...S.prefs, [k]: !S.prefs[k] }; savePrefs(S.prefs); render(); return; }
   if (e.target.closest("[data-refresh]")) {
-    await saveChain;
-    if (S.saveFailed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }
+    await sync.whenIdle();
+    if (sync.failed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }
     S.confirmRefresh = false;
-    try { S.data = await store.reload(); pendingEdits = []; S.ruleError = ""; S.saveFailed = false; banner(""); render(); toast("ファイルから読み直しました"); } catch (err) { toast(err.message); }
+    try { S.data = await store.reload(); sync.reset(); S.ruleError = ""; banner(""); render(); toast("ファイルから読み直しました"); } catch (err) { toast(err.message); }
     return;
   }
   if (e.target.closest("[data-openfile]")) openFile("choose");
@@ -4084,7 +4148,7 @@ $("filebar").addEventListener("click", async (e) => {
 $("banner").addEventListener("click", async (e) => {
   if (e.target.closest("[data-download]")) downloadJson();
   if (e.target.closest("[data-reload]")) {
-    try { S.data = await store.reload(); pendingEdits = []; S.ruleError = ""; S.saveFailed = false; banner(""); render(); toast("再読込しました"); } catch (err) { toast(err.message); }
+    try { S.data = await store.reload(); sync.reset(); S.ruleError = ""; banner(""); render(); toast("再読込しました"); } catch (err) { toast(err.message); }
   }
 });
 
@@ -4213,7 +4277,7 @@ view.addEventListener("click", (e) => {
   const mb = q("[data-mtg]");
   if (mb && !q("[data-rzm]")) { S.selMtg = S.selMtg === mb.dataset.mtg ? null : mb.dataset.mtg; S.selSess = null; S.mtgDraft = null; render(); return; }
   if (q("[data-mtgadd]")) {
-    const wd = S.data.settings?.workday ?? { start: "09:00", end: "18:00" };
+    const wd = S.data.settings?.workday ?? DEFAULT_WORKDAY;
     const base = S.sdate === today ? Math.ceil((toMin(time) + 1) / 60) * 60 : 10 * 60;
     const st = Math.max(toMin(wd.start), Math.min(base, toMin(wd.end) - 60));
     clearSel(); S.mtgDraft = { date: S.sdate, start: toHHMM(st), end: toHHMM(st + 60), title: "", skip: false };
@@ -4230,7 +4294,7 @@ view.addEventListener("click", (e) => {
   const fr = q("[data-free]");
   if (fr) {
     if (!S.picked) { toast("先にタスクを選んでください"); return; }
-    const wd = S.data.settings?.workday ?? { start: "09:00", end: "18:00" };
+    const wd = S.data.settings?.workday ?? DEFAULT_WORKDAY;
     const st = snapStart(+fr.dataset.free, 60, wd), id = S.picked;
     const sess = { date: S.sdate, start: toHHMM(st), end: toHHMM(st + 60) };
     const r = addSession(S.data, id, sess, now);
@@ -4422,9 +4486,9 @@ function onChange(el) {
 
 /* ---------- ドラッグ&ドロップ(枠・会議の配置と移動) ---------- */
 let ghost = null, drag = null;
-const wdOf = () => S.data.settings?.workday ?? { start: "09:00", end: "18:00" };
+const wdOf = () => S.data.settings?.workday ?? DEFAULT_WORKDAY;
 const minAtEl = (y, el) => { const g = calendarGeometry(S.data), r = el.getBoundingClientRect(); return g.h0 + ((y - r.top) / r.height) * g.span; };
-const findSession = (id) => S.data.tasks.flatMap((t) => (t.sessions ?? []).map((s) => ({ ...s, taskId: t.id }))).find((s) => s.id === id);
+const findSession = (id) => allSessions(S.data).find((s) => s.id === id);
 
 /** ドロップ先の判定(データは変えない): { st, end, error?, warning?, commit() } */
 function planDrop(dz, clientY) {
@@ -4686,7 +4750,7 @@ function replyRequest(id) {
 function approveRequest(id) {
   captureBar();
   const req = getRequest(S.data, id);
-  if (!req || req.status !== "proposed") { toast("この依頼は、すでに処理されています"); pollInbox(true); return; }
+  if (!req || req.status !== "proposed") { toast("この依頼は、すでに処理されています"); sync.pollInbox(true); return; }
   const reason = String(S.ib.reasons[id] ?? req.proposal.reason ?? "").trim();
   const cause = S.ib.causes[id] ?? req.proposal.cause ?? "その他";
   if (!reason) { toast("変更履歴に残す理由を入力してください"); return; }
@@ -4704,40 +4768,13 @@ function approveRequest(id) {
   toast(after === "applied" ? "反映しました" : "提案のあとにデータが変わったので、反映しませんでした。「もう一度提案してもらう」を押してください");
 }
 
-let polling = false, pollTick = 0;
-/** ファイルを読み直して、Claude Code の更新（受け取り・提案・見ている印）を画面に出す。帯が開いている、または処理中の依頼があるときは 4 秒ごと、そうでなければ 16 秒ごと。
- *  保存と同じ列（saveChain）に並べる（読んでいる間に、画面の編集の保存が済んで、そのあとに、古い内容で上書きされないように） */
-function pollInbox(force = false) {
-  if (polling || !S.data || !store.hasFile || document.visibilityState === "hidden") return;
-  const busy = (S.data.inbox?.requests ?? []).some((r) => ["pending", "working", "question", "proposed"].includes(r.status));
-  if (!force && !S.ib.open && !busy && ++pollTick % 4 !== 0) return;
-  if (S.saveFailed || inflight || pendingEdits.length) return;
-  polling = true;
-  inflight++;
-  saveChain = saveChain.then(async () => {
-    try {
-      if (S.saveFailed || pendingEdits.length) return; // 並んでいる間に編集があった。その保存を先にする
-      const strip = (d) => JSON.stringify({ ...d, inbox: undefined });
-      const probe = await store.peek(); // 読むだけ（読み込んだことにしない）。他の更新があるときだけ、読み込み直す
-      if (JSON.stringify(probe) === JSON.stringify(S.data)) { renderBar(); return; }
-      const fresh = await store.reload();
-      if (pendingEdits.length) { // 読んでいる間に、画面で編集があった。最新のファイルの上に重ねる（保存は、その編集の保存が行う）
-        try { S.data = pendingEdits.reduce((d, e) => e(d), fresh); } catch { S.saveFailed = true; banner(CONFLICT, { reload: true, download: true }); return; }
-        render();
-        return;
-      }
-      const bodyChanged = strip(fresh) !== strip(S.data);
-      S.data = fresh;
-      if (bodyChanged) render(); else renderBar();
-    } catch { /* 読めないときは、次の回に */ } finally { polling = false; inflight--; }
-  });
-}
-setInterval(pollInbox, 4000);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") pollInbox(true); });
+// Claude Code の更新（受け取り・提案・見ている印）を読み直す。帯が開いている、または処理中の依頼があるときは 4 秒ごと、そうでなければ 16 秒ごと
+setInterval(() => sync.pollInbox(), 4000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync.pollInbox(true); });
 
 $("claudebar").addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
-  if (q("[data-ib-toggle]")) { captureBar(); S.ib.open = !S.ib.open; if (S.ib.open && !S.ib.projectTouched && !S.ib.projectId && S.filter !== "all") S.ib.projectId = S.filter; renderBar(); if (S.ib.open) pollInbox(true); return; }
+  if (q("[data-ib-toggle]")) { captureBar(); S.ib.open = !S.ib.open; if (S.ib.open && !S.ib.projectTouched && !S.ib.projectId && S.filter !== "all") S.ib.projectId = S.filter; renderBar(); if (S.ib.open) sync.pollInbox(true); return; }
   const ex = q("[data-ib-example]");
   if (ex) {
     captureBar();

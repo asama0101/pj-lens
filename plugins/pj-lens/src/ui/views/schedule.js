@@ -3,11 +3,11 @@ import { addDays, toMin, weekday } from "../../core/dates.js";
 import { freeSlots, meetingKind } from "../../core/schedule.js";
 import { matchProject } from "../../core/rules.js";
 import { offDayChecker } from "../../core/holidays.js";
-import { sessionKind } from "../../core/sessions.js";
+import { sessionKind, allSessions } from "../../core/sessions.js";
+import { DEFAULT_WORKDAY } from "../../core/schema.js";
 import { esc, fmtMD, wdJa, STATUS_UI } from "../common.js";
 import { renderSide } from "./prio.js";
 
-const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 const SLOT_STEP = 15;
 
 /** 15 分刻みに丸め、勤務時間内に収める（開始の分を返す） */
@@ -27,7 +27,6 @@ export function calendarGeometry(data) {
   return { wd, h0, span, pc, tp: (m) => `${pc(m).toFixed(3)}%`, ht: (a, b) => `calc(${(pc(b) - pc(a)).toFixed(3)}% - 2px)` };
 }
 
-const allSessions = (data) => data.tasks.flatMap((t) => (t.sessions ?? []).map((s) => ({ ...s, taskId: t.id, title: t.title })));
 const hoursHtml = (g) => {
   let s = "";
   for (let h = Math.ceil(g.h0 / 60); h * 60 <= g.h0 + g.span; h++) s += `<div class="hour" style="top:${(((h * 60 - g.h0) / g.span) * 100).toFixed(3)}%"><span>${h}:00</span></div>`;
@@ -112,7 +111,7 @@ export function renderCalendar(data, today, opts) {
     const cols = days.map((d) => `<div class="col dz ${d === today ? "today" : ""} ${isOff(d) ? "weekend" : ""}" data-date="${d}">${meetingBlocks(data, d, false, g, ctx)}${sessionBlocks(data, d, false, g, ctx)}</div>`).join("");
     const dues = days.map((d) => {
       const due = data.tasks.filter((t) => t.due === d && t.status !== "Done" && t.status !== "Cancelled");
-      return `<div class="duecell">${due.map((t) => `<div style="display:flex;gap:6px;align-items:baseline"><i class="dot ${STATUS_UI[t.status].dot}${t.due < today ? " is-late" : ""}"></i><span>${esc(t.title)}</span></div>`).join("") || '<span class="muted">—</span>'}</div>`;
+      return `<div class="duecell">${due.map((t) => `<div style="display:flex;gap:6px;align-items:baseline"><i class="dot ${STATUS_UI[t.status]?.dot ?? ""}${t.due < today ? " is-late" : ""}"></i><span>${esc(t.title)}</span></div>`).join("") || '<span class="muted">—</span>'}</div>`;
     }).join("");
     cal = `<div class="cal wk"><div class="week"><div></div>${heads}<div class="hrs">${hoursHtml(g)}</div>${cols}</div><div class="week" style="margin-top:8px"><div class="note" style="padding-top:6px">期限</div>${dues}</div></div>
       <p class="note" style="margin:8px 0 0">日付を押すと1日表示に切り替わります。枠をクリックして選び、「枠を削除」か Delete キーで削除できます。</p>`;

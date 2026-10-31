@@ -38,7 +38,7 @@ test("配布に必要なファイルが git に入っている（.gitignore で�
   const tracked = new Set(r.stdout.split(/\r?\n/).map((f) => f.replace(/^plugins\/pj-lens\//, "")));
   const need = [
     ".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "assets/pj-lens.html", "data/sample.json", "tools/init.js",
-    "tools/intake.js", "tools/holidays.js", "tools/mcpconf.js", "tools/xlsx.js", "tools/xlsx_dump.py", "tools/home.js",
+    "tools/intake.js", "tools/holidays.js", "tools/mcpconf.js", "tools/xlsx.js", "tools/xlsx_dump.py", "tools/home.js", "tools/cli.js",
     ...["init", "replan", "intake", "mcp", "watch", "inbox", "holidays"].map((n) => `skills/${n}/SKILL.md`),
     ...["replan", "intake", "inbox"].map((n) => `agents/${n}.md`),
   ];

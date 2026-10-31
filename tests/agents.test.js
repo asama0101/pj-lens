@@ -23,8 +23,12 @@ for (const name of ["replan", "intake"]) {
   });
 }
 
-test("replan は impact を使う", () => {
-  assert.ok(read("agents/replan.md").includes("${CLAUDE_PLUGIN_ROOT}/tools/impact.js"));
+test("replan は受信箱の経路（submit --working → propose → approve）で書き、Edit と impact.js を使わない", () => {
+  const text = read("agents/replan.md");
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
+  assert.match(fm, /^tools: Read, Bash$/m);
+  for (const w of ["${CLAUDE_PLUGIN_ROOT}/tools/inbox.js", "submit", "--working", "propose", "approve", "reject", "fail", "moveDue", "直接書き換えない"]) assert.ok(text.includes(w), w);
+  assert.doesNotMatch(text, /impact\.js|Edit/);
 });
 
 test("inbox: 受信箱を処理するエージェント。tools は Read, Bash で絞り、聞き返し・重要度・承認・CLI を持つ", () => {
@@ -44,9 +48,9 @@ test("MCP を同梱しない（.mcp.json がない）", () => {
   assert.equal(existsSync(new URL(".mcp.json", root)), false);
 });
 
-test("replan: 前倒しのとき後続を詰めるか聞き、--compress を使う", () => {
+test("replan: 前倒しのとき後続を詰めるか聞き、moveDue の compress を使う", () => {
   const t = read("agents/replan.md");
-  assert.ok(t.includes("--compress") && t.includes("詰め"));
+  assert.ok(t.includes('"compress":true') && t.includes("詰め"));
 });
 
 test("intake: WBS・予定表・規則の3つの手順と、承認・MCP の指定がある", () => {

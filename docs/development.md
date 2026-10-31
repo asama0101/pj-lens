@@ -50,7 +50,7 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 - **1 人で使う前提**: 複数人が同じ `data.json` を同時に編集する用途は想定しない。保存前に更新日時を比べて上書きを止めるが、ロックや統合はしない。共有にはレポートを使う。
 - **スキルの起動**
   - `replan`・`intake` のスキルには `disable-model-invocation` を付けていません。自然な言い方（「A3 が 5 日遅れた」など）で起動するのが主な入口で、データを書くのは変更案を見せて承認を得たあとだけだから。
-  - いずれも、変更案を示して承認を得てからデータを書き換え、書き込み後に検証（`validate`）を実行する。書き込みは検証に通ったときだけで、通らなければ何も書かない。
+  - いずれも、変更案を示して承認を得てからデータを書き換え、書き込み後に検証（`validate`）を実行する。書き込みは CLI（`tools/inbox.js`・`tools/intake.js`・`tools/holidays.js`）に任せ、検証に通ったときだけ書く（通らなければ何も書かない）。エージェントが `data.json` を直接書き換えることはない。`replan` は受信箱の経路（`submit --working` → `propose`（`moveDue`）→ `approve`。「HTML からの依頼（inbox）」を参照）に乗せる。
   - `init`・`mcp`・`holidays`・`inbox`・`watch` は `disable-model-invocation: true`（利用者が明示して呼ぶ）。`init` と `mcp` は、自分のスクリプトだけを `allowed-tools` で事前に許可している。
 - **MCP を同梱しない**
   - 予定表の MCP（Outlook など）は、利用者が Claude Code に用意したものを使う（`.mcp.json` はない）。
@@ -200,6 +200,7 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 
 ### 保存と競合
 
+- 保存と読み直しの順序づけは `ui/sync.js`（`createSync`）。画面の編集を 1 本の列に並べて保存し、競合したら最新のファイルに同じ編集を当て直す。Claude Code の更新の読み直し（`pollInbox`）も同じ列に並べる。
 - `data.json` が他の手段で更新されていると、保存時に「他で更新されました。再読込してください」と出る（上書きはしない）。読み直すと、画面の保存できていない変更は消える。
 - 直接保存に対応しないブラウザでは、読み込みだけできる。変更は「JSON を書き出す」で保存する。
 - 画面は、ファイルを自動で読み直す（保存できる環境のとき）。帯が開いている間や依頼の処理中は 4 秒、そうでなければ 16 秒ごと。
@@ -229,7 +230,7 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
   - `doctor`: 診断のみ。何も変更せず、使う Python のパスと置き場を表示する。
   - `setup`: `--yes` なしは作成先と内容を表示して終了コード 3、`--yes` で作成する。
 - `tools/xlsx.js` の終了コード: 0 成功、1 実行時のエラー、2 引数・設定のエラー（置き場が決まらないなど）、3 専用環境が使えない（未作成・版のずれ・壊れている・承認待ち・Python が無い）。3 のときは、利用者に確認して `setup --yes` を実行する。
-- 置き場の優先順: 環境変数 `PJ_LENS_HOME` → 引数（`--data "${CLAUDE_PLUGIN_DATA}"`、従来の先頭の位置引数でもよい）→ なければ終了コード 2。`tools/mcpconf.js` も同じ。
+- 置き場の優先順: 環境変数 `PJ_LENS_HOME` → 引数（`--data "${CLAUDE_PLUGIN_DATA}"`）→ なければ終了コード 2。`tools/mcpconf.js` も同じ。
 
 ## HTML からの依頼（inbox）
 
@@ -253,13 +254,13 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 - `businessDays` は、完了していない先行の期限の最大値（無ければ今日）から数えて、土日と休みを除いた日数後の日付になる。計算は `core/dates.js` の `dueAfter(base, businessDays, cal)`。
   - `cal` は `core/holidays.js` の `calendarOf(settings)`（`{off, on}`）。
   - `on`（`workdays`）の日は営業日、`off`（`holidays` と `nationalHolidays`）と土日は飛ばす。`on` が最優先。
-- 営業日の計算は受信箱の登録だけで、`replan`・`impact.js`・ドラッグの期限変更は暦日のまま。
+- 営業日の計算は受信箱の登録だけで、期限の移動（`moveDue`・`replan`）とドラッグの期限変更は暦日のまま。
 - `propose` が `businessDays` を `due` に置き換えて提案の `ops` に保存するので、承認が翌日以降でも `stale` にならない（提案の表の `add` 行には `businessDays` が残る）。
 - HTML の提案カードの登録の表には、行番号（`data-row`）と営業日の列が出る。「修正を依頼する」は暖色（`btn warm`）。
 
 ### 見張りと競合
 
-- `tools/inbox.js submit ... --working` は、依頼を `working`（処理中）で作る。`wait` は `pending` だけを知らせるので、`/pj-lens:watch` が動いていても `inbox` エージェントに横取りされない。`intake` の文章の取り込みが使う。
+- `tools/inbox.js submit ... --working` は、依頼を `working`（処理中）で作る。`wait` は `pending` だけを知らせるので、`/pj-lens:watch` が動いていても `inbox` エージェントに横取りされない。`intake` の文章の取り込みと `replan` が使う。
 - `/pj-lens:watch` は、Claude Code の Monitor で `node tools/inbox.js wait` を動かす。30 分ごとに終わるので、そのたびに再起動する。見張りが止まると、90 秒ほどで、帯が「見ていません」になる。
   - 作業中の Claude Code が、依頼のイベントを受け取って動くことは確認済み。
   - Claude Code が入力待ちの間に自動で起きることは、未確認。確認できないときは `/pj-lens:inbox` で、今ある分を処理する。
@@ -303,12 +304,11 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 
 ```
 node tools/validate.js data/data.json                  # 検証（errors があれば終了コード 1）
-node tools/impact.js data/data.json A3 5 [--compress]  # A3 が 5 日遅れたときの影響範囲（負の日数は前倒し。--compress で後続も詰める）
 node tools/init.js [--sample]                          # 作業フォルダに pj-lens.html と .pj-lens/data.json を用意する
 node tools/intake.js                                   # 取り込み・会議の規則・WBS の列の対応のコマンド一覧
 node tools/inbox.js                                    # 受信箱（HTML からの依頼）のコマンド一覧（wait・claim・propose・approve など）
 node tools/holidays.js <update|status> <data.json>     # 日本の祝日（内閣府の一覧）を取得して settings.nationalHolidays に保存／取得状況を表示
-node tools/mcpconf.js <保存先> show                    # 予定表の MCP の指定（保存先は PJ_LENS_HOME か --data でも指定できる）
+node tools/mcpconf.js --data <保存先> show             # 予定表の MCP の指定（保存先は PJ_LENS_HOME でも指定できる）
 node tools/xlsx.js doctor --data <保存先>              # Excel 用の環境の診断のみ（Python のパスと置き場を表示。使えなければ終了コード 3）
 node tools/xlsx.js setup [--yes] --data <保存先>       # 環境を作る（--yes なしは作成先と内容を表示して終了コード 3）
 node tools/xlsx.js --data <保存先> plan.xlsx           # Excel を JSON で読む（Python と venv を使う。環境が使えないときは終了コード 3）
@@ -318,6 +318,11 @@ node tools/xlsx.js --data <保存先> plan.xlsx           # Excel を JSON で�
 
 ### 次の版（未公開）
 
+- 変更: `replan` の書き込みを、受信箱の経路（`submit --working` → `propose` → `approve`）に乗せました。エージェントが `data.json` を直接書き換えることがなくなり、書き込みは検証に通ったときだけになります。依頼は画面の帯の履歴にも出て、HTML からも承認できます。`tools/impact.js` は廃止しました。
+- 変更: `tools/xlsx.js`・`tools/mcpconf.js` の置き場の指定は `--data <置き場>`（または `PJ_LENS_HOME`）だけになりました。先頭の位置引数では渡せません（終了コード 2）。
+- 修正: スケジュールの週表示が、不明な状態のタスクが期限欄にあると白くなっていたのを直しました。
+- 修正: プロジェクト画面の「日程変更の履歴」の説明を、画面の確認パネルでも記録される実装に合わせました。
+- 内部: `validate` の作業枠の重なり判定を日付ごとにし、保存と読み直しの順序づけを `ui/sync.js` に分けてテストを足しました。勤務時間の既定値などの重複した定義と、CLI の読み書き（`tools/cli.js`）を 1 つにしました。
 - 廃止: 進捗報告メールの取り込み（`/pj-lens:intake mail`）を廃止しました。`mail-plan`・`mail-apply`・`processed`、`/pj-lens:mcp` のメールの指定、`changeLog` の `messageIds`・`superseded` も無くなります（`source: "mail"` の記録は検証がエラーにします）。キーワード規則は、予定表の会議に使うので残します。
 - 変更: 同じ依頼に、期限の移動（`moveDue`）と営業日指定の登録（`businessDays`）を書くと、エラーになります（先行の期限が動いて、営業日が吸収されるため）。先に期限の移動を承認してから、登録を依頼してください。
 - 修正: 設定タブの勤務時間を、時・分を順に打っても入力が途切れないようにしました。打ち終わる（0.8 秒止まる）か入力欄を離れてから保存し、保存に成功しても画面を描き直しません。不正な値は通知して、入力欄だけを保存された値に戻します（フォーカスは保たれます）。

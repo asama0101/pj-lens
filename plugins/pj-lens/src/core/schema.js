@@ -9,11 +9,13 @@ export const CAUSES = ["ベンダー", "社内", "自分", "その他"];
 export const HOLIDAY_KINDS = ["祝日", "有給", "その他"];
 export const REQUEST_STATUS = ["pending", "working", "question", "proposed", "applied", "rejected", "failed"];
 export const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask"];
+export const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 
-const isDone = (t) => t.status === "Done" || t.status === "Cancelled";
+/** 終わったタスク（Done・Cancelled）か */
+export const isClosed = (t) => t.status === "Done" || t.status === "Cancelled";
 
 /** 同じ日の枠が重なるか（端が接するだけは重ならない） */
-const overlap = (a, b) => a.date === b.date && toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end);
+const overlap = (a, b) => toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end);
 
 /** 先行の循環を DFS で探す。循環に含まれるタスク ID の一覧を返す */
 function findCycle(tasks) {
@@ -103,19 +105,27 @@ export function validate(data, now = nowLocal()) {
       if (toMin(s.end) <= toMin(s.start)) err(`${label}: 終了が開始以前です`);
       if (!["planned", "actual"].includes(s.kind)) err(`${label}: 不明な kind "${s.kind}"`);
       const notStarted = s.date > now.date || (s.date === now.date && s.start > now.time); // 進行中の枠は、完了にしても残す（futurePlanned）
-      if (isDone(t) && s.kind === "planned" && notStarted) warn(`タスク ${t.id}: ${t.status} なのに未来の予定枠 ${s.id} が残っています`);
+      if (isClosed(t) && s.kind === "planned" && notStarted) warn(`タスク ${t.id}: ${t.status} なのに未来の予定枠 ${s.id} が残っています`);
     }
   }
 
   const cycle = findCycle(data.tasks);
   if (cycle) err(`先行が循環しています: ${cycle.join(" → ")}`);
 
-  // 同じ日の枠どうしの重なり（タスクをまたいで判定）
-  const all = data.tasks.flatMap((t) => (t.sessions ?? []).map((s) => ({ ...s, taskId: t.id })))
-    .filter((s) => isDate(s.date) && isTime(s.start) && isTime(s.end));
-  for (let i = 0; i < all.length; i++) {
-    for (let j = i + 1; j < all.length; j++) {
-      if (overlap(all[i], all[j])) err(`枠 ${all[i].id} と ${all[j].id} が重なっています (${all[i].date})`);
+  // 同じ日の枠どうしの重なり（タスクをまたいで判定）。日付で束ねて、同じ日の中だけ総当たりにする（全枠の総当たりは、数年分で秒単位になる）
+  const byDay = new Map();
+  for (const t of data.tasks) {
+    for (const s of t.sessions ?? []) {
+      if (!isDate(s.date) || !isTime(s.start) || !isTime(s.end)) continue;
+      if (!byDay.has(s.date)) byDay.set(s.date, []);
+      byDay.get(s.date).push(s);
+    }
+  }
+  for (const [date, list] of byDay) {
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        if (overlap(list[i], list[j])) err(`枠 ${list[i].id} と ${list[j].id} が重なっています (${date})`);
+      }
     }
   }
 

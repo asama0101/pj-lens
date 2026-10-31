@@ -13,14 +13,14 @@ disable-model-invocation: true
 ## 手順
 1. **現状を表示する。** 次のコマンドを実行し、予定表用の指定の有無と内容を伝える。引数が空または `show` のときは、ここまでで終わる。
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/tools/mcpconf.js" "${CLAUDE_PLUGIN_DATA}" show
+   node "${CLAUDE_PLUGIN_ROOT}/tools/mcpconf.js" --data "${CLAUDE_PLUGIN_DATA}" show
    ```
 2. **候補を提案する。** 予定表（`calendar`）について、いま接続している MCP のツール一覧から候補を選ぶ。**サーバー名とツール名を明示して**示す。
    - `server`、`listTool`（期間を指定して予定を取得するツール）
    - 該当するツールが見つからないときは、見つからなかったと伝え、MCP の用意（`claude mcp add` など）を案内して終わる。推測で指定しない。
 3. **承認を得て保存する。** 承認された内容を次のコマンドで保存する。
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/tools/mcpconf.js" "${CLAUDE_PLUGIN_DATA}" set calendar server=<サーバー名> listTool=<ツール名>
+   node "${CLAUDE_PLUGIN_ROOT}/tools/mcpconf.js" --data "${CLAUDE_PLUGIN_DATA}" set calendar server=<サーバー名> listTool=<ツール名>
    ```
 4. **試しに取得して確認する。** 今日の予定を、指定したツールで取得する。使った MCP のサーバー名とツール名を添えて、取得できた件数と1件の件名を見せる。失敗したら、理由を伝え、指定を残すか消す（`clear calendar`）かを聞く。
 
