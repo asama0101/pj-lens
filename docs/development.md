@@ -316,7 +316,7 @@ node tools/xlsx.js --data <保存先> plan.xlsx           # Excel を JSON で�
 
 ## 変更履歴
 
-### 次の版（未公開）
+### 1.1.0
 
 - 変更: `replan` の書き込みを、受信箱の経路（`submit --working` → `propose` → `approve`）に乗せました。エージェントが `data.json` を直接書き換えることがなくなり、書き込みは検証に通ったときだけになります。依頼は画面の帯の履歴にも出て、HTML からも承認できます。`tools/impact.js` は廃止しました。
 - 変更: `tools/xlsx.js`・`tools/mcpconf.js` の置き場の指定は `--data <置き場>`（または `PJ_LENS_HOME`）だけになりました。先頭の位置引数では渡せません（終了コード 2）。
@@ -324,6 +324,8 @@ node tools/xlsx.js --data <保存先> plan.xlsx           # Excel を JSON で�
 - 修正: プロジェクト画面の「日程変更の履歴」の説明を、画面の確認パネルでも記録される実装に合わせました。
 - 変更: 営業日で期限を置く提案（`businessDays`）の日本の祝日の取得を、`tools/inbox.js propose` が行うようにしました。未取得・30 日超・範囲外なら取得し、取れなければ提案の注意（`warnings`）に出ます。エージェントの指示文から祝日の確認を外しました。
 - 変更: 端末での「R3 を承認」「R3 を却下」は、`/pj-lens:inbox`（と `watch`）が `get` → `approve`／`reject` を直接実行します（サブエージェントを起動しません）。`holidays`・`inbox` のスキルは、自分のスクリプトだけを `allowed-tools` で事前に許可します。
+- 変更: `/pj-lens:inbox` の手動の処理でも、聞きたいことは `ask` で HTML に出します（端末では聞きません。返信を受ける手段が HTML にしかないため）。`/pj-lens:watch` は、Monitor が使えないときは `/pj-lens:inbox` を案内して終わります。
+- 修正: ファイルを開き直したあとに「保存できていない変更があります」の確認が誤って出ることがあったのを直しました（開き直しで保存の失敗の印を消す）。
 - 内部: `validate` の作業枠の重なり判定を日付ごとにし、保存と読み直しの順序づけを `ui/sync.js` に分けてテストを足しました。勤務時間の既定値などの重複した定義と、CLI の読み書き（`tools/cli.js`）を 1 つにしました。
 - 廃止: 進捗報告メールの取り込み（`/pj-lens:intake mail`）を廃止しました。`mail-plan`・`mail-apply`・`processed`、`/pj-lens:mcp` のメールの指定、`changeLog` の `messageIds`・`superseded` も無くなります（`source: "mail"` の記録は検証がエラーにします）。キーワード規則は、予定表の会議に使うので残します。
 - 変更: 同じ依頼に、期限の移動（`moveDue`）と営業日指定の登録（`businessDays`）を書くと、エラーになります（先行の期限が動いて、営業日が吸収されるため）。先に期限の移動を承認してから、登録を依頼してください。

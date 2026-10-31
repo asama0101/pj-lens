@@ -51,12 +51,11 @@ const COMMANDS = {
       const st = holidayStatus(d.settings);
       if (!st.fetched || st.ageDays > 30 || ((!st.to || lastDue(plan) > st.to) && st.ageDays > 0)) {
         let nationalHolidays = null;
-        try { nationalHolidays = await fetchHolidays(); } catch { plan.warnings.push("祝日を取得できませんでした（手動登録の休みだけで計算）"); }
-        if (nationalHolidays) {
-          d = readJson(path); // 取得の間に他が更新していても消さないよう、書く直前に読み直す
-          d = { ...d, settings: { ...d.settings, nationalHolidays } };
-          plan = planOps(d, ops, { today: today() });
-        }
+        try { nationalHolidays = await fetchHolidays(); } catch { /* 下で注意に書く */ }
+        d = readJson(path); // 取得の間（最長 15 秒）に他が更新していても消さないよう、書く直前に読み直す
+        if (nationalHolidays) d = { ...d, settings: { ...d.settings, nationalHolidays } };
+        plan = planOps(d, ops, { today: today() });
+        if (!nationalHolidays) plan.warnings.push("祝日を取得できませんでした（手動登録の休みだけで計算）");
       }
       const to = holidayStatus(d.settings).to;
       if (to && lastDue(plan) > to) plan.warnings.push(`祝日の一覧は ${to} までです。それ以降は手動登録の休みだけで計算しています`);
