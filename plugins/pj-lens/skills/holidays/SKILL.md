@@ -1,6 +1,7 @@
 ---
 name: holidays
 description: 日本の祝日（内閣府の祝日一覧）を取得して、data.json に保存する。営業日の計算（タスクの登録の期限）で、土日に加えて飛ばす日になる
+allowed-tools: 'Bash(node "${CLAUDE_PLUGIN_ROOT}/tools/holidays.js" *)'
 disable-model-invocation: true
 ---
 

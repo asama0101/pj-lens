@@ -47,11 +47,11 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 
 ## 設計判断
 
-- **1 人で使う前提**: 複数人が同じ `data.json` を同時に編集する用途は想定しない。保存前に更新日時を比べて上書きを止めるが、ロックや統合はしない。共有にはレポートを使う。
+- **1 人で使う前提**: 複数人が同じ `data.json` を同時に編集する用途は想定しない。保存前に更新日時を比べ、他の更新があれば最新のファイルに同じ編集を当て直して保存する（ロックはしない）。共有にはレポートを使う。
 - **スキルの起動**
   - `replan`・`intake` のスキルには `disable-model-invocation` を付けていません。自然な言い方（「A3 が 5 日遅れた」など）で起動するのが主な入口で、データを書くのは変更案を見せて承認を得たあとだけだから。
-  - いずれも、変更案を示して承認を得てからデータを書き換え、書き込み後に検証（`validate`）を実行する。書き込みは CLI（`tools/inbox.js`・`tools/intake.js`・`tools/holidays.js`）に任せ、検証に通ったときだけ書く（通らなければ何も書かない）。エージェントが `data.json` を直接書き換えることはない。`replan` は受信箱の経路（`submit --working` → `propose`（`moveDue`）→ `approve`。「HTML からの依頼（inbox）」を参照）に乗せる。
-  - `init`・`mcp`・`holidays`・`inbox`・`watch` は `disable-model-invocation: true`（利用者が明示して呼ぶ）。`init` と `mcp` は、自分のスクリプトだけを `allowed-tools` で事前に許可している。
+  - いずれも、変更案を示して承認を得てからデータを書き換え、書き込み後に検証（`validate`）を実行する。書き込みは CLI（`tools/inbox.js`・`tools/intake.js`）に任せ、検証に通ったときだけ書く（通らなければ何も書かない）。エージェントが `data.json` を直接書き換えることはない。`replan` は受信箱の経路（`submit --working` → `propose`（`moveDue`）→ `approve`。「HTML からの依頼（inbox）」を参照）に乗せる。
+  - `init`・`mcp`・`holidays`・`inbox`・`watch` は `disable-model-invocation: true`（利用者が明示して呼ぶ）。`init`・`mcp`・`holidays`・`inbox` は、自分のスクリプトだけを `allowed-tools` で事前に許可している。
 - **MCP を同梱しない**
   - 予定表の MCP（Outlook など）は、利用者が Claude Code に用意したものを使う（`.mcp.json` はない）。
   - 指定は `/pj-lens:mcp` で `${CLAUDE_PLUGIN_DATA}`（`~/.claude/plugins/data/` の下）の `pj-lens-mcp.json` に保存し、`data.json` には入れない。
@@ -186,7 +186,7 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
   - 形が違う値は `validate` が注意（warning）にし、設定タブは既定値を入力欄に出して横に注意を出す。読む側に fallback は無く、勤務時間が `HH:MM` でないとスケジュール画面は動かない。
 - **キーワード規則**: ↑↓で並べ替えられる（`moveProjectRule`）。上の規則が先に当たるので、並べ替えたら会議へ付け直す。
 - **日本の祝日・休み・営業日**: 3 つの節がある。`validate` は 3 つの形が違うとき注意（warning）にし、画面は壊れた値を空として描いて節の上に注意を出す。
-  - 「日本の祝日」: `settings.nationalHolidays`。読み取り専用。取得は `tools/holidays.js`。
+  - 「日本の祝日」: `settings.nationalHolidays`。読み取り専用。取得は `tools/holidays.js`（営業日を使う提案では `tools/inbox.js propose` も必要なら取得する。「日本の祝日の取得」を参照）。
   - 「休み（手動）」: `settings.holidays`（`{date, kind, note}`）。`addHoliday`・`addHolidayRange`・`removeHoliday`。終了日を入れると期間を 1 日ずつに展開し、土日と取得済みの日本の祝日を除く。`holidayRangeDays` が除外の数を返し、`app.js` が通知する。
   - 「営業日として扱う日」: `settings.workdays`。`addWorkday`・`removeWorkday`。
 
@@ -195,13 +195,13 @@ npm run build   # plugins/pj-lens/assets/pj-lens.html（プラグインに同梱
 - `tools/holidays.js` の `update` が、内閣府の `syukujitsu.csv`（Shift_JIS）を取得して、前年以降だけを `nationalHolidays` に書く。失敗したら `data.json` を変えず終了コード 1。
 - `status` は、取得日・件数・範囲・`ageDays` を出す。取得先は環境変数 `PJ_LENS_HOLIDAYS_URL` で変えられる。
 - ブラウザからは CORS で取れないため、画面は取得しない。
-- `/pj-lens:holidays` が手動の入口。`intake`・`inbox` の指示文は、営業日を使う前に `status` を見て、未取得・30 日超・見積もりが範囲外なら `update` を実行する。
+- `/pj-lens:holidays` が手動の入口。`tools/inbox.js propose` は、`businessDays` を使う提案のとき、未取得・取得から 30 日超・計算した期限が一覧の範囲外（今日取得したものを除く）なら、同じ取得（`fetchHolidays`）を 1 回行って提案と一緒に保存する。取得できなかった・範囲を超えたままのときは、提案の `warnings` に書く（エージェントは祝日を確かめない）。
 - 解析は `core/holidays.js` の純関数（`parseHolidayCsv`・`pickRecent`・`decodeHolidayCsv`）。
 
 ### 保存と競合
 
 - 保存と読み直しの順序づけは `ui/sync.js`（`createSync`）。画面の編集を 1 本の列に並べて保存し、競合したら最新のファイルに同じ編集を当て直す。Claude Code の更新の読み直し（`pollInbox`）も同じ列に並べる。
-- `data.json` が他の手段で更新されていると、保存時に「他で更新されました。再読込してください」と出る（上書きはしない）。読み直すと、画面の保存できていない変更は消える。
+- 当て直せなかったとき（同じ依頼がすでに処理されていた、など）だけ、保存時に「他で更新されました。再読込してください」と出る（上書きはしない）。読み直すと、画面の保存できていない変更は消える。
 - 直接保存に対応しないブラウザでは、読み込みだけできる。変更は「JSON を書き出す」で保存する。
 - 画面は、ファイルを自動で読み直す（保存できる環境のとき）。帯が開いている間や依頼の処理中は 4 秒、そうでなければ 16 秒ごと。
 - 前回のファイルの記憶は、Edge で `file://` から開いて効くことを確認した。権限の確認の文言は Edge のバージョンで違う想定で、実際の文言と「何も押さずに開く」動きは未確認。
@@ -322,6 +322,8 @@ node tools/xlsx.js --data <保存先> plan.xlsx           # Excel を JSON で�
 - 変更: `tools/xlsx.js`・`tools/mcpconf.js` の置き場の指定は `--data <置き場>`（または `PJ_LENS_HOME`）だけになりました。先頭の位置引数では渡せません（終了コード 2）。
 - 修正: スケジュールの週表示が、不明な状態のタスクが期限欄にあると白くなっていたのを直しました。
 - 修正: プロジェクト画面の「日程変更の履歴」の説明を、画面の確認パネルでも記録される実装に合わせました。
+- 変更: 営業日で期限を置く提案（`businessDays`）の日本の祝日の取得を、`tools/inbox.js propose` が行うようにしました。未取得・30 日超・範囲外なら取得し、取れなければ提案の注意（`warnings`）に出ます。エージェントの指示文から祝日の確認を外しました。
+- 変更: 端末での「R3 を承認」「R3 を却下」は、`/pj-lens:inbox`（と `watch`）が `get` → `approve`／`reject` を直接実行します（サブエージェントを起動しません）。`holidays`・`inbox` のスキルは、自分のスクリプトだけを `allowed-tools` で事前に許可します。
 - 内部: `validate` の作業枠の重なり判定を日付ごとにし、保存と読み直しの順序づけを `ui/sync.js` に分けてテストを足しました。勤務時間の既定値などの重複した定義と、CLI の読み書き（`tools/cli.js`）を 1 つにしました。
 - 廃止: 進捗報告メールの取り込み（`/pj-lens:intake mail`）を廃止しました。`mail-plan`・`mail-apply`・`processed`、`/pj-lens:mcp` のメールの指定、`changeLog` の `messageIds`・`superseded` も無くなります（`source: "mail"` の記録は検証がエラーにします）。キーワード規則は、予定表の会議に使うので残します。
 - 変更: 同じ依頼に、期限の移動（`moveDue`）と営業日指定の登録（`businessDays`）を書くと、エラーになります（先行の期限が動いて、営業日が吸収されるため）。先に期限の移動を承認してから、登録を依頼してください。

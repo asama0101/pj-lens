@@ -31,13 +31,14 @@ test("replan は受信箱の経路（submit --working → propose → approve）
   assert.doesNotMatch(text, /impact\.js|Edit/);
 });
 
-test("inbox: 受信箱を処理するエージェント。tools は Read, Bash で絞り、聞き返し・重要度・承認・CLI を持つ", () => {
+test("inbox: 受信箱を処理するエージェント。tools は Read, Bash で絞り、聞き返し・重要度・CLI を持ち、承認・却下の節は持たない", () => {
   const text = read("agents/inbox.md");
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
   assert.match(fm, /^name: inbox$/m);
   assert.match(fm, /^description: .+/m);
   assert.match(fm, /^tools: Read, Bash$/m);
-  for (const word of ["${CLAUDE_PLUGIN_ROOT}/tools/inbox.js", "claim", "propose", "ask", "fail", "approve", "reject", "承認", "重要度", ".pj-lens/data.json", "moveDue", "addPred", "addTask", "compress"]) assert.ok(text.includes(word), word);
+  for (const word of ["${CLAUDE_PLUGIN_ROOT}/tools/inbox.js", "claim", "propose", "ask", "fail", "承認", "重要度", ".pj-lens/data.json", "moveDue", "addPred", "addTask", "compress"]) assert.ok(text.includes(word), word);
+  assert.doesNotMatch(text, /## 承認・却下/, "承認・却下はスキル（/pj-lens:inbox）の手順。エージェントは承認を待たない");
   assert.match(text, /推測/);
   assert.match(text, /止まらない/);
   assert.doesNotMatch(text, /node "?tools\//);
@@ -56,7 +57,7 @@ test("replan: 前倒しのとき後続を詰めるか聞き、moveDue の compre
 test("intake: WBS・予定表・規則の3つの手順と、承認・MCP の指定がある", () => {
   const t = read("agents/intake.md");
   for (const w of [
-    '${CLAUDE_PLUGIN_ROOT}/tools/intake.js', '${CLAUDE_PLUGIN_ROOT}/tools/xlsx.js', '${CLAUDE_PLUGIN_DATA}/pj-lens-mcp.json',
+    '${CLAUDE_PLUGIN_ROOT}/tools/intake.js', '${CLAUDE_PLUGIN_ROOT}/tools/xlsx.js', 'tools/mcpconf.js" --data "${CLAUDE_PLUGIN_DATA}" show',
     "wbs-plan", "wbs-apply", "calendar-plan", "calendar-apply", "rules-set", "rules-apply", "mapping-get", "mapping-set",
     "承認", "/pj-lens:mcp", "使った MCP", "CSV",
   ]) assert.ok(t.includes(w), w);
@@ -94,19 +95,12 @@ test("intake(文章): 承認前に許す書き込み（受信箱）の例外と�
   assert.doesNotMatch(t, /どのプロジェクトか、期限が文章にない/);
 });
 
-test("intake・inbox: 営業日を使う前に holidays.js の status を見て update を実行する。取得できなくても提案は止めず、注意に書く", () => {
+test("intake・inbox: 祝日の取得は propose が行うので、エージェントは holidays.js を呼ばない", () => {
   for (const name of ["agents/intake.md", "agents/inbox.md"]) {
     const t = read(name);
-    for (const w of ["tools/holidays.js", "status", "update", "ageDays", "30", "取得できなくても提案は止めない", "祝日を取得できませんでした"]) assert.ok(t.includes(w), `${name}: ${w}`);
+    assert.doesNotMatch(t, /holidays\.js/, name);
+    assert.match(t, /warnings/, name);
   }
-});
-
-test("intake・inbox: 承認前の書き込み禁止の例外に holidays.js update（祝日の記録だけを書く）を挙げ、範囲が延びなかったときは繰り返さない", () => {
-  const intake = read("agents/intake.md");
-  assert.match(intake.split("\n").find((l) => l.includes("利用者の承認を得るまで")), /holidays\.js.*update/);
-  assert.match(read("agents/inbox.md").split("\n").find((l) => l.includes("書き込みは、すべて次のコマンド")), /holidays\.js/);
-  for (const name of ["agents/intake.md", "agents/inbox.md"]) assert.match(read(name), /延びなかった.*繰り返さない/, name);
-  for (const name of ["agents/intake.md", "agents/inbox.md"]) assert.doesNotMatch(read(name), /土日と設定の祝日/, name);
 });
 
 test("inbox: 仮に置いた期限がプロジェクトの期間（projects[].start〜due）に収まるか確かめ、収まらなければ --summary に警告として書く（intake と共通の指針）", () => {

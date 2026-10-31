@@ -4,8 +4,10 @@ import { mkdtempSync, writeFileSync, readFileSync, copyFileSync, rmSync, mkdirSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { markApplied } from "../plugins/pj-lens/src/core/inbox.js";
+import { addDays, dueAfter, today } from "../plugins/pj-lens/src/core/dates.js";
 
 const REPO = fileURLToPath(new URL("../plugins/pj-lens/", import.meta.url));
 const base = mkdtempSync(join(tmpdir(), "pjl-inbox-"));
@@ -21,8 +23,9 @@ function work() {
   return { data, put, read: () => readFileSync(data, "utf8"), json: () => JSON.parse(readFileSync(data, "utf8")), write: (d) => writeFileSync(data, JSON.stringify(d, null, 2) + "\n") };
 }
 const CLI = join(REPO, "tools/inbox.js");
+const NO_NET = "http://127.0.0.1:1/syukujitsu.csv"; // 祝日の取得先。閉じたポートにして、テストが内閣府のサイトへ出ないようにする
 const run = (...args) => {
-  const r = spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8" });
+  const r = spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", env: { ...process.env, PJ_LENS_HOLIDAYS_URL: NO_NET } });
   let out = null;
   try { out = JSON.parse(r.stdout); } catch { /* 出力が JSON でないこともある */ }
   return { status: r.status, out, err: r.stderr, raw: r.stdout };
@@ -192,4 +195,74 @@ test("propose: moveDue と businessDays 指定の addTask の併用は、終了�
   assert.equal(r.status, 1);
   assert.match(r.err, /moveDue.*businessDays/);
   assert.equal(w.read(), before);
+});
+
+// --- propose: 営業日で期限を置くとき、日本の祝日が未取得・古い・範囲外なら取得する（取れなくても提案は止めない）
+/** 内閣府の一覧の形で祝日を返すサーバー（名前は ASCII。Shift_JIS の部分集合なので復号できる）。呼ばれた回数を数える */
+async function holidayServer(status, dates = []) {
+  const s = { hits: 0 };
+  const body = `date,name\r\n${dates.map((d) => `${d.replaceAll("-", "/")},test\r\n`).join("")}`;
+  const server = createServer((req, res) => { s.hits++; res.writeHead(status, { "content-type": "text/csv" }); res.end(status === 200 ? body : "error"); });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  s.url = `http://127.0.0.1:${server.address().port}/syukujitsu.csv`;
+  s.close = () => new Promise((r) => server.close(r));
+  return s;
+}
+const runWith = (url, ...args) => new Promise((resolve) => {
+  const p = spawn(process.execPath, [CLI, ...args], { env: { ...process.env, PJ_LENS_HOLIDAYS_URL: url } });
+  let out = "", err = "";
+  p.stdout.on("data", (c) => (out += c));
+  p.stderr.on("data", (c) => (err += c));
+  p.on("close", (status) => { let json = null; try { json = JSON.parse(out); } catch { /* JSON でない */ } resolve({ status, out: json, err }); });
+});
+const NEXT_BD = dueAfter(today(), 1); // 今日の次の平日（この日を祝日にする）
+const FAR = addDays(today(), 400); // 一覧の末尾（範囲が足りている状態にする）
+const BD_OPS = [{ op: "addTask", ref: "t1", projectId: "A", title: "営業日の登録", businessDays: 1 }]; // 先行なし → 今日から 1 営業日
+const addDue = (r) => r.out.sections.find((s) => s.kind === "add").rows[0].due;
+const ready = (w) => { run("submit", w.data, "A", "x", "--working"); return w; };
+
+test("propose(businessDays): 祝日が未取得・取得から 30 日超・範囲外（今日の取得でない）なら取得して保存し、期限が祝日を飛ばす", async () => {
+  const stale = { fetchedAt: addDays(today(), -31), source: "u", dates: [{ date: FAR, name: "x" }] };
+  const short = { fetchedAt: addDays(today(), -5), source: "u", dates: [{ date: addDays(today(), -1), name: "x" }] }; // 一覧が昨日で終わっている
+  for (const nh of [undefined, stale, short]) {
+    const w = ready(work());
+    if (nh) w.write({ ...w.json(), settings: { ...w.json().settings, nationalHolidays: nh } });
+    const s = await holidayServer(200, [NEXT_BD, FAR]);
+    const r = await runWith(s.url, "propose", w.data, "R1", w.put("bd.json", BD_OPS));
+    await s.close();
+    assert.equal(r.status, 0, r.err);
+    assert.equal(s.hits, 1);
+    assert.deepEqual(w.json().settings.nationalHolidays.dates, [{ date: NEXT_BD, name: "test" }, { date: FAR, name: "test" }]);
+    assert.equal(addDue(r), dueAfter(NEXT_BD, 1), "祝日にした日を飛ばす");
+    assert.deepEqual(r.out.warnings, []);
+    assert.equal(w.json().inbox.requests[0].proposal.sections.find((x) => x.kind === "add").rows[0].due, dueAfter(NEXT_BD, 1), "保存した提案も同じ");
+  }
+});
+
+test("propose(businessDays): 取得に失敗しても提案は作られ、warnings に書かれ、祝日は保存されない", async () => {
+  const w = ready(work());
+  const s = await holidayServer(500);
+  const r = await runWith(s.url, "propose", w.data, "R1", w.put("bd.json", BD_OPS));
+  await s.close();
+  assert.equal(r.status, 0, r.err);
+  assert.equal(r.out.status, "proposed");
+  assert.ok(r.out.warnings.some((x) => x.includes("祝日を取得できませんでした")), JSON.stringify(r.out.warnings));
+  assert.equal(w.json().settings.nationalHolidays, undefined);
+  assert.equal(addDue(r), NEXT_BD);
+});
+
+test("propose: businessDays の無い提案は祝日を取得しない。今日取得済みで範囲外のときも取得せず、範囲の注意だけ出す", async () => {
+  const s = await holidayServer(200, [NEXT_BD, FAR]);
+  const w1 = ready(work());
+  const r1 = await runWith(s.url, "propose", w1.data, "R1", w1.put("ops.json", OPS));
+  assert.equal(r1.status, 0, r1.err);
+  const w2 = ready(work());
+  const yesterday = addDays(today(), -1);
+  w2.write({ ...w2.json(), settings: { ...w2.json().settings, nationalHolidays: { fetchedAt: today(), source: "u", dates: [{ date: yesterday, name: "x" }] } } });
+  const r2 = await runWith(s.url, "propose", w2.data, "R1", w2.put("bd.json", BD_OPS));
+  await s.close();
+  assert.equal(r2.status, 0, r2.err);
+  assert.equal(s.hits, 0);
+  assert.deepEqual(r2.out.warnings, [`祝日の一覧は ${yesterday} までです。それ以降は手動登録の休みだけで計算しています`]);
+  assert.equal(addDue(r2), NEXT_BD);
 });

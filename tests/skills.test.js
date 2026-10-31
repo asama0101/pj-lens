@@ -29,13 +29,15 @@ for (const name of ["watch", "inbox"]) {
 
 test("watch: Monitor で wait を動かし、request・decision のイベントと、30 分ごとの再起動を説明する", () => {
   const text = read("watch");
-  for (const w of ["Monitor", "wait", "request", "decision", "1800000", "止まらない", "R3"]) assert.ok(text.includes(w), w);
+  for (const w of ["Monitor", "wait", "request", "decision", "1800000", "止まらない", "R3", "/pj-lens:inbox"]) assert.ok(text.includes(w), w);
+  assert.ok(!text.includes("手順 4 の代わり"));
 });
 
-test("inbox: 引数の例（承認・却下）と、list で pending を探す手順がある", () => {
+test("inbox: 引数の例（承認・却下）、list で pending を探す手順、get → approve と reject を自分で実行する手順がある", () => {
   const text = read("inbox");
   assert.match(front(text), /^argument-hint: .*承認/m);
-  for (const w of ["list", "pending", "approve", "reject"]) assert.ok(text.includes(w), w);
+  for (const w of ["list", "pending", "get", "approve", "reject", "failed"]) assert.ok(text.includes(w), w);
+  assert.ok(!text.includes("端末で聞いて"), "返信を受ける CLI が無いので、聞きたいことは ask で HTML に出す");
 });
 
 test("init: 副作用があるので自動起動しない。init.js を呼び、引数を渡す", () => {
@@ -54,7 +56,7 @@ for (const name of ["replan", "intake"]) {
   });
 }
 
-for (const [name, script] of [["init", "init.js"]]) {
+for (const [name, script] of [["init", "init.js"], ["holidays", "holidays.js"], ["inbox", "inbox.js"]]) {
   test(`${name}: そのスクリプトだけを、確認なしで実行できるよう事前承認する`, () => {
     const fm = front(read(name));
     const line = /^allowed-tools: (.+)$/m.exec(fm)?.[1] ?? "";

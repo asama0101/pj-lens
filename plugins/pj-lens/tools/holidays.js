@@ -2,6 +2,8 @@
 // 日本の祝日（内閣府の祝日一覧 CSV）を取得して data.json の settings.nationalHolidays に書く。結果は JSON で標準出力へ。
 // 取得するだけで、こちらのデータは何も送らない。失敗したら data.json は変えず、理由を標準エラーに出して終了コード 1。
 // 取得先は、環境変数 PJ_LENS_HOLIDAYS_URL で変えられる（テスト用）。
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { today, diffDays, isDate } from "../src/core/dates.js";
 import { decodeHolidayCsv, parseHolidayCsv, pickRecent } from "../src/core/holidays.js";
 import { readJson, out, save } from "./cli.js";
@@ -13,30 +15,39 @@ const USAGE = `使い方: node tools/holidays.js <コマンド> <data.json>
 
 const range = (dates) => ({ count: dates.length, from: dates[0]?.date ?? null, to: dates.at(-1)?.date ?? null });
 
-async function update(path) {
+/** settings.nationalHolidays の取得状況（status コマンドの出力と同じ。propose も使う） */
+export function holidayStatus(settings) {
+  const nh = settings?.nationalHolidays;
+  if (!isDate(nh?.fetchedAt) || !Array.isArray(nh.dates)) return { fetched: false };
+  return { fetched: true, fetchedAt: nh.fetchedAt, ...range(nh.dates), ageDays: diffDays(today(), nh.fetchedAt) };
+}
+
+/** 内閣府の一覧を取得して、settings.nationalHolidays に入れる値を返す。失敗は例外 */
+export async function fetchHolidays() {
   const url = process.env.PJ_LENS_HOLIDAYS_URL || DEFAULT_URL;
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) }).catch((e) => {
     throw new Error(e.name === "TimeoutError" ? "祝日の一覧の取得がタイムアウトしました（15 秒）" : `祝日の一覧に接続できませんでした（${e.cause?.code ?? e.message}）`);
   });
   if (!res.ok) throw new Error(`祝日の一覧を取得できませんでした（HTTP ${res.status}）`);
   const dates = pickRecent(parseHolidayCsv(decodeHolidayCsv(new Uint8Array(await res.arrayBuffer()))), today());
+  return { fetchedAt: today(), source: url, dates };
+}
+
+async function update(path) {
+  const nationalHolidays = await fetchHolidays();
   const data = readJson(path); // 取得の間に他が更新していても消さないよう、書く直前に読み直す
-  data.settings = { ...data.settings, nationalHolidays: { fetchedAt: today(), source: url, dates } };
+  data.settings = { ...data.settings, nationalHolidays };
   save(path, data);
-  out({ ok: true, ...range(dates) });
+  out({ ok: true, ...range(nationalHolidays.dates) });
 }
 
-function status(path) {
-  const nh = readJson(path).settings?.nationalHolidays;
-  if (!isDate(nh?.fetchedAt) || !Array.isArray(nh.dates)) return out({ fetched: false });
-  out({ fetched: true, fetchedAt: nh.fetchedAt, ...range(nh.dates), ageDays: diffDays(today(), nh.fetchedAt) });
-}
-
-const [cmd, path] = process.argv.slice(2);
-if (!["update", "status"].includes(cmd) || !path) { console.error(USAGE); process.exit(2); }
-try {
-  if (cmd === "update") await update(path); else status(path);
-} catch (e) {
-  console.error(e.message);
-  process.exit(1);
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const [cmd, path] = process.argv.slice(2);
+  if (!["update", "status"].includes(cmd) || !path) { console.error(USAGE); process.exit(2); }
+  try {
+    if (cmd === "update") await update(path); else out(holidayStatus(readJson(path).settings));
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
 }
