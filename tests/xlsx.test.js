@@ -74,10 +74,64 @@ test("ensureEnv: 承認済みでも venv を作れない／pip が失敗した�
   assert.equal(a.ok, false);
   assert.notEqual(a.needsApproval, true);
   assert.match(a.message, /venv/);
-  const b = ensureEnv("/d", { run: (c, args) => (args.includes("pip") || args[0] === "-c" ? ng : ok()), python: ["python"], exists: () => true, platform: "linux", approve: true, pin: PIN });
+  const b = ensureEnv("/d", { run: (c, args) => (args.includes("pip") || args[0] === "-c" ? ng : ok()), python: ["python"], exists: () => true, platform: "linux", approve: true, pin: PIN, remove: () => {} });
   assert.equal(b.ok, false);
   assert.match(b.message, /CSV/);
   assert.match(b.message, /openpyxl/);
+});
+
+test("ensureEnv: 既にある venv で pip install が失敗したら、venv を消して作り直し、入れ直す（pip が壊れた venv の復旧）", () => {
+  const calls = [];
+  const removed = [];
+  let broken = true;
+  const run = (cmd, args) => {
+    calls.push([cmd, ...args]);
+    if (args.includes("venv")) broken = false;
+    if (args[0] === "-c") return ng; // 版の照合は常に未達
+    return args.includes("pip") && broken ? ng : ok();
+  };
+  const r = ensureEnv("/d", { run, python: ["python"], exists: () => true, platform: "linux", approve: true, pin: PIN, remove: (p) => removed.push(p) });
+  assert.equal(r.ok, true);
+  assert.deepEqual(removed, [join("/d", "venv")]);
+  assert.equal(calls.filter((c) => c.includes("venv")).length, 1, "venv は 1 回だけ作り直す");
+  assert.equal(calls.filter((c) => c.includes("pip")).length, 2, "pip install は、失敗した 1 回と作り直したあとの 1 回");
+});
+
+test("ensureEnv: 作り直しても pip install が失敗したら ok:false。作り直しは 1 回だけ", () => {
+  const calls = [];
+  const removed = [];
+  const run = (cmd, args) => { calls.push([cmd, ...args]); return args.includes("pip") || args[0] === "-c" ? ng : ok(); };
+  const r = ensureEnv("/d", { run, python: ["python"], exists: () => true, platform: "linux", approve: true, pin: PIN, remove: (p) => removed.push(p) });
+  assert.equal(r.ok, false);
+  assert.equal(removed.length, 1);
+  assert.equal(calls.filter((c) => c.includes("venv")).length, 1, "venv の作り直しも 1 回だけ");
+  assert.equal(calls.filter((c) => c.includes("pip")).length, 2);
+});
+
+test("ensureEnv: 壊れた venv を消せなかったら、例外にせず、消せなかったと案内して ok:false", () => {
+  const run = (c, a) => (a.includes("pip") || a[0] === "-c" ? ng : ok());
+  const r = ensureEnv("/d", { run, python: ["python"], exists: () => true, platform: "linux", approve: true, pin: PIN, remove: () => { throw new Error("EBUSY"); } });
+  assert.equal(r.ok, false);
+  assert.match(r.message, /消せませんでした/);
+  assert.match(r.message, /EBUSY/);
+});
+
+test("ensureEnv: 消したあとに venv を作れなかったら、venv を作れなかったと案内して ok:false", () => {
+  let gone = false;
+  const run = (c, a) => (a.includes("venv") || a.includes("pip") || a[0] === "-c" ? ng : ok());
+  const r = ensureEnv("/d", { run, python: ["python"], exists: () => !gone, platform: "linux", approve: true, pin: PIN, remove: () => { gone = true; } });
+  assert.equal(r.ok, false);
+  assert.match(r.message, /venv を作れませんでした/);
+});
+
+test("ensureEnv: 作り直すための Python が無いときは、venv を消さずに失敗する。承認なしでも消さない", () => {
+  const removed = [];
+  const run = (c, a) => (a[0] === "-c" || a.includes("pip") ? ng : ok());
+  const a = ensureEnv("/d", { run, python: null, exists: () => true, platform: "linux", approve: true, pin: PIN, remove: (p) => removed.push(p) });
+  assert.equal(a.ok, false);
+  const b = ensureEnv("/d", { run, python: ["python"], exists: () => true, platform: "linux", approve: false, pin: PIN, remove: (p) => removed.push(p) });
+  assert.equal(b.needsApproval, true);
+  assert.deepEqual(removed, []);
 });
 
 test("requirements.txt: openpyxl と et_xmlfile を == で固定し、すべてハッシュ付き", () => {
