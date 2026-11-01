@@ -32,7 +32,6 @@ test("timeTicks: 日・週・月・四半期", () => {
   const r = range("2026-10-25", 14);
   const days = timeTicks(r, "day");
   assert.equal(days.length, 14);
-  assert.deepEqual(days.filter((t) => t.weekend).map((t) => weekday(t.date)).sort(), [0, 0, 6, 6]);
   assert.equal(days.find((t) => t.date === "2026-11-01").label, "11/1");
   const rr = { start: "2026-10-05", end: "2027-02-10" };
   const months = timeTicks(rr, "month");

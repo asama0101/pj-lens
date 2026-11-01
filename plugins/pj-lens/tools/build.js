@@ -26,6 +26,7 @@ export const MODULES = [
   "src/ui/prefs.js",
   "src/ui/savefile.js",
   "src/ui/common.js",
+  "src/ui/deps.js",
   "src/ui/edit.js",
   "src/ui/inboxedits.js",
   "src/ui/inboxops.js",

@@ -72,3 +72,7 @@ export function renderPrio(data, today, opts = {}) {
 export function renderSide(data, today, opts = {}) {
   return `<div class="side">${renderTodayTasks(data, today, opts)}${renderPrio(data, today, opts)}</div>`;
 }
+
+/** 本体と右の列の境界線の取っ手。押すと右の列（今日のタスク・今日の優先）を開け閉めする。閉じても、この取っ手は残る */
+export const renderSideToggle = (open) =>
+  `<button class="side-toggle" data-pref="prio" aria-expanded="${open}" aria-label="${open ? "今日の優先を閉じる" : "今日の優先を開く"}" title="${open ? "右の「今日のタスク」「今日の優先」を閉じます" : "右の「今日のタスク」「今日の優先」を開きます"}">${open ? "›" : "‹"}</button>`;

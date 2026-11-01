@@ -7,8 +7,8 @@ const clock = () => (params.get("today") ? { date: params.get("today"), time: pa
 
 const S = {
   data: null, openError: "",
-  screen: "project",
-  filter: "all", pview: "gantt", gwin: "m6", hideDone: false,
+  screen: "gantt",
+  filter: "all", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
   prefs: loadPrefs(), group: "all", pendingReplan: null, addAt: null, last: null, ruleError: "",
@@ -42,13 +42,16 @@ const scheduleOpts = () => ({ view: S.sview, date: S.sdate, now: clock(), selSes
 function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
-  if (S.screen === "project") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, addAt: S.addAt, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
+  if (S.screen === "gantt" || S.screen === "list") {
+    return renderProjects(S.data, today, { filter: S.filter, view: S.screen, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, addAt: S.addAt, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
   if (S.screen === "settings") return renderSettings(S.data, today, { ruleError: S.ruleError });
   if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
   return renderSchedule(S.data, today, scheduleOpts());
 }
+
+/** 前のタスクの線を、画面にあるすべてのガント本体に引き直す */
+function drawAllDeps() { drawDeps(view.querySelectorAll(".gbody")); }
 
 function render() {
   hideTip();
@@ -56,7 +59,7 @@ function render() {
   const c = clock();
   $("todaylabel").textContent = `${c.date.replace(/-/g, "/")}(${wdJa(c.date)})`;
   document.querySelectorAll("nav [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.id === "tab-" + S.screen)));
-  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="prio" aria-pressed="${S.prefs.showPrio}" title="画面右の「今日のタスク」「今日の優先」を出したり隠したりします">今日の優先</button><button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
+  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
   renderBar();
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
@@ -75,6 +78,7 @@ function render() {
     if (el) { el.focus(); el.select?.(); }
   }
   syncSticky();
+  drawAllDeps();
   if (S.hlId) {
     let row = null;
     try { row = view.querySelector(`[data-row="${CSS.escape(S.hlId)}"]`); } catch { /* 無視 */ }
@@ -92,6 +96,7 @@ function focusSelector(el) {
   if (d.pf && d.pid) return q("data-pf", d.pf) + q("data-pid", d.pid);
   if (d.mf && d.pid) return q("data-mf", d.mf) + q("data-pid", d.pid) + q("data-i", d.i);
   if (d.gadd) return q("data-gadd", d.gadd);
+  if (d.pref) return `[data-pref="${CSS.escape(d.pref)}"]`; // 右の列の取っ手
   if (d.set) return q("data-set", d.set);
   // 規則の欄は、書き換えるとキーワードが変わるので、行の位置（data-ri。書き換えても並びは変わらない）で探す
   if (d.rkw !== undefined) return `[data-rkw][data-ri="${CSS.escape(d.ri)}"]`;
@@ -360,6 +365,15 @@ function deleteSelected() {
   apply((d) => removeSession(d, s.id), `${s.task.title} の${s.kind === "actual" ? "実績" : "予定"}の枠を削除しました`);
 }
 
+/** 表示の好み（今日の優先・ガント実績）を反転して保存する。今日の優先を閉じると、パネル内にしか出ない確認待ちは出す場所がなくなるので捨てる */
+function togglePref(key) {
+  S.pendingDone = null;
+  if (key === "showPrio") S.resetScroll = true; // 右の列の開け閉めでガントの幅が変わるので、横スクロールを今日の位置へ戻す
+  S.prefs = { ...S.prefs, [key]: !S.prefs[key] };
+  savePrefs(S.prefs);
+  render();
+}
+
 /* ---------- クリック ---------- */
 document.querySelector("nav").addEventListener("click", (e) => {
   const b = e.target.closest("[role=tab]");
@@ -373,7 +387,7 @@ document.querySelector("nav").addEventListener("click", (e) => {
 });
 $("filebar").addEventListener("click", async (e) => {
   const pf = e.target.closest("[data-pref]");
-  if (pf) { S.pendingDone = null; const k = pf.dataset.pref === "prio" ? "showPrio" : "showActual"; S.prefs = { ...S.prefs, [k]: !S.prefs[k] }; savePrefs(S.prefs); render(); return; }
+  if (pf) { togglePref("showActual"); return; }
   if (e.target.closest("[data-refresh]")) {
     await sync.whenIdle();
     if (sync.failed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }
@@ -404,6 +418,7 @@ document.addEventListener("click", (e) => {
 
 view.addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
+  if (q("[data-pref]")) { togglePref("showPrio"); return; } // 右の列の取っ手
   if (q("[data-rptclose]")) { S.reportPanel = null; render(); return; }
   if (q("[data-rptgo]")) { makeReport(); return; }
   let cleared = false;
@@ -435,13 +450,12 @@ view.addEventListener("click", (e) => {
   if (q("[data-hidedone]")) { S.hideDone = !S.hideDone; render(); return; }
   if (q("[data-gotoday]")) { scrollToday(true); return; }
   const f = q("[data-filter]"); if (f) { S.filter = f.dataset.filter; S.group = "all"; S.resetScroll = true; render(); return; }
-  const o = q("[data-open]"); if (o) { S.filter = o.dataset.open; S.group = "all"; S.pview = "list"; S.resetScroll = true; render(); return; }
-  const pv = q("[data-pview]"); if (pv) { S.pview = pv.dataset.pview; S.resetScroll = true; render(); return; }
+  const o = q("[data-open]"); if (o) { S.filter = o.dataset.open; S.group = "all"; S.screen = "list"; S.resetScroll = true; render(); return; }
   if (q("[data-addproject]")) {
     const before = S.data.projects.map((p) => p.id);
     if (apply((d) => addProject(d, { name: "新しいプロジェクト", type: "その他" }, today), "プロジェクトを追加しました。名前・期間を入力してください")) {
       const id = S.data.projects.map((p) => p.id).find((x) => !before.includes(x));
-      S.filter = id; S.pview = "list"; S.resetScroll = true; S.focusSel = `[data-pf="name"][data-pid="${id}"]`; render();
+      S.filter = id; S.screen = "list"; S.resetScroll = true; S.focusSel = `[data-pf="name"][data-pid="${id}"]`; render();
     }
     return;
   }
@@ -462,7 +476,7 @@ view.addEventListener("click", (e) => {
   if (gok) { const input = view.querySelector(`[data-gadd="${CSS.escape(gok.dataset.gaddok)}"]`); if (input) submitGAdd(input); return; }
   if (q("[data-gaddno]")) { S.addAt = null; render(); return; }
   const gn = q("[data-goto]");
-  if (gn) { const t = S.data.tasks.find((x) => x.id === gn.dataset.goto); S.filter = t.projectId; S.pview = "list"; S.hlId = t.id; S.focusSel = `#f-${t.id}-t`; S.resetScroll = true; render(); return; }
+  if (gn) { const t = S.data.tasks.find((x) => x.id === gn.dataset.goto); S.filter = t.projectId; S.screen = "list"; S.hlId = t.id; S.focusSel = `#f-${t.id}-t`; S.resetScroll = true; render(); return; }
   const ma = q("[data-msadd]");
   if (ma) { const p = S.data.projects.find((x) => x.id === ma.dataset.msadd); apply((d) => addMilestone(d, p.id, { name: "新しいマイルストーン", date: p.due }), "マイルストーンを追加しました"); return; }
   const md = q("[data-msdel]");
@@ -830,6 +844,17 @@ view.addEventListener("mousedown", (e) => {
   document.addEventListener("mouseup", up);
 });
 
+/* ---------- 前のタスクの強調(バーにマウスを置いたとき) ---------- */
+view.addEventListener("mouseover", (e) => {
+  const bar = e.target.closest?.("[data-gt]");
+  const gb = bar?.closest(".gbody");
+  if (gb) focusDeps(gb, bar.dataset.gt);
+});
+view.addEventListener("mouseout", (e) => {
+  const gb = e.target.closest?.("[data-gt]")?.closest(".gbody");
+  if (gb) focusDeps(gb, null);
+});
+
 /* ---------- ガント上のドラッグで日付を変更(1日単位) ---------- */
 view.addEventListener("mousedown", (e) => {
   const tg = e.target.closest("[data-gt],[data-gp],[data-gms]");
@@ -854,6 +879,8 @@ view.addEventListener("mousedown", (e) => {
     p = S.data.projects.find((x) => x.id === pid); mIdx = +i; s = en = idx(p.milestones[mIdx].date); mode = "r";
   }
   e.preventDefault();
+  const gbody = tg.closest(".gbody");
+  gbody?.classList.add("dep-hide"); // ドラッグ中は線がずれるので隠す(離したら戻す)
   const x0 = e.clientX;
   let dd = 0;
   const pct = (n) => `${((n / total) * 100).toFixed(3)}%`;
@@ -870,6 +897,7 @@ view.addEventListener("mousedown", (e) => {
   const up = () => {
     document.removeEventListener("mousemove", move);
     document.removeEventListener("mouseup", up);
+    gbody?.classList.remove("dep-hide");
     if (!dd) return;
     let ns = s, ne = en;
     if (mode === "l") ns = Math.min(s + dd, en);
@@ -1073,7 +1101,11 @@ function pinTableHeads() {
 let pinQueued = false;
 window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); }); } }, { passive: true });
 if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(syncSticky).observe(topbar);
-window.addEventListener("resize", syncSticky);
+let depsQueued = false;
+window.addEventListener("resize", () => {
+  syncSticky();
+  if (!depsQueued) { depsQueued = true; requestAnimationFrame(() => { depsQueued = false; drawAllDeps(); }); } // ウィンドウを引っ張る間、線は 1 フレームに 1 回だけ引き直す
+});
 
 render();
 startup();

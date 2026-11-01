@@ -2,6 +2,7 @@
 import { addDays, diffDays } from "../../core/dates.js";
 import { ganttRows, ganttLayout, timeTicks, projectProgress, projectFlags, taskFlags } from "../../core/metrics.js";
 import { projectHours } from "../../core/workload.js";
+import { restDayChecker } from "../../core/holidays.js";
 import { groupSections } from "../../core/groups.js";
 import { esc, fmtMD, wdJa, STATUS_UI, flagPills } from "../common.js";
 
@@ -28,7 +29,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
   const all = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
   // 編集画面は、タスクが 0 件でも見出しの「＋」から追加できるように描く
   if (!all.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
-    return `<p class="muted">タスクがありません。${readonly ? "" : "リスト表示で追加してください。"}</p>`;
+    return `<p class="muted">タスクがありません。${readonly ? "" : "リストで追加してください。"}</p>`;
   }
   // 完了を隠すは、複数のプロジェクトを出しているとき、完了したプロジェクト（状態が「完了」、またはタスクが 1 件以上あって全部 Done）も隠す。1 つを選んでいるときは隠さない
   const closed = (p) => { const ts = data.tasks.filter((t) => t.projectId === p.id); return p.status === "完了" || (ts.length > 0 && ts.every((t) => t.status === "Done")); };
@@ -48,6 +49,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
   const dayScale = scale === "day";
   const x = (d) => `${((diffDays(d, s0) / total) * 100).toFixed(3)}%`;
   const ticks = timeTicks(range, scale);
+  const rest = restDayChecker(data.settings);
   const laneW = `calc((100cqw - var(--lw) - 12px) * ${ratio.toFixed(4)})`;
   const laneStyle = `style="width:var(--lanew)"`;
 
@@ -55,7 +57,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     .filter((t) => dayScale || Math.abs(diffDays(t.date, today)) > visibleDays * 0.045)
     .map((t) => `<span class="mono ${t.yearStart ? "yr" : ""} ${dayScale && t.date === today ? "tdy" : ""}" data-tick="${t.date}" style="left:${x(t.date)}">${esc(t.label)}${dayScale ? `<small>${wdJa(t.date)}</small>` : ""}</span>`)
     .join("");
-  const grid = (dayScale ? ticks.filter((t) => t.weekend).map((t) => `<i class="gwk" style="left:${x(t.date)};width:${(100 / total).toFixed(3)}%"></i>`).join("") : "")
+  const grid = (dayScale ? ticks.filter((t) => rest(t.date)).map((t) => `<i class="gwk" style="left:${x(t.date)};width:${(100 / total).toFixed(3)}%"></i>`).join("") : "")
     + ticks.map((t) => `<i class="gl ${t.yearStart ? "yr" : ""}" style="left:${x(t.date)}"></i>`).join("");
   const todayLine = `<span class="todayline" style="left:${x(today)}"></span>`;
 
@@ -99,7 +101,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
       const late = taskFlags(t, today, data.settings).includes("overdue");
       const ui = STATUS_UI[t.status] ?? STATUS_UI["To Do"];
       const hasPre = (t.predecessors ?? []).length > 0;
-      const gt = readonly ? "" : ` data-gt="${esc(t.id)}"`;
+      const gt = readonly ? "" : ` data-gt="${esc(t.id)}"${hasPre ? ` data-pre="${esc(t.predecessors.join(" "))}"` : ""}`;
       const drag = readonly ? "" : " gdrag";
       const label = `${esc(t.id)} ${esc(t.title)} ${fmtMD(r.start)}〜${fmtMD(r.end)}`;
       const bar = r.point

@@ -10,19 +10,19 @@ body{margin:0}
 /* Layout: 上部に画面切替、俯瞰はプロジェクト別のタイムライン（機器ラックのように1案件=1段）＋右に今日の優先 */
 :root{
   --bg:#F0F3F7; --surface:#FFFFFF; --ink:#16202E; --muted:#5A6678; --line:#D6DDE8; --line-soft:#E8ECF3;
-  --accent:#0B6E8A; --accent-soft:#DCEEF4;
+  --accent:#0B6E8A; --accent-soft:#DCEEF4; --pre:#C2670A;
   --ok:#2E7D5B; --warn:#B26B00; --warn-soft:#FBEBD0; --bad:#C23A3A; --bad-soft:#F9DEDE;
   --todo:#8794A8; --meeting:#EBE4F7; --meeting-ink:#43346F; --meeting-edge:#7B5CC4; --free:#E9F4EC;
   --f-body:"BIZ UDPGothic","Yu Gothic UI","Meiryo",sans-serif; --f-mono:ui-monospace,Consolas,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0E1520; --surface:#162030; --ink:#E5EBF3; --muted:#9AA7B9; --line:#2A3850; --line-soft:#1F2C40;
-  --accent:#55B8D4; --accent-soft:#17323D;
+  --accent:#55B8D4; --accent-soft:#17323D; --pre:#E8963F;
   --ok:#5CC08F; --warn:#E3A94B; --warn-soft:#3A2D14; --bad:#EE7B7B; --bad-soft:#3B1D1F;
   --todo:#7B889C; --meeting:#2D2548; --meeting-ink:#D3C9F0; --meeting-edge:#9C84E0; --free:#14301F; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0E1520; --surface:#162030; --ink:#E5EBF3; --muted:#9AA7B9; --line:#2A3850; --line-soft:#1F2C40;
-  --accent:#55B8D4; --accent-soft:#17323D;
+  --accent:#55B8D4; --accent-soft:#17323D; --pre:#E8963F;
   --ok:#5CC08F; --warn:#E3A94B; --warn-soft:#3A2D14; --bad:#EE7B7B; --bad-soft:#3B1D1F;
   --todo:#7B889C; --meeting:#2D2548; --meeting-ink:#D3C9F0; --meeting-edge:#9C84E0; --free:#14301F; color-scheme:dark}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.6;
@@ -233,8 +233,7 @@ label{font-size:13px}
 
 /* 幅は画面サイズに追従(全画面で統一) */
 .wrap{max-width:none}
-.cols{grid-template-columns:minmax(0,1fr) clamp(260px,22vw,340px)}
-@media(max-width:900px){.cols{grid-template-columns:minmax(0,1fr)}}
+.cols{grid-template-columns:minmax(0,1fr) 14px clamp(260px,22vw,340px)}
 .toolbar{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px}
 .cols>.panel>.toolbar{margin-bottom:10px}
 .gscroll{container-type:inline-size;--lw:230px;overflow-x:auto;padding-bottom:6px}
@@ -354,7 +353,11 @@ tr.hl td{transition:background .3s}
 .filebar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .fsep{width:1px;align-self:stretch;background:var(--line)}
 .chip-btn.pref[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:400}
-.cols.one{grid-template-columns:minmax(0,1fr)}
+.cols.one{grid-template-columns:minmax(0,1fr) 14px}
+/* 右の列の開け閉めの取っ手。本体と右の列の境界線に置き、閉じても残る。900px 以下で列が 1 つに回り込むときは、横長の細い帯になる */
+.side-toggle{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + 8px);align-self:start;width:14px;height:64px;padding:0;border:1px solid var(--line);border-radius:4px;background:var(--line-soft);color:var(--muted);font:inherit;font-size:12px;line-height:1;cursor:pointer}
+.side-toggle:hover,.side-toggle:focus-visible{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+@media(max-width:900px){.cols,.cols.one{grid-template-columns:minmax(0,1fr)}.side-toggle{position:static;width:100%;height:20px}}
 .replan{border:2px solid var(--accent);display:flex;flex-direction:column;gap:12px;margin-bottom:16px}
 .rp-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px}
 .rp-head h2{font-size:15px;margin:0}
@@ -433,6 +436,19 @@ body{padding-block:16px 76px}
 .pill.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
 .pill.done{background:var(--free);color:var(--ok);border-color:transparent}
 .pill.off{color:var(--muted)}
+
+/* 前のタスクの線と強調(deps.js)。線は gbody に重ねる。強調は、バーにマウスを置いたとき */
+.gdeps{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;overflow:visible}
+.gdep path{fill:none;stroke:var(--muted);stroke-width:.8;opacity:.5}
+.gdep polygon{fill:var(--muted);opacity:.5}
+.gbody.dep-hide .gdeps{display:none}
+.gbody.dep-focus .gdep{opacity:.25}
+.gbody.dep-focus .gdep.dep-on{opacity:1}
+.gbody.dep-focus .gdep.dep-on path{stroke:var(--pre);stroke-width:1.8;opacity:1}
+.gbody.dep-focus .gdep.dep-on polygon{fill:var(--pre);opacity:1}
+.gbody.dep-focus [data-gt]:not(.dep-self):not(.dep-pre){opacity:.35}
+.gbody [data-gt].dep-self{background:var(--accent)!important}
+.gbody [data-gt].dep-pre{background:var(--pre)!important}
 </style>
 </head>
 <body>
@@ -440,7 +456,8 @@ body{padding-block:16px 76px}
   <header class="top">
     <div><h1>pj-lens</h1><div class="today" id="todaylabel"></div></div>
     <nav role="tablist" aria-label="画面">
-      <button role="tab" id="tab-project" aria-selected="true">プロジェクト</button>
+      <button role="tab" id="tab-gantt" aria-selected="true">ガントチャート</button>
+      <button role="tab" id="tab-list" aria-selected="false">リスト</button>
       <button role="tab" id="tab-schedule" aria-selected="false">スケジュール</button>
       <button role="tab" id="tab-workload" aria-selected="false">稼働</button>
       <button role="tab" id="tab-settings" aria-selected="false">設定</button>
@@ -569,7 +586,7 @@ return { isDate, isTime, addDays, dueAfter, diffDays, weekday, isWeekend, toMin,
 })();
 
 /* src/core/holidays.js */
-const { calendarOf, offDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent } = (() => {
+const { calendarOf, offDayChecker, restDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent } = (() => {
 // 営業日の計算に使う休みと営業日の指定（settings から取り出す）と、内閣府の祝日一覧（CSV）の解析。ネットワークには触れない。
 
 
@@ -592,6 +609,9 @@ function offDayChecker(settings) {
   return (date) => !onSet.has(date) && ((!countWeekends && isWeekend(date)) || offSet.has(date));
 }
 
+/** ガントの着色用: 土日・手動の休み・日本の祝日か。「土日祝を営業日に数える」設定に関わらず同じ。営業日の指定の日は false */
+const restDayChecker = (settings) => offDayChecker({ ...settings, countWeekendsAndHolidays: false });
+
 /** 内閣府の祝日一覧（Shift_JIS）を文字列にする */
 const decodeHolidayCsv = (bytes) => new TextDecoder("shift_jis").decode(bytes);
 
@@ -611,7 +631,7 @@ function parseHolidayCsv(text) {
 /** today の年の前年以降だけ残す（過去の全期間は保存しない） */
 const pickRecent = (rows, today) => rows.filter((r) => r.date.slice(0, 4) >= String(Number(today.slice(0, 4)) - 1));
 
-return { calendarOf, offDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent };
+return { calendarOf, offDayChecker, restDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent };
 })();
 
 /* src/core/schema.js */
@@ -910,10 +930,10 @@ function timeTicks(range, scale) {
     for (let d = range.start; d <= range.end; d = addDays(d, 1)) {
       const [, m, day] = ymd(d);
       if (scale === "day") {
-        out.push({ date: d, label: day === 1 ? `${m}/${day}` : String(day), yearStart: m === 1 && day === 1, weekend: isWeekend(d) });
+        out.push({ date: d, label: day === 1 ? `${m}/${day}` : String(day), yearStart: m === 1 && day === 1 });
       } else if (weekday(d) === 1) {
         // 1 月 1 日を含む週の月曜に年の境目を付ける
-        out.push({ date: d, label: `${m}/${day}`, yearStart: ymd(addDays(d, 6))[0] !== ymd(d)[0] || (m === 1 && day === 1), weekend: false });
+        out.push({ date: d, label: `${m}/${day}`, yearStart: ymd(addDays(d, 6))[0] !== ymd(d)[0] || (m === 1 && day === 1) });
       }
     }
     return out;
@@ -927,7 +947,7 @@ function timeTicks(range, scale) {
     if (first > range.end) break;
     const label = scale === "quarter" ? `${y} Q${Math.floor((m - 1) / 3) + 1}` : m === 1 ? `${y}/${m}` : `${m}月`;
     // 範囲開始より前の月初は、範囲開始の位置に寄せる
-    out.push({ date: first < range.start ? range.start : first, label, yearStart: m === 1, weekend: false });
+    out.push({ date: first < range.start ? range.start : first, label, yearStart: m === 1 });
   }
   return out;
 }
@@ -2141,6 +2161,71 @@ function flagPills(data, projectId, today, flags) {
 return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills };
 })();
 
+/* src/ui/deps.js */
+const { depPath, depMarkup, drawDeps, focusDeps } = (() => {
+// ガントチャートの「前のタスク」の線(編集画面だけ)。描画のあとに、バーの位置を測って SVG を重ねる。
+// ふだんは薄い線、バーにマウスを置くと、そのタスクと前のタスクを色分けし、つなぐ線を濃くして、ほかを薄くする。
+
+
+
+/** 前のタスクの右端から、次のタスクの左端への折れ線の path。次のタスクが前のタスクの右端に近いときは、左端の手前で折れる */
+function depPath(from, to) {
+  const x = Math.min(to.left - 8, from.right + 12);
+  return `M${from.right},${from.y} H${x} V${to.y} H${to.left - 1}`;
+}
+
+const ids = (el) => (el.dataset.pre ?? "").split(" ").filter(Boolean);
+const num = (n) => Math.round(n * 10) / 10;
+
+/** 線 1 本の SVG の文字列。タスク ID は、属性に入れるのでエスケープする */
+const depMarkup = ({ to, d, left, y }) =>
+  `<g class="gdep" data-to="${esc(to)}"><path d="${d}"/><polygon points="${left - 1},${y} ${left - 6},${y - 3.5} ${left - 6},${y + 3.5}"/></g>`;
+
+/** 1 つのガント本体(gbody)の線の SVG の文字列。バーの位置を測るだけで、DOM は書き換えない。両端のバーが gbody に出ているものだけ引く */
+function measureDeps(gbody) {
+  const box = gbody.getBoundingClientRect();
+  const byId = new Map([...gbody.querySelectorAll("[data-gt]")].map((el) => [el.dataset.gt, { el, r: el.getBoundingClientRect() }]));
+  const mid = (r) => num(r.top + r.height / 2 - box.top);
+  let lines = "";
+  for (const { el, r: b } of byId.values()) {
+    for (const pid of ids(el)) {
+      const p = byId.get(pid);
+      if (!p) continue;
+      const left = num(b.left - box.left), y = mid(b);
+      const d = depPath({ right: num(p.r.right - box.left), y: mid(p.r) }, { left, y });
+      lines += depMarkup({ to: el.dataset.gt, d, left, y });
+    }
+  }
+  return `<svg class="gdeps" aria-hidden="true">${lines}</svg>`;
+}
+
+/** 画面にあるすべてのガント本体(gbody)の線を引き直す。先に全部を測り、そのあとで全部を書く(測ると書くを混ぜると、そのたびにレイアウトが走る)。
+ *  SVG は HTML の文字列から作る(名前空間の URL を持たずに済む) */
+function drawDeps(gbodies) {
+  const parts = [...gbodies].map((gb) => [gb, measureDeps(gb)]);
+  for (const [gb, svg] of parts) {
+    gb.querySelector(":scope > svg.gdeps")?.remove();
+    gb.insertAdjacentHTML("beforeend", svg);
+  }
+}
+
+/** taskId のバーにマウスを置いたときの強調。null で戻す。前のタスクがないバーでは何もしない(全部を薄くしない) */
+function focusDeps(gbody, taskId) {
+  gbody.classList.remove("dep-focus");
+  gbody.querySelectorAll(".dep-self,.dep-pre,.dep-on").forEach((el) => el.classList.remove("dep-self", "dep-pre", "dep-on"));
+  if (!taskId) return;
+  const self = [...gbody.querySelectorAll("[data-gt]")].find((el) => el.dataset.gt === taskId);
+  const pres = self ? ids(self) : [];
+  if (!pres.length) return;
+  gbody.classList.add("dep-focus");
+  self.classList.add("dep-self");
+  gbody.querySelectorAll("[data-gt]").forEach((el) => { if (pres.includes(el.dataset.gt)) el.classList.add("dep-pre"); });
+  gbody.querySelectorAll(".gdep").forEach((g) => { if (g.dataset.to === taskId) g.classList.add("dep-on"); });
+}
+
+return { depPath, depMarkup, drawDeps, focusDeps };
+})();
+
 /* src/ui/edit.js */
 const { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject } = (() => {
 // 画面からの編集（追加・削除・更新）。すべて不変更新で、不正な入力は例外にする（呼び出し側が理由を表示する）。
@@ -2956,7 +3041,7 @@ return { summarizeSections, planOps, applyProposal };
 })();
 
 /* src/ui/views/prio.js */
-const { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide } = (() => {
+const { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide, renderSideToggle } = (() => {
 // 「今日のタスク」「今日の優先」パネル（プロジェクト画面・スケジュール画面で共通。右の列に並ぶ）
 
 
@@ -3032,12 +3117,17 @@ function renderSide(data, today, opts = {}) {
   return `<div class="side">${renderTodayTasks(data, today, opts)}${renderPrio(data, today, opts)}</div>`;
 }
 
-return { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide };
+/** 本体と右の列の境界線の取っ手。押すと右の列（今日のタスク・今日の優先）を開け閉めする。閉じても、この取っ手は残る */
+const renderSideToggle = (open) =>
+  `<button class="side-toggle" data-pref="prio" aria-expanded="${open}" aria-label="${open ? "今日の優先を閉じる" : "今日の優先を開く"}" title="${open ? "右の「今日のタスク」「今日の優先」を閉じます" : "右の「今日のタスク」「今日の優先」を開きます"}">${open ? "›" : "‹"}</button>`;
+
+return { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide, renderSideToggle };
 })();
 
 /* src/ui/views/gantt.js */
 const { GANTT_WINDOWS, renderGantt } = (() => {
 // ガントチャート（画面とレポートで共用）。位置と幅はすべて範囲全体に対する % で表し、画面幅に追従させる。
+
 
 
 
@@ -3067,7 +3157,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
   const all = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
   // 編集画面は、タスクが 0 件でも見出しの「＋」から追加できるように描く
   if (!all.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
-    return `<p class="muted">タスクがありません。${readonly ? "" : "リスト表示で追加してください。"}</p>`;
+    return `<p class="muted">タスクがありません。${readonly ? "" : "リストで追加してください。"}</p>`;
   }
   // 完了を隠すは、複数のプロジェクトを出しているとき、完了したプロジェクト（状態が「完了」、またはタスクが 1 件以上あって全部 Done）も隠す。1 つを選んでいるときは隠さない
   const closed = (p) => { const ts = data.tasks.filter((t) => t.projectId === p.id); return p.status === "完了" || (ts.length > 0 && ts.every((t) => t.status === "Done")); };
@@ -3087,6 +3177,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
   const dayScale = scale === "day";
   const x = (d) => `${((diffDays(d, s0) / total) * 100).toFixed(3)}%`;
   const ticks = timeTicks(range, scale);
+  const rest = restDayChecker(data.settings);
   const laneW = `calc((100cqw - var(--lw) - 12px) * ${ratio.toFixed(4)})`;
   const laneStyle = `style="width:var(--lanew)"`;
 
@@ -3094,7 +3185,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
     .filter((t) => dayScale || Math.abs(diffDays(t.date, today)) > visibleDays * 0.045)
     .map((t) => `<span class="mono ${t.yearStart ? "yr" : ""} ${dayScale && t.date === today ? "tdy" : ""}" data-tick="${t.date}" style="left:${x(t.date)}">${esc(t.label)}${dayScale ? `<small>${wdJa(t.date)}</small>` : ""}</span>`)
     .join("");
-  const grid = (dayScale ? ticks.filter((t) => t.weekend).map((t) => `<i class="gwk" style="left:${x(t.date)};width:${(100 / total).toFixed(3)}%"></i>`).join("") : "")
+  const grid = (dayScale ? ticks.filter((t) => rest(t.date)).map((t) => `<i class="gwk" style="left:${x(t.date)};width:${(100 / total).toFixed(3)}%"></i>`).join("") : "")
     + ticks.map((t) => `<i class="gl ${t.yearStart ? "yr" : ""}" style="left:${x(t.date)}"></i>`).join("");
   const todayLine = `<span class="todayline" style="left:${x(today)}"></span>`;
 
@@ -3138,7 +3229,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
       const late = taskFlags(t, today, data.settings).includes("overdue");
       const ui = STATUS_UI[t.status] ?? STATUS_UI["To Do"];
       const hasPre = (t.predecessors ?? []).length > 0;
-      const gt = readonly ? "" : ` data-gt="${esc(t.id)}"`;
+      const gt = readonly ? "" : ` data-gt="${esc(t.id)}"${hasPre ? ` data-pre="${esc(t.predecessors.join(" "))}"` : ""}`;
       const drag = readonly ? "" : " gdrag";
       const label = `${esc(t.id)} ${esc(t.title)} ${fmtMD(r.start)}〜${fmtMD(r.end)}`;
       const bar = r.point
@@ -3353,7 +3444,7 @@ function renderSchedule(data, today, opts) {
   const nav = `<div class="toolbar"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn" data-nav="${-step}" aria-label="前へ">←</button><button class="btn" data-nav="${step}" aria-label="次へ">→</button><button class="btn" data-sgoto>今日</button><strong style="margin-left:6px">${title}</strong></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" data-mtgadd>＋ 会議を追加</button><div class="seg" role="group" aria-label="表示"><button data-sview="week" aria-pressed="${view === "week"}">週</button><button data-sview="day" aria-pressed="${view === "day"}">日</button></div></div></div>
     <div class="summary"><span>実績 <b class="mono">${hours.toFixed(1)}時間</b></span><span>予定 <b class="mono">${planned}件</b></span>${unconf ? `<span class="pill wait">未確認 ${unconf}件（作業枠 ${unconfS}・会議 ${unconfM}）</span><button class="btn" data-confirmall>未確認をすべて実績にする</button>` : ""}<button class="btn danger" data-delsel ${delOk ? "" : "disabled"}>${delLabel}</button></div>`;
-  return `<div class="cols${opts.showPrio === false ? " one" : ""}"><section class="panel">${nav}<div id="mtgslot">${meetingForm(data, { mtgDraft: opts.mtgDraft, selMtg: selMtg?.id })}</div><div id="calslot">${renderCalendar(data, today, calOpts)}</div></section>${opts.showPrio === false ? "" : renderSide(data, today, { sched: true, picked: opts.picked, pendingDone: opts.pendingDone })}</div>`;
+  return `<div class="cols${opts.showPrio === false ? " one" : ""}"><section class="panel">${nav}<div id="mtgslot">${meetingForm(data, { mtgDraft: opts.mtgDraft, selMtg: selMtg?.id })}</div><div id="calslot">${renderCalendar(data, today, calOpts)}</div></section>${renderSideToggle(opts.showPrio !== false)}${opts.showPrio === false ? "" : renderSide(data, today, { sched: true, picked: opts.picked, pendingDone: opts.pendingDone })}</div>`;
 }
 
 
@@ -3495,7 +3586,7 @@ function renderWorkload(data, today, opts = {}) {
   const note = w.unconfirmed > 0
     ? `<div class="banner">未確認 ${w.unconfirmed}件（作業枠 ${w.unconfirmedTasks}・会議 ${w.unconfirmedMeetings}）は、まだ含まれていません。スケジュール画面で「実績にする」と確認すると加わります。</div>`
     : "";
-  const none = data.projects.length ? "" : `<p class="muted">プロジェクトがありません。プロジェクト画面から追加してください。</p>`;
+  const none = data.projects.length ? "" : `<p class="muted">プロジェクトがありません。ガントチャートかリストの「＋ プロジェクトを追加」から追加してください。</p>`;
   return `<section class="panel wl" aria-label="稼働">
     <div class="toolbar"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn" data-wnav="-1" aria-label="前へ">←</button><button class="btn" data-wnav="1" aria-label="次へ">→</button><button class="btn" data-wtoday>${todayLabel}</button><strong style="margin-left:6px">${title}</strong></div>
       <div class="seg" role="group" aria-label="期間"><button data-wperiod="week" aria-pressed="${period === "week"}">週</button><button data-wperiod="month" aria-pressed="${period === "month"}">月</button></div></div>
@@ -3891,9 +3982,9 @@ function renderProjects(data, today, opts = {}) {
     ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual, group, addAt: opts.addAt })}</section>`
     : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, group, todayIds })).join("")}</div>`;
   return `<div class="toolbar ptool"><div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="プロジェクトで絞り込み">${chips}${gsel}</div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${addBtn}<div class="seg" role="group" aria-label="表示"><button data-pview="gantt" aria-pressed="${view === "gantt"}">ガント</button><button data-pview="list" aria-pressed="${view === "list"}">リスト</button></div></div></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${addBtn}</div></div>
     ${opts.pendingReplan ? renderReplanPanel(data, opts.pendingReplan) : ""}
-    <div class="cols${showPrio ? "" : " one"}">${body}${showPrio ? renderSide(data, today, { sched: false, pendingDone: opts.pendingDone }) : ""}</div>`;
+    <div class="cols${showPrio ? "" : " one"}">${body}${renderSideToggle(showPrio)}${showPrio ? renderSide(data, today, { sched: false, pendingDone: opts.pendingDone }) : ""}</div>`;
 }
 
 return { renderProjects };
@@ -4046,8 +4137,8 @@ const clock = () => (params.get("today") ? { date: params.get("today"), time: pa
 
 const S = {
   data: null, openError: "",
-  screen: "project",
-  filter: "all", pview: "gantt", gwin: "m6", hideDone: false,
+  screen: "gantt",
+  filter: "all", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
   prefs: loadPrefs(), group: "all", pendingReplan: null, addAt: null, last: null, ruleError: "",
@@ -4081,13 +4172,16 @@ const scheduleOpts = () => ({ view: S.sview, date: S.sdate, now: clock(), selSes
 function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
-  if (S.screen === "project") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.pview, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, addAt: S.addAt, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
+  if (S.screen === "gantt" || S.screen === "list") {
+    return renderProjects(S.data, today, { filter: S.filter, view: S.screen, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, addAt: S.addAt, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
   if (S.screen === "settings") return renderSettings(S.data, today, { ruleError: S.ruleError });
   if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
   return renderSchedule(S.data, today, scheduleOpts());
 }
+
+/** 前のタスクの線を、画面にあるすべてのガント本体に引き直す */
+function drawAllDeps() { drawDeps(view.querySelectorAll(".gbody")); }
 
 function render() {
   hideTip();
@@ -4095,7 +4189,7 @@ function render() {
   const c = clock();
   $("todaylabel").textContent = `${c.date.replace(/-/g, "/")}(${wdJa(c.date)})`;
   document.querySelectorAll("nav [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.id === "tab-" + S.screen)));
-  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="prio" aria-pressed="${S.prefs.showPrio}" title="画面右の「今日のタスク」「今日の優先」を出したり隠したりします">今日の優先</button><button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
+  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
   renderBar();
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
@@ -4114,6 +4208,7 @@ function render() {
     if (el) { el.focus(); el.select?.(); }
   }
   syncSticky();
+  drawAllDeps();
   if (S.hlId) {
     let row = null;
     try { row = view.querySelector(`[data-row="${CSS.escape(S.hlId)}"]`); } catch { /* 無視 */ }
@@ -4131,6 +4226,7 @@ function focusSelector(el) {
   if (d.pf && d.pid) return q("data-pf", d.pf) + q("data-pid", d.pid);
   if (d.mf && d.pid) return q("data-mf", d.mf) + q("data-pid", d.pid) + q("data-i", d.i);
   if (d.gadd) return q("data-gadd", d.gadd);
+  if (d.pref) return `[data-pref="${CSS.escape(d.pref)}"]`; // 右の列の取っ手
   if (d.set) return q("data-set", d.set);
   // 規則の欄は、書き換えるとキーワードが変わるので、行の位置（data-ri。書き換えても並びは変わらない）で探す
   if (d.rkw !== undefined) return `[data-rkw][data-ri="${CSS.escape(d.ri)}"]`;
@@ -4399,6 +4495,15 @@ function deleteSelected() {
   apply((d) => removeSession(d, s.id), `${s.task.title} の${s.kind === "actual" ? "実績" : "予定"}の枠を削除しました`);
 }
 
+/** 表示の好み（今日の優先・ガント実績）を反転して保存する。今日の優先を閉じると、パネル内にしか出ない確認待ちは出す場所がなくなるので捨てる */
+function togglePref(key) {
+  S.pendingDone = null;
+  if (key === "showPrio") S.resetScroll = true; // 右の列の開け閉めでガントの幅が変わるので、横スクロールを今日の位置へ戻す
+  S.prefs = { ...S.prefs, [key]: !S.prefs[key] };
+  savePrefs(S.prefs);
+  render();
+}
+
 /* ---------- クリック ---------- */
 document.querySelector("nav").addEventListener("click", (e) => {
   const b = e.target.closest("[role=tab]");
@@ -4412,7 +4517,7 @@ document.querySelector("nav").addEventListener("click", (e) => {
 });
 $("filebar").addEventListener("click", async (e) => {
   const pf = e.target.closest("[data-pref]");
-  if (pf) { S.pendingDone = null; const k = pf.dataset.pref === "prio" ? "showPrio" : "showActual"; S.prefs = { ...S.prefs, [k]: !S.prefs[k] }; savePrefs(S.prefs); render(); return; }
+  if (pf) { togglePref("showActual"); return; }
   if (e.target.closest("[data-refresh]")) {
     await sync.whenIdle();
     if (sync.failed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }
@@ -4443,6 +4548,7 @@ document.addEventListener("click", (e) => {
 
 view.addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
+  if (q("[data-pref]")) { togglePref("showPrio"); return; } // 右の列の取っ手
   if (q("[data-rptclose]")) { S.reportPanel = null; render(); return; }
   if (q("[data-rptgo]")) { makeReport(); return; }
   let cleared = false;
@@ -4474,13 +4580,12 @@ view.addEventListener("click", (e) => {
   if (q("[data-hidedone]")) { S.hideDone = !S.hideDone; render(); return; }
   if (q("[data-gotoday]")) { scrollToday(true); return; }
   const f = q("[data-filter]"); if (f) { S.filter = f.dataset.filter; S.group = "all"; S.resetScroll = true; render(); return; }
-  const o = q("[data-open]"); if (o) { S.filter = o.dataset.open; S.group = "all"; S.pview = "list"; S.resetScroll = true; render(); return; }
-  const pv = q("[data-pview]"); if (pv) { S.pview = pv.dataset.pview; S.resetScroll = true; render(); return; }
+  const o = q("[data-open]"); if (o) { S.filter = o.dataset.open; S.group = "all"; S.screen = "list"; S.resetScroll = true; render(); return; }
   if (q("[data-addproject]")) {
     const before = S.data.projects.map((p) => p.id);
     if (apply((d) => addProject(d, { name: "新しいプロジェクト", type: "その他" }, today), "プロジェクトを追加しました。名前・期間を入力してください")) {
       const id = S.data.projects.map((p) => p.id).find((x) => !before.includes(x));
-      S.filter = id; S.pview = "list"; S.resetScroll = true; S.focusSel = `[data-pf="name"][data-pid="${id}"]`; render();
+      S.filter = id; S.screen = "list"; S.resetScroll = true; S.focusSel = `[data-pf="name"][data-pid="${id}"]`; render();
     }
     return;
   }
@@ -4501,7 +4606,7 @@ view.addEventListener("click", (e) => {
   if (gok) { const input = view.querySelector(`[data-gadd="${CSS.escape(gok.dataset.gaddok)}"]`); if (input) submitGAdd(input); return; }
   if (q("[data-gaddno]")) { S.addAt = null; render(); return; }
   const gn = q("[data-goto]");
-  if (gn) { const t = S.data.tasks.find((x) => x.id === gn.dataset.goto); S.filter = t.projectId; S.pview = "list"; S.hlId = t.id; S.focusSel = `#f-${t.id}-t`; S.resetScroll = true; render(); return; }
+  if (gn) { const t = S.data.tasks.find((x) => x.id === gn.dataset.goto); S.filter = t.projectId; S.screen = "list"; S.hlId = t.id; S.focusSel = `#f-${t.id}-t`; S.resetScroll = true; render(); return; }
   const ma = q("[data-msadd]");
   if (ma) { const p = S.data.projects.find((x) => x.id === ma.dataset.msadd); apply((d) => addMilestone(d, p.id, { name: "新しいマイルストーン", date: p.due }), "マイルストーンを追加しました"); return; }
   const md = q("[data-msdel]");
@@ -4869,6 +4974,17 @@ view.addEventListener("mousedown", (e) => {
   document.addEventListener("mouseup", up);
 });
 
+/* ---------- 前のタスクの強調(バーにマウスを置いたとき) ---------- */
+view.addEventListener("mouseover", (e) => {
+  const bar = e.target.closest?.("[data-gt]");
+  const gb = bar?.closest(".gbody");
+  if (gb) focusDeps(gb, bar.dataset.gt);
+});
+view.addEventListener("mouseout", (e) => {
+  const gb = e.target.closest?.("[data-gt]")?.closest(".gbody");
+  if (gb) focusDeps(gb, null);
+});
+
 /* ---------- ガント上のドラッグで日付を変更(1日単位) ---------- */
 view.addEventListener("mousedown", (e) => {
   const tg = e.target.closest("[data-gt],[data-gp],[data-gms]");
@@ -4893,6 +5009,8 @@ view.addEventListener("mousedown", (e) => {
     p = S.data.projects.find((x) => x.id === pid); mIdx = +i; s = en = idx(p.milestones[mIdx].date); mode = "r";
   }
   e.preventDefault();
+  const gbody = tg.closest(".gbody");
+  gbody?.classList.add("dep-hide"); // ドラッグ中は線がずれるので隠す(離したら戻す)
   const x0 = e.clientX;
   let dd = 0;
   const pct = (n) => `${((n / total) * 100).toFixed(3)}%`;
@@ -4909,6 +5027,7 @@ view.addEventListener("mousedown", (e) => {
   const up = () => {
     document.removeEventListener("mousemove", move);
     document.removeEventListener("mouseup", up);
+    gbody?.classList.remove("dep-hide");
     if (!dd) return;
     let ns = s, ne = en;
     if (mode === "l") ns = Math.min(s + dd, en);
@@ -5112,7 +5231,11 @@ function pinTableHeads() {
 let pinQueued = false;
 window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); }); } }, { passive: true });
 if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(syncSticky).observe(topbar);
-window.addEventListener("resize", syncSticky);
+let depsQueued = false;
+window.addEventListener("resize", () => {
+  syncSticky();
+  if (!depsQueued) { depsQueued = true; requestAnimationFrame(() => { depsQueued = false; drawAllDeps(); }); } // ウィンドウを引っ張る間、線は 1 フレームに 1 回だけ引き直す
+});
 
 render();
 startup();

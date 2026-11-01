@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calendarOf, offDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent } from "../plugins/pj-lens/src/core/holidays.js";
+import { calendarOf, offDayChecker, restDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent } from "../plugins/pj-lens/src/core/holidays.js";
 
 test("calendarOf: 手動の休みと日本の祝日が off、営業日の指定が on。未設定は空", () => {
   const s = {
@@ -67,4 +67,16 @@ test("calendarOf・offDayChecker: オンのとき、土日と日本の祝日を�
   assert.equal(off("2026-10-26"), true, "手動の休み");
   for (const v of ["true", 1, false]) assert.deepEqual(calendarOf({ ...s, countWeekendsAndHolidays: v }), { off: ["2026-10-26", "2026-11-03"], on: ["2026-10-31"] }, String(v));
   assert.equal(offDayChecker({ countWeekendsAndHolidays: "true" })("2026-10-24"), true);
+});
+
+test("restDayChecker: 土日・手動の休み・祝日は true。営業日の指定は false。土日祝を営業日に数える設定でも同じ", () => {
+  const base = { holidays: [{ date: "2026-10-22" }], nationalHolidays: { dates: [{ date: "2026-11-03" }] }, workdays: [{ date: "2026-10-24" }] };
+  for (const s of [base, { ...base, countWeekendsAndHolidays: true }]) {
+    const rest = restDayChecker(s);
+    assert.equal(rest("2026-10-22"), true, "手動の休み");
+    assert.equal(rest("2026-11-03"), true, "祝日");
+    assert.equal(rest("2026-10-25"), true, "日曜");
+    assert.equal(rest("2026-10-24"), false, "営業日に指定した土曜");
+    assert.equal(rest("2026-10-21"), false, "水曜");
+  }
 });

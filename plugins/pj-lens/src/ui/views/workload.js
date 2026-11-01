@@ -33,7 +33,7 @@ export function renderWorkload(data, today, opts = {}) {
   const note = w.unconfirmed > 0
     ? `<div class="banner">未確認 ${w.unconfirmed}件（作業枠 ${w.unconfirmedTasks}・会議 ${w.unconfirmedMeetings}）は、まだ含まれていません。スケジュール画面で「実績にする」と確認すると加わります。</div>`
     : "";
-  const none = data.projects.length ? "" : `<p class="muted">プロジェクトがありません。プロジェクト画面から追加してください。</p>`;
+  const none = data.projects.length ? "" : `<p class="muted">プロジェクトがありません。ガントチャートかリストの「＋ プロジェクトを追加」から追加してください。</p>`;
   return `<section class="panel wl" aria-label="稼働">
     <div class="toolbar"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn" data-wnav="-1" aria-label="前へ">←</button><button class="btn" data-wnav="1" aria-label="次へ">→</button><button class="btn" data-wtoday>${todayLabel}</button><strong style="margin-left:6px">${title}</strong></div>
       <div class="seg" role="group" aria-label="期間"><button data-wperiod="week" aria-pressed="${period === "week"}">週</button><button data-wperiod="month" aria-pressed="${period === "month"}">月</button></div></div>

@@ -29,6 +29,15 @@ function longData() {
   return d;
 }
 
+test("renderProjects: 画面内の「ガント／リスト」切り替え（data-pview）を出さない。view が gantt でも list でも、同じ絞り込みの状態が同じに出る", () => {
+  const d = load();
+  for (const view of ["gantt", "list"]) {
+    const html = renderProjects(d, TODAY, { filter: "A", view, window: "m6", hideDone: true });
+    assert.doesNotMatch(html, /data-pview/);
+    assert.match(html, /data-filter="A" aria-pressed="true"/, view);
+  }
+});
+
 test("renderProjects(gantt/all): 全プロジェクト名・進捗率・遅延バッジ・マイルストーン、目盛りが共通", () => {
   const d = load();
   const html = renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6", hideDone: false });
@@ -40,7 +49,7 @@ test("renderProjects(gantt/all): 全プロジェクト名・進捗率・遅延�
   const ticks = (html.match(/data-tick="[^"]+"/g) ?? []);
   const perSection = ticks.length / 3;
   assert.equal(perSection, Math.floor(perSection), "各ガントの目盛りは同数");
-  assert.ok(html.includes("今日の優先"));
+  assert.ok(html.includes('id="h-rk"'), "既定で右の列（今日の優先）が開いている");
 });
 
 test("renderProjects: 進捗率の値（Cancelled を除く Done の割合）", () => {
@@ -82,6 +91,15 @@ test("renderGantt: 行数＝タスク数、今日の線、マイルストーン�
   assert.equal(count(html, /class="todayline"/g), 1);
   assert.ok(html.includes("機器発注") && html.includes("8/31"));
   assert.equal(count(html, /class="gact" style="left/g), 1, "実績があるのは A5 だけ");
+});
+
+test("renderGantt: 日表示で、手動の休みと祝日の列にも土日と同じ着色（class=\"gwk\"）が付く。土日祝を営業日に数える設定がオンでも付く", () => {
+  const d = load();
+  const n = (settings) => count(gantt({ ...d, settings: { ...d.settings, ...settings } }, ["C"], { window: "m1" }), /class="gwk"/g);
+  const none = n({ holidays: [], nationalHolidays: { dates: [] }, workdays: [] });
+  const withRest = { holidays: [{ date: "2026-10-22", kind: "有給" }], nationalHolidays: { dates: [{ date: "2026-11-03", name: "文化の日" }] }, workdays: [] };
+  assert.equal(n(withRest), none + 2);
+  assert.equal(n({ ...withRest, countWeekendsAndHolidays: true }), none + 2);
 });
 
 test("renderGantt: 1か月は日目盛り（範囲の日数）と土日の着色、3か月は週目盛り", () => {
@@ -211,7 +229,7 @@ test("renderSchedule(day): 空き時間・優先タスクと理由・枠の種�
   d.tasks.find((t) => t.id === "A5").sessions.push({ id: "S9", date: "2026-10-20", start: "09:00", end: "09:30", kind: "planned" }); // 過ぎた予定 = 未確認
   const html = sched(d);
   assert.ok(html.includes("10:30-13:00 空き"), "会議と枠を除いた空き");
-  assert.ok(html.includes("今日の優先") && html.includes("催促") && html.includes("期限超過 4日"));
+  assert.ok(html.includes('id="h-rk"') && html.includes("催促") && html.includes("期限超過 4日"));
   assert.ok(html.includes('class="blk task unconf'), "未確認");
   const w = renderSchedule(load(), TODAY, { view: "week", date: "2026-10-19", now: NOW });
   assert.ok(w.includes("class=\"blk task act"), "実績");
@@ -297,11 +315,11 @@ test("renderGantt: showActual:false で .gact と凡例の実績が消える（t
 test("renderProjects/renderSchedule: showPrio:false で『今日の優先』が出ず、cols に one が付く", () => {
   const d = load();
   const p = renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6", showPrio: false });
-  assert.ok(!p.includes("今日の優先") && p.includes('class="cols one"'));
+  assert.ok(!p.includes('id="h-rk"') && p.includes('class="cols one"'), "パネル（見出し h-rk）が出ない。取っ手の名前には「今日の優先」が入る");
   const s = sched(d, { showPrio: false });
-  assert.ok(!s.includes("今日の優先") && s.includes('class="cols one"'));
-  assert.ok(renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6" }).includes("今日の優先"));
-  assert.ok(sched(d).includes("今日の優先"));
+  assert.ok(!s.includes('id="h-rk"') && s.includes('class="cols one"'));
+  assert.ok(renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6" }).includes('id="h-rk"'), "既定で開いている");
+  assert.ok(sched(d).includes('id="h-rk"'), "既定で開いている");
 });
 
 // ---- 大項目・中項目（Task 13） ----
@@ -756,12 +774,12 @@ test("今日のタスクは、スケジュール・プロジェクトの両方�
   const { d } = withToday();
   const pd = { id: "A5", status: "Done", n: 1, future: ["S3"] };
   for (const html of [sched(d, { pendingDone: pd }), renderProjects(d, TODAY, { filter: "all", view: "list", pendingDone: pd })]) {
-    assert.ok(html.includes("今日のタスク") && html.includes('data-today="A5"'));
-    assert.ok(html.indexOf("今日のタスク") < html.indexOf("今日の優先"), "優先の上");
+    assert.ok(html.includes('id="h-td"') && html.includes('data-today="A5"'));
+    assert.ok(html.indexOf('id="h-td"') < html.indexOf('id="h-rk"'), "優先の上（取っ手の名前にも文字が入るので、見出しの id で見る）");
   }
   assert.equal(count(sched(d, { pendingDone: pd }), /data-doneok=/g), 1);
-  assert.ok(!sched(d, { showPrio: false }).includes("今日のタスク"));
-  assert.ok(!renderProjects(d, TODAY, { filter: "all", view: "list", showPrio: false }).includes("今日のタスク"));
+  assert.ok(!sched(d, { showPrio: false }).includes('id="h-td"'));
+  assert.ok(!renderProjects(d, TODAY, { filter: "all", view: "list", showPrio: false }).includes('id="h-td"'));
   // 今日のタスクに居ないタスク（リストの select から押した）の確認は、リストの行に出る
   const other = renderProjects(d, TODAY, { filter: "all", view: "list", pendingDone: { id: "A1", status: "Done", n: 1, future: ["S3"] } });
   assert.equal(count(other, /data-doneok="A1"/g), 1);
@@ -1039,4 +1057,30 @@ test("renderGantt: 開始と期限が同じ日のタスクは点（dot）で、�
   const row = html.split('<div class="g-row">').find((r) => r.includes('data-gt="A1"'));
   const left = +/class="g-due mono" style="left:([\d.]+)%/.exec(row)[1];
   assert.ok(Math.abs(left - (diffDays(a1.due, s0) / span) * 100) < 0.01, `期限の表示は左端: ${left}`);
+});
+
+test("renderProjects・renderSchedule: showPrio が true でも false でも data-pref=\"prio\" の取っ手が 1 つ出る。aria-expanded は開閉に合わせ、閉じると「今日の優先」は出ない", () => {
+  const d = load();
+  const views = {
+    projects: (showPrio) => renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6", showPrio }),
+    schedule: (showPrio) => renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW, showPrio }),
+  };
+  for (const [name, render] of Object.entries(views)) {
+    const open = render(true), shut = render(false);
+    assert.equal(count(open, /data-pref="prio"/g), 1, `${name}: 開いているとき`);
+    assert.equal(count(shut, /data-pref="prio"/g), 1, `${name}: 閉じているとき`);
+    assert.match(open, /data-pref="prio"[^>]*aria-expanded="true"/, name);
+    assert.match(shut, /data-pref="prio"[^>]*aria-expanded="false"/, name);
+    assert.ok(open.includes(">今日の優先</h2>"), `${name}: 開いているとき見出しが出る`);
+    assert.ok(!shut.includes(">今日の優先</h2>"), `${name}: 閉じると見出しが出ない`);
+  }
+});
+
+test("renderGantt: 先行タスクのあるバーに data-pre（空白区切り）が付く。先行のないバーと、レポート用（readonly）には付かない", () => {
+  const d = load();
+  const html = gantt(d, ["A"]);
+  assert.match(html, /data-gt="A6"[^>]*data-pre="A4 A5"/);
+  assert.match(html, /data-gt="A2"[^>]*data-pre="A1"/);
+  assert.doesNotMatch(html, /data-gt="A1"[^>]*data-pre=/);
+  assert.equal(count(gantt(d, ["A"], { readonly: true }), /data-pre=/g), 0);
 });

@@ -3,19 +3,19 @@ body{margin:0}
 /* Layout: 上部に画面切替、俯瞰はプロジェクト別のタイムライン（機器ラックのように1案件=1段）＋右に今日の優先 */
 :root{
   --bg:#F0F3F7; --surface:#FFFFFF; --ink:#16202E; --muted:#5A6678; --line:#D6DDE8; --line-soft:#E8ECF3;
-  --accent:#0B6E8A; --accent-soft:#DCEEF4;
+  --accent:#0B6E8A; --accent-soft:#DCEEF4; --pre:#C2670A;
   --ok:#2E7D5B; --warn:#B26B00; --warn-soft:#FBEBD0; --bad:#C23A3A; --bad-soft:#F9DEDE;
   --todo:#8794A8; --meeting:#EBE4F7; --meeting-ink:#43346F; --meeting-edge:#7B5CC4; --free:#E9F4EC;
   --f-body:"BIZ UDPGothic","Yu Gothic UI","Meiryo",sans-serif; --f-mono:ui-monospace,Consolas,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0E1520; --surface:#162030; --ink:#E5EBF3; --muted:#9AA7B9; --line:#2A3850; --line-soft:#1F2C40;
-  --accent:#55B8D4; --accent-soft:#17323D;
+  --accent:#55B8D4; --accent-soft:#17323D; --pre:#E8963F;
   --ok:#5CC08F; --warn:#E3A94B; --warn-soft:#3A2D14; --bad:#EE7B7B; --bad-soft:#3B1D1F;
   --todo:#7B889C; --meeting:#2D2548; --meeting-ink:#D3C9F0; --meeting-edge:#9C84E0; --free:#14301F; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0E1520; --surface:#162030; --ink:#E5EBF3; --muted:#9AA7B9; --line:#2A3850; --line-soft:#1F2C40;
-  --accent:#55B8D4; --accent-soft:#17323D;
+  --accent:#55B8D4; --accent-soft:#17323D; --pre:#E8963F;
   --ok:#5CC08F; --warn:#E3A94B; --warn-soft:#3A2D14; --bad:#EE7B7B; --bad-soft:#3B1D1F;
   --todo:#7B889C; --meeting:#2D2548; --meeting-ink:#D3C9F0; --meeting-edge:#9C84E0; --free:#14301F; color-scheme:dark}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.6;
@@ -226,8 +226,7 @@ label{font-size:13px}
 
 /* 幅は画面サイズに追従(全画面で統一) */
 .wrap{max-width:none}
-.cols{grid-template-columns:minmax(0,1fr) clamp(260px,22vw,340px)}
-@media(max-width:900px){.cols{grid-template-columns:minmax(0,1fr)}}
+.cols{grid-template-columns:minmax(0,1fr) 14px clamp(260px,22vw,340px)}
 .toolbar{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px}
 .cols>.panel>.toolbar{margin-bottom:10px}
 .gscroll{container-type:inline-size;--lw:230px;overflow-x:auto;padding-bottom:6px}
@@ -347,7 +346,11 @@ tr.hl td{transition:background .3s}
 .filebar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .fsep{width:1px;align-self:stretch;background:var(--line)}
 .chip-btn.pref[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:400}
-.cols.one{grid-template-columns:minmax(0,1fr)}
+.cols.one{grid-template-columns:minmax(0,1fr) 14px}
+/* 右の列の開け閉めの取っ手。本体と右の列の境界線に置き、閉じても残る。900px 以下で列が 1 つに回り込むときは、横長の細い帯になる */
+.side-toggle{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + 8px);align-self:start;width:14px;height:64px;padding:0;border:1px solid var(--line);border-radius:4px;background:var(--line-soft);color:var(--muted);font:inherit;font-size:12px;line-height:1;cursor:pointer}
+.side-toggle:hover,.side-toggle:focus-visible{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+@media(max-width:900px){.cols,.cols.one{grid-template-columns:minmax(0,1fr)}.side-toggle{position:static;width:100%;height:20px}}
 .replan{border:2px solid var(--accent);display:flex;flex-direction:column;gap:12px;margin-bottom:16px}
 .rp-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px}
 .rp-head h2{font-size:15px;margin:0}
@@ -426,3 +429,16 @@ body{padding-block:16px 76px}
 .pill.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
 .pill.done{background:var(--free);color:var(--ok);border-color:transparent}
 .pill.off{color:var(--muted)}
+
+/* 前のタスクの線と強調(deps.js)。線は gbody に重ねる。強調は、バーにマウスを置いたとき */
+.gdeps{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;overflow:visible}
+.gdep path{fill:none;stroke:var(--muted);stroke-width:.8;opacity:.5}
+.gdep polygon{fill:var(--muted);opacity:.5}
+.gbody.dep-hide .gdeps{display:none}
+.gbody.dep-focus .gdep{opacity:.25}
+.gbody.dep-focus .gdep.dep-on{opacity:1}
+.gbody.dep-focus .gdep.dep-on path{stroke:var(--pre);stroke-width:1.8;opacity:1}
+.gbody.dep-focus .gdep.dep-on polygon{fill:var(--pre);opacity:1}
+.gbody.dep-focus [data-gt]:not(.dep-self):not(.dep-pre){opacity:.35}
+.gbody [data-gt].dep-self{background:var(--accent)!important}
+.gbody [data-gt].dep-pre{background:var(--pre)!important}

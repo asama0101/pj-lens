@@ -77,10 +77,12 @@ test("app.js: 画面（タブ）を切り替えるとき、未来の予定枠の
   assert.match(tab, /S\.pendingDone = null/);
 });
 
-test("app.js: 「今日の優先」のスイッチを切るとき、パネル内にしか出ない確認待ち（pendingDone）を捨てる。スイッチの説明に今日のタスクも書く", () => {
-  const pf = src.slice(src.indexOf('if (pf) {'), src.indexOf('if (pf) {') + 300);
+test("app.js: 「今日の優先」の取っ手を押すとき、パネル内にしか出ない確認待ち（pendingDone）を捨てる。取っ手は view のクリックで扱い、上部のバー（filebar）には prio のボタンがない（actual は残る）", () => {
+  const pf = src.slice(src.indexOf("function togglePref"), src.indexOf("function togglePref") + 400);
   assert.match(pf, /S\.pendingDone = null/);
-  assert.match(src, /title="画面右の「今日のタスク」「今日の優先」/);
+  assert.match(src, /view\.addEventListener\("click"[\s\S]*data-pref/);
+  assert.doesNotMatch(src, /data-pref="prio" aria-pressed/);
+  assert.match(src, /data-pref="actual" aria-pressed/);
 });
 
 test("schedule.js: ブロックの時刻は esc して出す（toMin が先に検証するが、描画側でも守る）", () => {
@@ -212,4 +214,42 @@ test("app.js: 休みの期間登録の通知は、土日祝を営業日に数え
 
 test("app.js: ガントのドラッグ中のバーの幅は、期限日のマスを含める（描画と同じ。ne - ns + 1 日）", () => {
   assert.match(src, /tg\.style\.left = pct\(ns\); tg\.style\.width = pct\(ne - ns \+ 1\);/);
+});
+
+test("index.html: タブは ガントチャート・リスト・スケジュール・稼働・設定 の順で、「プロジェクト」はない", () => {
+  const html = readFileSync(new URL("../plugins/pj-lens/src/ui/index.html", import.meta.url), "utf8");
+  const tabs = [...html.matchAll(/<button role="tab" id="tab-([a-z]+)"[^>]*>([^<]+)<\/button>/g)].map((m) => `${m[1]}:${m[2]}`);
+  assert.deepEqual(tabs, ["gantt:ガントチャート", "list:リスト", "schedule:スケジュール", "workload:稼働", "settings:設定"]);
+});
+
+test("app.js: S.pview は廃止し、S.screen の初期値は gantt（リストへ移る操作は S.screen = \"list\"）", () => {
+  assert.doesNotMatch(src, /pview/);
+  assert.match(src, /screen: "gantt"/);
+  assert.match(src, /S\.screen = "list"/);
+});
+
+test("app.js: 描き直しのあとに drawDeps を呼び、バーへの mouseover・mouseout で focusDeps を呼ぶ。ドラッグの開始で線を隠す", () => {
+  assert.match(src, /syncSticky\(\);[\s\S]{0,200}drawAllDeps\(\)/);
+  assert.match(src, /view\.addEventListener\("mouseover"[\s\S]{0,300}focusDeps\(/);
+  assert.match(src, /view\.addEventListener\("mouseout"[\s\S]{0,300}focusDeps\(/);
+  assert.match(src, /classList\.add\("dep-hide"\)/);
+  assert.match(src, /window\.addEventListener\("resize"[\s\S]{0,120}drawAllDeps/);
+});
+
+test("app.js: resize は requestAnimationFrame で間引いて線を引き直す。取っ手は focusSelector で描き直しのあとも戻る。filebar は actual だけを扱う", () => {
+  assert.match(src, /window\.addEventListener\("resize"[\s\S]{0,260}requestAnimationFrame/);
+  assert.match(src, /function focusSelector[\s\S]*d\.pref[\s\S]*return `\[data-pref=/);
+  assert.match(src, /if \(pf\) \{ togglePref\("showActual"\); return; \}/);
+});
+
+test("画面の文言: 「プロジェクト」タブはないので、稼働・ガントチャートの案内に「プロジェクト画面」「リスト表示で」を使わない", () => {
+  const wl = readFileSync(new URL("../plugins/pj-lens/src/ui/views/workload.js", import.meta.url), "utf8");
+  const gt = readFileSync(new URL("../plugins/pj-lens/src/ui/views/gantt.js", import.meta.url), "utf8");
+  assert.doesNotMatch(wl, /プロジェクト画面から/);
+  assert.doesNotMatch(gt, /リスト表示で追加/);
+});
+
+test("app.js: 右の列を開け閉めすると、ガントの幅が変わるので、横スクロールを今日の位置へ戻す（resetScroll）", () => {
+  const f = src.slice(src.indexOf("function togglePref"), src.indexOf("function togglePref") + 500);
+  assert.match(f, /key === "showPrio"[^\n]*S\.resetScroll = true/);
 });
