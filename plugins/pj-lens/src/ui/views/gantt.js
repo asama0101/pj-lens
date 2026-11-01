@@ -16,6 +16,41 @@ function tools(win, hideDone) {
 }
 
 /**
+ * マイルストーンのラベルを、重ならない最初の段へ置く。items は日付順の { x: ラベルの左端, w: 幅 }。戻り値は、各ラベルの段（0 から）。
+ */
+export function assignLevels(items) {
+  const ends = [];
+  return items.map(({ x, w }) => {
+    let level = ends.findIndex((e) => e <= x);
+    if (level < 0) level = ends.length;
+    ends[level] = x + w;
+    return level;
+  });
+}
+
+const msLaneHeight = (levels) => Math.max(44, (Math.max(-1, ...levels) + 1) * 18 + 8);
+
+/**
+ * 描いたあとに、マイルストーンのラベルの実際の幅を測って、段と行の高さを決め直す（画面幅・表示期間で、重なりが変わるため）。
+ */
+export function layoutMilestones(gbodies) {
+  // 測ると書くを混ぜると、そのたびにレイアウトが走る。先に全部を測り、そのあとで全部を書く（deps.js と同じ）
+  const plans = [];
+  for (const gb of gbodies) {
+    const lane = gb.querySelector(".g-msrow .g-lane");
+    if (!lane || !lane.offsetWidth) continue; // 隠れている（幅 0）ときは、測れないので触らない
+    const marks = [...lane.querySelectorAll(".ms")];
+    const labels = [...lane.querySelectorAll(".ms-l")];
+    const levels = assignLevels(labels.map((l) => ({ x: l.offsetLeft, w: l.offsetWidth + 10 + 8 }))); // 10px はラベルの右ずらし、8px はラベルの間の隙間
+    plans.push({ lane, marks, labels, levels });
+  }
+  for (const { lane, marks, labels, levels } of plans) {
+    levels.forEach((lv, i) => { marks[i].style.top = `${6 + lv * 18}px`; labels[i].style.top = `${2 + lv * 18}px`; });
+    lane.style.height = `${msLaneHeight(levels)}px`;
+  }
+}
+
+/**
  * @param opts.window    "m1" | "m3" | "m6" | "y1" | "all"
  * @param opts.hideDone  Done の行を隠す（全体バーの進捗には影響しない）
  * @param opts.readonly  true なら編集用の部品・属性を出さない（レポート用）
@@ -70,21 +105,17 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     const ms = g.milestones;
     const msLines = ms.map((m) => `<i class="msl" style="left:${x(m.date)}"></i>`).join("");
 
-    // 文字が重ならないように、置ける最初の段に置く。画面幅は 1000px と仮定して、文字の幅を見積もる
+    // 段は、画面幅を 1000px と仮定した見積もり。画面では、描いたあとに layoutMilestones が実測で決め直す（レポートは見積もりのまま）
     const pxPerDay = 1000 / visibleDays;
-    const msEnd = [];
-    const msItems = ms.map((m) => {
-      const px = diffDays(m.date, s0) * pxPerDay;
-      const w = [...m.name].reduce((n, c) => n + (c.charCodeAt(0) < 256 ? 6 : 11), 0) + 40 + 18;
-      let level = msEnd.findIndex((e) => e <= px);
-      if (level < 0) level = msEnd.length;
-      msEnd[level] = px + w;
+    const levels = assignLevels(ms.map((m) => ({ x: diffDays(m.date, s0) * pxPerDay, w: [...m.name].reduce((n, c) => n + (c.charCodeAt(0) < 256 ? 6 : 11), 0) + 40 + 18 })));
+    const msItems = ms.map((m, i) => {
+      const level = levels[i];
       const idx = (p.milestones ?? []).findIndex((o) => o.name === m.name && o.date === m.date);
       const attr = readonly ? "" : ` data-gms="${esc(p.id)}|${idx}"`;
       return `<i class="ms"${attr} style="left:${x(m.date)};top:${6 + level * 18}px" title="${esc(m.name)} ${fmtMD(m.date)}${readonly ? "" : "(ドラッグで日付を変更)"}"></i><span class="ms-l" style="left:${x(m.date)};top:${2 + level * 18}px">${esc(m.name)} <b class="mono">${fmtMD(m.date)}</b></span>`;
     }).join("");
     const msRow = ms.length
-      ? `<div class="g-row g-msrow"><div class="g-label"><span class="id"></span><span class="muted">マイルストーン</span></div><div class="g-lane" style="width:var(--lanew);height:${Math.max(44, msEnd.length * 18 + 8)}px">${msItems}</div></div>`
+      ? `<div class="g-row g-msrow"><div class="g-label"><span class="id"></span><span class="muted">マイルストーン</span></div><div class="g-lane" style="width:var(--lanew);height:${msLaneHeight(levels)}px">${msItems}</div></div>`
       : "";
 
     const months = Math.max(1, Math.round(diffDays(p.due, p.start) / 30.4));

@@ -64,8 +64,12 @@ function openTaskPop(id, x, y) {
   render();
 }
 
-/** 前のタスクの線を、画面にあるすべてのガント本体に引き直す */
-function drawAllDeps() { drawDeps(view.querySelectorAll(".gbody")); }
+/** マイルストーンの段を決め直してから（行の高さが変わるため）、前のタスクの線を、画面にあるすべてのガント本体に引き直す */
+function drawAllDeps() {
+  const bodies = view.querySelectorAll(".gbody");
+  layoutMilestones(bodies);
+  drawDeps(bodies);
+}
 
 function render() {
   hideTip();
