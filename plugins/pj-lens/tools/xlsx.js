@@ -81,7 +81,7 @@ export function ensureEnv(dir, { run = realRun, python, exists = existsSync, pla
   const py = venvPython(dir, platform);
   if (isPinned(py, pin, run, exists)) return { ok: true, python: py };
   if (!approve) {
-    return { ok: false, needsApproval: true, message: (exists(py) ? "Excel を読むための openpyxl の版が違います。入れ直してよいか（入れられないときは、venv を消して作り直します）" :"Excel を読むための環境がありません。次を作ってよいか") + "、利用者に確認してください。\n" +
+    return { ok: false, needsApproval: true, message: (exists(py) ? "Excel を読むための openpyxl の版が違います。入れ直してよいか（入れられないときは、venv を消して作り直します）" : "Excel を読むための環境がありません。次を作ってよいか") + "、利用者に確認してください。\n" +
       "  場所: " + join(dir, "venv") + "\n" +
       "  内容: " + (exists(py) ? "" : "Python の venv と ") + "openpyxl==" + pin + "（依存の et_xmlfile も、ハッシュを固定して入れます。約 20 MB、ネットワークが必要）\n" +
       "  作成元の Python: " + (pythonLabel ?? "見つかりません") + "（" + MIN_PYTHON.join(".") + " 以上、venv・ensurepip が必要）\n" +
