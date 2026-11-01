@@ -864,7 +864,7 @@ view.addEventListener("mousedown", (e) => {
     else if (mode === "r") ne = kind === "m" ? en + dd : Math.max(en + dd, s);
     else { ns = s + dd; ne = en + dd; }
     if (kind === "m" || tg.classList.contains("dot")) tg.style.left = pct(ne);
-    else { tg.style.left = pct(ns); tg.style.width = pct(ne - ns); }
+    else { tg.style.left = pct(ns); tg.style.width = pct(ne - ns + 1); } // 期限日のマスを含める（描画と同じ）
     tg.title = `${fmtMD(addDays(s0, ns))}〜${fmtMD(addDays(s0, ne))}`;
   };
   const up = () => {

@@ -85,10 +85,11 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     const months = Math.max(1, Math.round(diffDays(p.due, p.start) / 30.4));
     const head = `<div class="pg-head"><div>${readonly ? `<strong>${esc(p.name)}</strong>` : `<button class="proj-name" data-filter="${esc(p.id)}">${esc(p.name)}</button>`}<div class="proj-meta"><span>${esc(p.type)}</span><span>${esc(p.status)}</span><span class="mono">${fmtMD(p.start)}〜${fmtMD(p.due)}(${months}か月)</span>${readonly ? "" : `<span class="mono">${prog.done}/${prog.total} Done (${pct}%)</span><span class="mono hrs">稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）</span>`}${flagPills(data, p.id, today, flags)}</div></div>${readonly ? "" : `<button class="btn" data-open="${esc(p.id)}">編集する</button>`}</div>`;
 
-    const sumW = Math.max(0, (diffDays(p.due, p.start) / total) * 100).toFixed(3);
+    // バーは、開始日のマスから期限日のマスの右端まで（期限の日を含む）。期限の表示は、その右に付ける
+    const sumW = Math.max(0, ((diffDays(p.due, p.start) + 1) / total) * 100).toFixed(3);
     const sumAttr = readonly ? "" : ` data-gp="${esc(p.id)}"`;
     const sumHandles = readonly ? "" : `<b class="gh l" data-gh="l"></b><b class="gh r" data-gh="r"></b>`;
-    const sumRow = `<div class="g-row g-sumrow"><div class="g-label"><span class="id"></span><span class="muted">プロジェクト全体</span></div><div class="g-lane" ${laneStyle}><i class="gbar gsum"${sumAttr} style="left:${x(p.start)};width:${sumW}%;min-width:4px" title="${fmtMD(p.start)}〜${fmtMD(p.due)}${readonly ? "" : "(両端のドラッグで開始・期限を変更)"}"><u style="width:${pct}%"></u>${sumHandles}</i><span class="g-due mono" style="left:${x(p.due)}">${fmtMD(p.due)}</span></div></div>`;
+    const sumRow = `<div class="g-row g-sumrow"><div class="g-label"><span class="id"></span><span class="muted">プロジェクト全体</span></div><div class="g-lane" ${laneStyle}><i class="gbar gsum"${sumAttr} style="left:${x(p.start)};width:${sumW}%;min-width:4px" title="${fmtMD(p.start)}〜${fmtMD(p.due)}${readonly ? "" : "(両端のドラッグで開始・期限を変更)"}"><u style="width:${pct}%"></u>${sumHandles}</i><span class="g-due mono" style="left:${x(addDays(p.due, 1))}">${fmtMD(p.due)}</span></div></div>`;
 
     const taskOf = (r) => data.tasks.find((o) => o.id === r.taskId);
     const inGroup = (r) => group === "all" || (taskOf(r).group ?? "") === group;
@@ -103,9 +104,9 @@ export function renderGantt(data, projectIds, today, opts = {}) {
       const label = `${esc(t.id)} ${esc(t.title)} ${fmtMD(r.start)}〜${fmtMD(r.end)}`;
       const bar = r.point
         ? `<i class="dot mk${drag} ${ui.dot}${late ? " is-late" : ""}"${gt} style="left:${x(r.end)};top:13px" title="${label}${readonly ? "" : "(ドラッグで期限を変更)"}"></i>`
-        : `<i class="gbar${drag}${hasPre ? " fixl" : ""} ${ui.bar}${late ? " is-late" : ""}"${gt} style="left:${x(r.start)};width:${((diffDays(r.end, r.start) / total) * 100).toFixed(3)}%;min-width:5px" title="${label}${readonly ? "" : hasPre ? "(開始は前のタスクから決まります。右端のドラッグで期限を変更)" : "(ドラッグで移動、両端で開始・期限を変更)"}">${readonly ? "" : `${hasPre ? "" : '<b class="gh l" data-gh="l"></b>'}<b class="gh r" data-gh="r"></b>`}</i>`;
+        : `<i class="gbar${drag}${hasPre ? " fixl" : ""} ${ui.bar}${late ? " is-late" : ""}"${gt} style="left:${x(r.start)};width:${(((diffDays(r.end, r.start) + 1) / total) * 100).toFixed(3)}%;min-width:5px" title="${label}${readonly ? "" : hasPre ? "(開始は前のタスクから決まります。右端のドラッグで期限を変更)" : "(ドラッグで移動、両端で開始・期限を変更)"}">${readonly ? "" : `${hasPre ? "" : '<b class="gh l" data-gh="l"></b>'}<b class="gh r" data-gh="r"></b>`}</i>`;
       const act = r.actual && showActual
-        ? `<i class="gact" style="left:${x(r.actual.start)};width:${(Math.max(diffDays(r.actual.end, r.actual.start), 0) / total * 100).toFixed(3)}%;min-width:4px" title="実績 ${fmtMD(r.actual.start)}〜${fmtMD(r.actual.end)}"></i>`
+        ? `<i class="gact" style="left:${x(r.actual.start)};width:${((Math.max(diffDays(r.actual.end, r.actual.start), 0) + 1) / total * 100).toFixed(3)}%;min-width:4px" title="実績 ${fmtMD(r.actual.start)}〜${fmtMD(r.actual.end)}"></i>`
         : "";
       const dependents = data.tasks.filter((o) => (o.predecessors ?? []).includes(t.id)).map((o) => o.id);
       let lab;
@@ -116,7 +117,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
         const del = readonly ? "" : `<button class="gx" data-del="${esc(t.id)}" aria-label="${esc(t.id)} を削除">×</button>`;
         lab = `<div class="g-label"><span class="id">${esc(t.id)}</span>${name}${del}<span class="g-pre">${hasPre ? "← " + esc(t.predecessors.join(", ")) : ""}</span></div>`;
       }
-      return `<div class="g-row">${lab}<div class="g-lane" ${laneStyle}>${bar}${act}<span class="g-due mono" style="left:${x(r.end)}">${fmtMD(t.due)}</span></div></div>`;
+      return `<div class="g-row">${lab}<div class="g-lane" ${laneStyle}>${bar}${act}<span class="g-due mono" style="left:${x(r.point ? r.end : addDays(r.end, 1))}">${fmtMD(t.due)}</span></div></div>`;
     };
     // (大項目, 中項目) ごとに見出し行を入れて並べる。編集画面は、追加の入口になるので、大項目がなくても「（なし）」の見出しを常に出す。
     // 見出しは完了を隠していても残す（そのグループへ追加できるように）。レポート用は、見える行があるグループだけを出す

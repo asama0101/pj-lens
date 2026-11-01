@@ -209,3 +209,7 @@ test("app.js: 休みの期間登録の通知は、土日祝を営業日に数え
   assert.ok(i > 0);
   assert.match(src.slice(i, i + 700), /countWeekendsAndHolidays/);
 });
+
+test("app.js: ガントのドラッグ中のバーの幅は、期限日のマスを含める（描画と同じ。ne - ns + 1 日）", () => {
+  assert.match(src, /tg\.style\.left = pct\(ns\); tg\.style\.width = pct\(ne - ns \+ 1\);/);
+});

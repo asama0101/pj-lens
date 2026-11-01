@@ -1007,3 +1007,36 @@ test("renderSchedule(day): 土日祝を営業日に数える設定がオンな�
   assert.ok(!h.includes("土日・日本の祝日"));
   assert.ok(!day(on, "2026-10-25").includes("この日は休みです"), "日曜は休みでない");
 });
+
+// ---- ガントのバーは、開始日のマスから期限日のマスの右端まで（期限の日を含む） ----
+test("renderGantt: タスクのバー・プロジェクト全体のバー・実績のバーの右端は、期限（終了）日のマスの右端。期限の表示はその右に付く", () => {
+  const d = load();
+  const html = gantt(d, ["A"]);
+  const s0 = /data-s0="([^"]+)"/.exec(html)[1], span = +/data-span="(\d+)"/.exec(html)[1];
+  const edge = (date) => ((diffDays(date, s0) + 1) / span) * 100; // その日のマスの右端（%）
+  const right = (m) => +m[1] + +m[2];
+  const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 0.01, `${msg}: ${a} と ${b}`);
+  const A5 = d.tasks.find((t) => t.id === "A5"), P = d.projects.find((p) => p.id === "A");
+  const bar = /<i class="gbar[^"]*"[^>]*data-gt="A5"[^>]*style="left:([\d.]+)%;width:([\d.]+)%/.exec(html);
+  near(right(bar), edge(A5.due), "タスクのバー");
+  const sum = /<i class="gbar gsum"[^>]*style="left:([\d.]+)%;width:([\d.]+)%/.exec(html);
+  near(right(sum), edge(P.due), "プロジェクト全体のバー");
+  const act = /<i class="gact" style="left:([\d.]+)%;width:([\d.]+)%;[^>]*title="実績 10\/14〜10\/20"/.exec(html);
+  near(right(act), edge("2026-10-20"), "実績のバー");
+  const row = html.split('<div class="g-row">').find((r) => r.includes('data-gt="A5"'));
+  near(+/class="g-due mono" style="left:([\d.]+)%/.exec(row)[1], edge(A5.due), "タスクの期限の表示");
+  const sumRow = html.split('<div class="g-row g-sumrow">')[1];
+  near(+/class="g-due mono" style="left:([\d.]+)%/.exec(sumRow)[1], edge(P.due), "プロジェクト全体の期限の表示");
+});
+
+test("renderGantt: 開始と期限が同じ日のタスクは点（dot）で、期限の表示はその日の左端のまま（バーのように翌日へ動かさない）", () => {
+  const d = load();
+  const a1 = d.tasks.find((t) => t.id === "A1");
+  a1.start = a1.due; // 前のタスクなし・開始 = 期限 → 点
+  const html = gantt(d, ["A"]);
+  const s0 = /data-s0="([^"]+)"/.exec(html)[1], span = +/data-span="(\d+)"/.exec(html)[1];
+  assert.match(html, /<i class="dot mk[^"]*"[^>]*data-gt="A1"/, "点で描かれる");
+  const row = html.split('<div class="g-row">').find((r) => r.includes('data-gt="A1"'));
+  const left = +/class="g-due mono" style="left:([\d.]+)%/.exec(row)[1];
+  assert.ok(Math.abs(left - (diffDays(a1.due, s0) / span) * 100) < 0.01, `期限の表示は左端: ${left}`);
+});
