@@ -122,7 +122,7 @@ test("README: アンインストールで消えるもの・残るもの(H4)を�
 
 test("README: コマンド一覧に inbox・replan・holidays が無く、init・mcp・watch・intake がある。日程変更の例は /pj-lens:replan を使わない", () => {
   const readme = readFileSync(new URL("README.md", repoRoot), "utf8");
-  const table = readme.slice(readme.indexOf("### Claude Code に頼む"), readme.indexOf("#### 画面から頼む"));
+  const table = readme.slice(readme.indexOf("### コマンド一覧"), readme.indexOf("### 取り込み"));
   for (const n of ["init", "mcp", "watch", "intake"]) assert.ok(table.includes(`/pj-lens:${n}`), n);
   for (const n of ["inbox", "replan", "holidays"]) assert.ok(!readme.includes(`/pj-lens:${n}`), n);
 });
