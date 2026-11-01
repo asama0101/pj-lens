@@ -51,8 +51,8 @@ export function probePython(python, run = realRun) {
   return { path, ready: false, note: "Python " + MIN_PYTHON.join(".") + " 以上、かつ venv・ensurepip が必要です（この Python では足りません）。" };
 }
 
-/** venv の openpyxl が固定した版か */
-const isPinned = (py, pin, run, exists) => exists(py) && run(py, ["-c", "import sys, openpyxl; sys.exit(openpyxl.__version__ != " + JSON.stringify(pin) + ")"]).status === 0;
+/** venv の openpyxl が固定した版で、defusedxml（細工した xlsx の XML 爆弾を防ぐ）も入っているか */
+const isPinned = (py, pin, run, exists) => exists(py) && run(py, ["-c", "import sys, openpyxl, defusedxml; sys.exit(openpyxl.__version__ != " + JSON.stringify(pin) + ")"]).status === 0;
 
 /**
  * 診断のみ（何も変更しない）。戻り値: {usable, lines}。usable は専用環境が固定した版で使えること
@@ -64,7 +64,7 @@ export function diagnose(dir, { run = realRun, python, exists = existsSync, plat
   const lines = [
     "置き場: " + dir,
     "専用環境の Python: " + py + "（" + (exists(py) ? "あります" : "ありません") + "）",
-    "openpyxl: " + (usable ? "==" + pin + " で使えます" : "==" + pin + " が入っていません（未作成・版のずれ・壊れている）"),
+    "openpyxl: " + (usable ? "==" + pin + " で使えます" : "==" + pin + " と defusedxml が入っていません（未作成・版のずれ・defusedxml 不足・壊れている）"),
     "作成元の Python: " + (probe ? probe.path + (probe.ready ? "" : "（" + probe.note + "）") : "見つかりません（Python 3 を入れてください）"),
     "状態: " + (usable ? "使えます" : "専用環境が使えません。node tools/xlsx.js setup --data <置き場> で作成先と内容を確認し、承認後に --yes を付けて実行してください"),
   ];
@@ -74,16 +74,16 @@ export function diagnose(dir, { run = realRun, python, exists = existsSync, plat
 /**
  * venv と固定した版の openpyxl を用意する。無いものだけ作る・入れる。
  * 足りないのに approve が無いときは、何もせず {ok:false, needsApproval:true, message}。
- * 既にある venv で pip install が失敗したら（pip が壊れているなど）、venv を消して 1 回だけ作り直し、入れ直す。
+ * 既にある venv で pip install が失敗し、pip 自体も動かない（壊れている）ときは、venv を消して 1 回だけ作り直し、入れ直す。
  * 戻り値: {ok, python} か {ok:false, message}
  */
 export function ensureEnv(dir, { run = realRun, python, exists = existsSync, platform = process.platform, approve = false, pin = readPin(), requirements = REQUIREMENTS, pythonLabel = python?.join(" "), remove = (p) => rmSync(p, { recursive: true, force: true }) } = {}) {
   const py = venvPython(dir, platform);
   if (isPinned(py, pin, run, exists)) return { ok: true, python: py };
   if (!approve) {
-    return { ok: false, needsApproval: true, message: (exists(py) ? "Excel を読むための openpyxl の版が違います。入れ直してよいか（入れられないときは、venv を消して作り直します）" : "Excel を読むための環境がありません。次を作ってよいか") + "、利用者に確認してください。\n" +
+    return { ok: false, needsApproval: true, message: (exists(py) ? "Excel を読むための openpyxl の版が違うか、XML の爆弾を防ぐ defusedxml が入っていません。入れ直してよいか（pip が壊れているときは、venv を消して作り直します）" : "Excel を読むための環境がありません。次を作ってよいか") + "、利用者に確認してください。\n" +
       "  場所: " + join(dir, "venv") + "\n" +
-      "  内容: " + (exists(py) ? "" : "Python の venv と ") + "openpyxl==" + pin + "（依存の et_xmlfile も、ハッシュを固定して入れます。約 20 MB、ネットワークが必要）\n" +
+      "  内容: " + (exists(py) ? "" : "Python の venv と ") + "openpyxl==" + pin + "（依存の et_xmlfile と、細工した Excel の XML の爆弾を防ぐ defusedxml も、ハッシュを固定して入れます。約 20 MB、ネットワークが必要）\n" +
       "  作成元の Python: " + (pythonLabel ?? "見つかりません") + "（" + MIN_PYTHON.join(".") + " 以上、venv・ensurepip が必要）\n" +
       "承認されたら、setup に --yes を付けて実行します（node tools/xlsx.js setup --yes --data <置き場>）。承認されないときは、Excel を CSV に保存すれば Python なしで取り込めます。" };
   }
@@ -98,7 +98,7 @@ export function ensureEnv(dir, { run = realRun, python, exists = existsSync, pla
   const existed = exists(py);
   if (!existed) { const failed = create(); if (failed) return failed; }
   let r = install();
-  if (r.status !== 0 && existed && python) {
+  if (r.status !== 0 && existed && python && run(py, ["-m", "pip", "--version"]).status !== 0) { // pip 自体が壊れているときだけ。オフラインなどで入れられないだけなら、動いている venv を消さない
     try { remove(venvDir); } catch (e) {
       return { ok: false, message: "壊れた venv を消せませんでした（" + venvDir + "）。使用中のプログラムを閉じるか、フォルダを手で消してから、もう一度実行してください。" + e.message };
     }
