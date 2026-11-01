@@ -21,10 +21,10 @@ test("app.js: 状態の変更は changeStatus に集め、select とスケジュ
   assert.match(src, /const scheduleOpts = \(\) => \(\{[^\n]*pendingDone: S\.pendingDone/);
 });
 
-test("app.js・index.html: 開始画面の案内、確認パネルの理由の初期値、帯の対象の引き継ぎ、#toast の role", () => {
+test("app.js・index.html: 開始画面の案内、帯の対象の引き継ぎ、#toast の role", () => {
   assert.ok(!src.includes("data/sample.json"));
   assert.ok(src.includes("/pj-lens:init") && src.includes(".pj-lens/data.json"));
-  assert.match(src, /S\.pendingReplan = \{[^\n]*reason: "画面で調整"/);
+  assert.doesNotMatch(src, /pendingReplan|dueChange|replanAction/, "期限を変えたときの確認パネルは持たない（前後の確認は Claude Code に頼む）");
   const toggle = src.slice(src.indexOf('q("[data-ib-toggle]")'));
   assert.match(toggle.slice(0, 400), /!S\.ib\.projectId && S\.filter !== "all"[^\n]*S\.ib\.projectId = S\.filter/);
   const html = readFileSync(new URL("../plugins/pj-lens/src/ui/index.html", import.meta.url), "utf8");

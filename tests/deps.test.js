@@ -11,8 +11,9 @@ test("depPath: 後続の左端が先行の右端と同じ位置のとき、手�
 });
 
 test("depMarkup: タスク ID の引用符・山括弧を HTML のエスケープにして、属性を壊さない", () => {
-  const html = depMarkup({ to: 'x"><img src=x onerror=alert(1)>', d: "M1,2 H3", left: 10, y: 5 });
-  assert.doesNotMatch(html, /"><img/);
+  const html = depMarkup({ from: 'f"><b>', to: 'x"><img src=x onerror=alert(1)>', d: "M1,2 H3", left: 10, y: 5 });
+  assert.doesNotMatch(html, /"><img|"><b>/);
+  assert.match(html, /data-from="f&quot;&gt;&lt;b&gt;"/);
   assert.match(html, /data-to="x&quot;&gt;&lt;img src=x onerror=alert\(1\)&gt;"/);
   assert.match(html, /<path d="M1,2 H3"\/>/);
   assert.match(html, /<polygon points="9,5 4,1\.5 4,8\.5"\/>/);

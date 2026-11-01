@@ -3,19 +3,19 @@ body{margin:0}
 /* Layout: 上部に画面切替、俯瞰はプロジェクト別のタイムライン（機器ラックのように1案件=1段）＋右に今日の優先 */
 :root{
   --bg:#F0F3F7; --surface:#FFFFFF; --ink:#16202E; --muted:#5A6678; --line:#D6DDE8; --line-soft:#E8ECF3;
-  --accent:#0B6E8A; --accent-soft:#DCEEF4; --pre:#C2670A;
+  --accent:#0B6E8A; --accent-soft:#DCEEF4; --pre:#C2670A; --next:#2E7D32;
   --ok:#2E7D5B; --warn:#B26B00; --warn-soft:#FBEBD0; --bad:#C23A3A; --bad-soft:#F9DEDE;
   --todo:#8794A8; --meeting:#EBE4F7; --meeting-ink:#43346F; --meeting-edge:#7B5CC4; --free:#E9F4EC;
   --f-body:"BIZ UDPGothic","Yu Gothic UI","Meiryo",sans-serif; --f-mono:ui-monospace,Consolas,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0E1520; --surface:#162030; --ink:#E5EBF3; --muted:#9AA7B9; --line:#2A3850; --line-soft:#1F2C40;
-  --accent:#55B8D4; --accent-soft:#17323D; --pre:#E8963F;
+  --accent:#55B8D4; --accent-soft:#17323D; --pre:#E8963F; --next:#6CC070;
   --ok:#5CC08F; --warn:#E3A94B; --warn-soft:#3A2D14; --bad:#EE7B7B; --bad-soft:#3B1D1F;
   --todo:#7B889C; --meeting:#2D2548; --meeting-ink:#D3C9F0; --meeting-edge:#9C84E0; --free:#14301F; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0E1520; --surface:#162030; --ink:#E5EBF3; --muted:#9AA7B9; --line:#2A3850; --line-soft:#1F2C40;
-  --accent:#55B8D4; --accent-soft:#17323D; --pre:#E8963F;
+  --accent:#55B8D4; --accent-soft:#17323D; --pre:#E8963F; --next:#6CC070;
   --ok:#5CC08F; --warn:#E3A94B; --warn-soft:#3A2D14; --bad:#EE7B7B; --bad-soft:#3B1D1F;
   --todo:#7B889C; --meeting:#2D2548; --meeting-ink:#D3C9F0; --meeting-edge:#9C84E0; --free:#14301F; color-scheme:dark}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.6;
@@ -277,7 +277,6 @@ label{font-size:13px}
 .g-add .in{font-size:12px;padding:3px 8px;background:transparent;border-style:dashed}
 .g-add .g-lane{height:34px}
 .gdrag{cursor:grab}
-.gbar.fixl{cursor:default}
 .gh{position:absolute;top:0;bottom:0;width:8px;cursor:ew-resize;z-index:3}
 .gh.l{left:-2px}.gh.r{right:-2px}
 .gsum .gh{width:7px}.gsum .gh.l{left:0}.gsum .gh.r{right:0}
@@ -351,12 +350,6 @@ tr.hl td{transition:background .3s}
 .side-toggle{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + 8px);align-self:start;width:14px;height:64px;padding:0;border:1px solid var(--line);border-radius:4px;background:var(--line-soft);color:var(--muted);font:inherit;font-size:12px;line-height:1;cursor:pointer}
 .side-toggle:hover,.side-toggle:focus-visible{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
 @media(max-width:900px){.cols,.cols.one{grid-template-columns:minmax(0,1fr)}.side-toggle{position:static;width:100%;height:20px}}
-.replan{border:2px solid var(--accent);display:flex;flex-direction:column;gap:12px;margin-bottom:16px}
-.rp-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px}
-.rp-head h2{font-size:15px;margin:0}
-.replan .over td{background:var(--bad-soft)}
-.replan .over .nd{color:var(--bad)}
-.rp-warn{background:var(--bad-soft);color:var(--bad);border-radius:6px;padding:8px 12px;font-size:13px}
 .rp-ctl{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end}
 .rp-ctl label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted)}
 .rp-ctl label.chk{flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-size:13px}
@@ -436,9 +429,20 @@ body{padding-block:16px 76px}
 .gdep polygon{fill:var(--muted);opacity:.5}
 .gbody.dep-hide .gdeps{display:none}
 .gbody.dep-focus .gdep{opacity:.25}
-.gbody.dep-focus .gdep.dep-on{opacity:1}
+.gbody.dep-focus .gdep.dep-on,.gbody.dep-focus .gdep.dep-out{opacity:1}
 .gbody.dep-focus .gdep.dep-on path{stroke:var(--pre);stroke-width:1.8;opacity:1}
 .gbody.dep-focus .gdep.dep-on polygon{fill:var(--pre);opacity:1}
-.gbody.dep-focus [data-gt]:not(.dep-self):not(.dep-pre){opacity:.35}
+.gbody.dep-focus .gdep.dep-out path{stroke:var(--next);stroke-width:1.8;opacity:1}
+.gbody.dep-focus .gdep.dep-out polygon{fill:var(--next);opacity:1}
+.gbody.dep-focus [data-gt]:not(.dep-self):not(.dep-pre):not(.dep-next){opacity:.35}
 .gbody [data-gt].dep-self{background:var(--accent)!important}
 .gbody [data-gt].dep-pre{background:var(--pre)!important}
+.gbody [data-gt].dep-next{background:var(--next)!important}
+/* ガントチャートの編集の窓(タスク名・バーのクリックで開く)。クリックした位置の近くに固定で置く */
+.tpop{position:fixed;z-index:30;width:320px;max-width:calc(100vw - 16px);max-height:calc(100vh - 72px);overflow:auto;box-sizing:border-box;background:var(--surface);border:1px solid var(--accent);border-radius:8px;padding:10px 12px;box-shadow:0 6px 24px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:8px}
+.tpop .tp-h{display:flex;align-items:center;gap:8px}
+.tpop .tp-h .muted{flex:1;font-size:12px}
+.tpop .tp-f{display:flex;flex-direction:column;gap:2px;font-size:12px}
+.tpop .tp-f .in{width:100%;box-sizing:border-box;min-width:0}
+.tpop .tp-r{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+.tpop .tp-a{display:flex;gap:8px;justify-content:space-between}

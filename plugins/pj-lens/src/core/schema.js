@@ -96,8 +96,7 @@ export function validate(data, now = nowLocal()) {
     if (isDate(t.due) && predDue.length && predDue.reduce((a, b) => (a > b ? a : b)) > t.due) warn(`タスク ${t.id}: 前のタスクの期限が自分の期限より後です`);
     if (t.waitingOn && !isDate(t.waitingOn.since)) err(`タスク ${t.id}: 待ち開始日 (waitingOn.since) の形式が不正です`);
     if (t.status === "Waiting" && !t.waitingOn) warn(`タスク ${t.id}: Waiting なのに待ち先 (waitingOn) がありません`);
-    if (preds.length && t.start != null) warn(`タスク ${t.id}: 前のタスクがあるため start は無視されます`);
-    if (!preds.length && isDate(t.start) && isDate(t.due) && t.start > t.due) warn(`タスク ${t.id}: 開始日が期限より後です`);
+    if (isDate(t.start) && isDate(t.due) && t.start > t.due) warn(`タスク ${t.id}: 開始日が期限より後です`);
 
     for (const s of t.sessions ?? []) {
       const label = `タスク ${t.id} の枠 ${s.id}`;

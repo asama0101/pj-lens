@@ -6,7 +6,8 @@ import { renderProjects } from "../plugins/pj-lens/src/ui/views/project.js";
 import { renderGantt } from "../plugins/pj-lens/src/ui/views/gantt.js";
 import { renderPrio, renderTodayTasks, todayTaskIds } from "../plugins/pj-lens/src/ui/views/prio.js";
 import { renderSettings } from "../plugins/pj-lens/src/ui/views/settings.js";
-import { renderInboxBar } from "../plugins/pj-lens/src/ui/views/inboxpanel.js";
+import { renderTaskPop } from "../plugins/pj-lens/src/ui/views/taskpop.js";
+import { renderInboxBar, ibExamples } from "../plugins/pj-lens/src/ui/views/inboxpanel.js";
 import { ruleMeetingCounts } from "../plugins/pj-lens/src/core/rules.js";
 import { renderSchedule, snapStart } from "../plugins/pj-lens/src/ui/views/schedule.js";
 import { taskActual } from "../plugins/pj-lens/src/core/sessions.js";
@@ -78,9 +79,9 @@ test("renderProjects(list): 状態（英語表記）・待ち先・日程変更�
   assert.ok(html.includes('value="ベンダーX"'));
   assert.ok(html.includes("ベンダーX の納期回答が遅れたため"));
   assert.ok(html.includes("3.5h・初回 10/14・3回"), "A5 の実績");
-  assert.ok(html.includes("前のタスクから"), "前のタスクありは開始が読み取り専用");
+  assert.ok(html.includes("前のタスクから"), "前のタスクがあり、開始日の指定がないときは、決まる日と『前のタスクから』を添える");
   assert.ok(html.includes('type="date" data-f="start" data-id="A5"'), "前のタスクなしは開始日を入力できる");
-  assert.ok(!html.includes('data-f="start" data-id="A6"'));
+  assert.ok(html.includes('data-f="start" data-id="A6"'), "前のタスクありでも開始日を入力できる");
 });
 
 test("renderGantt: 行数＝タスク数、今日の線、マイルストーン、実績の線は実績のあるタスクだけ", () => {
@@ -126,7 +127,7 @@ test("renderGantt: タスク 0 件。編集画面は「（なし）」見出し�
 
 // プロジェクト C の 3 件に大項目・中項目を付ける（保存順 C1, C2, C3）
 const setC = (d, spec) => { for (const [id, group, subgroup, status] of spec) Object.assign(d.tasks.find((t) => t.id === id), { group, subgroup, ...(status ? { status } : {}) }); return d; };
-const gotoOrder = (html) => [...html.matchAll(/data-goto="([^"]+)"/g)].map((m) => m[1]);
+const gotoOrder = (html) => [...html.matchAll(/data-gedit="([^"]+)"/g)].map((m) => m[1]);
 
 test("ガント: 大項目ごとの見出し行に「＋」があり、最下部の入力行はない", () => {
   const html = gantt(load(), ["A"]);
@@ -142,7 +143,7 @@ test("ガント: 保存順が X/a, Y/b, X/c でも、X の2件が続けて並ぶ
 test("ガント: 大項目の絞り込み・完了を隠す中でも、グループの見出しが残る", () => {
   const d = setC(load(), [["C1", "X", "a"], ["C2", "Y", "b", "Done"], ["C3", "X", "c"]]);
   const html = gantt(d, ["C"], { hideDone: true });
-  assert.ok(html.includes('data-ag="Y"') && !html.includes('data-goto="C2"'));
+  assert.ok(html.includes('data-ag="Y"') && !html.includes('data-gedit="C2"'));
   const only = gantt(d, ["C"], { group: "X" });
   assert.ok(only.includes('data-ag="X"') && !only.includes('data-ag="Y"') && !only.includes('data-gopen="C" data-ag="" '));
 });
@@ -194,13 +195,13 @@ test("利用者入力はエスケープされる", () => {
   }
 });
 
-test("前のタスクありのバーに左端のつまみがなく、前のタスクなしにはある", () => {
+test("前のタスクがあるバーにも、左端のつまみがある（前のタスクとの関係は見ない）", () => {
   const html = gantt(load(), ["A"]);
   const bar = (id) => new RegExp(`<i class="gbar[^"]*"[^>]*data-gt="${id}"[^>]*>(.*?)</i>`).exec(html)?.[1] ?? "";
-  assert.ok(!bar("A4").includes('data-gh="l"'));
+  assert.ok(bar("A4").includes('data-gh="l"'));
   assert.ok(bar("A4").includes('data-gh="r"'));
   assert.ok(bar("A5").includes('data-gh="l"'));
-  assert.ok(html.includes("data-gp=") && html.includes("data-gms=") && html.includes("data-goto=") && html.includes("data-gopen="));
+  assert.ok(html.includes("data-gp=") && html.includes("data-gms=") && html.includes("data-gedit=") && html.includes("data-gopen="));
 });
 
 test("readonly（レポート用）は編集用の属性を出さない", () => {
@@ -403,7 +404,7 @@ test("大項目で絞り込んでも、その大項目を持たないプロジ�
   assert.ok(list.includes('data-addat="B" data-ag="X" data-asg=""'), "リスト");
   const g = gantt(d, ["B"], { group: "X" });
   assert.ok(g.includes('data-gopen="B" data-ag="X" data-asg=""'), "ガント");
-  assert.equal(count(g, /data-goto="/g), 0);
+  assert.equal(count(g, /data-gedit="/g), 0);
 });
 
 test("ガント: 編集画面の凡例は上端（固定の帯）にあり、レポート用（readonly）は従来どおり下にある", () => {
@@ -1083,4 +1084,30 @@ test("renderGantt: 先行タスクのあるバーに data-pre（空白区切り�
   assert.match(html, /data-gt="A2"[^>]*data-pre="A1"/);
   assert.doesNotMatch(html, /data-gt="A1"[^>]*data-pre=/);
   assert.equal(count(gantt(d, ["A"], { readonly: true }), /data-pre=/g), 0);
+});
+
+test("ibExamples: 依頼の例は、対象のプロジェクトの終わっていないタスクの ID で埋める。別のプロジェクトの ID を混ぜない", () => {
+  const data = { tasks: [
+    { id: "X1", projectId: "X", status: "Done" }, { id: "X2", projectId: "X", status: "To Do" }, { id: "X3", projectId: "X", status: "Doing" },
+    { id: "Y1", projectId: "Y", status: "To Do" },
+  ] };
+  const ex = ibExamples(data, "X", "2026-11-01");
+  assert.equal(ex.due, "X2 が 5 日遅れた（原因: ベンダー）。");
+  assert.match(ex.pred, /^X2 の後に X3, X1 を結んで/, "終わっていないものを先に、足りなければ終わったもの");
+  assert.match(ex.add, /結合テスト 2026-11-15 .*前のタスク X2$/, "期限の例は今日の 14 日後");
+  assert.match(ibExamples(data, "", "2026-11-01").due, /^X2 /, "対象が空なら、先頭のタスクのプロジェクト");
+  assert.match(ibExamples(data, "Y", "2026-11-01").pred, /^Y1 の後に Y1, Y1 /, "足りなければ最後の ID を繰り返す");
+  assert.ok(!Object.values(ex).some((s) => /[<>]/.test(s)), "<…> の穴埋めを残さない");
+  assert.match(ibExamples({ tasks: [] }, "", "2026-11-01").due, /^A1 /);
+});
+
+test("renderTaskPop: 件名・メモ・ID はエスケープされ、窓には編集の入力と「リストで開く」「削除」が出る", () => {
+  const d = load();
+  const t = d.tasks.find((x) => x.id === "A4"); t.title = '"><img src=x onerror=1>'; t.memo = "<script>x</script>";
+  const html = renderTaskPop(d, { id: "A4", x: 10.4, y: 20.6 }, "<select>状態</select>");
+  assert.ok(!html.includes("<img src=x") && !html.includes("<script>x"));
+  for (const k of ["title", "start", "due", "importance", "memo"]) assert.ok(html.includes(`data-f="${k}" data-id="A4"`), k);
+  assert.ok(html.includes('data-goto="A4"') && html.includes('data-del="A4"') && html.includes("data-addpre=\"A4\"") || html.includes('data-rmpre="A4|A3"'));
+  assert.ok(html.includes("left:10px;top:21px") && html.includes("<select>状態</select>"));
+  assert.equal(renderTaskPop(d, { id: "ZZ", x: 0, y: 0 }, ""), "");
 });

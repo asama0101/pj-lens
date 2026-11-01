@@ -45,13 +45,15 @@ test("timeTicks: 日・週・月・四半期", () => {
   assert.equal(long.length, 18);
 });
 
-test("taskStart: 前のタスクの期限の最大値／start／due", () => {
+test("taskStart: start があればそれ／なければ前のタスクの期限の最大値／それもなければ due", () => {
   const d = mk([
     { id: "T1", due: "2026-10-10" }, { id: "T2", due: "2026-10-14" },
     { id: "T3", due: "2026-10-30", start: "2026-10-01", predecessors: ["T1", "T2"] },
     { id: "T4", due: "2026-10-30", start: "2026-10-05" }, { id: "T5", due: "2026-10-30" },
+    { id: "T6", due: "2026-10-30", predecessors: ["T1", "T2"] },
   ]);
-  assert.equal(taskStart(d, "T3"), "2026-10-14");
+  assert.equal(taskStart(d, "T3"), "2026-10-01"); // start を指定したら、前のタスクがあってもその日
+  assert.equal(taskStart(d, "T6"), "2026-10-14");
   assert.equal(taskStart(d, "T4"), "2026-10-05");
   assert.equal(taskStart(d, "T5"), "2026-10-30");
 });

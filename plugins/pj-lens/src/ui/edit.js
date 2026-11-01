@@ -83,7 +83,7 @@ export function updateTask(data, taskId, patch, today = nowLocal().date) {
     } else {
       n.waitingOn = null;
     }
-    if (!n.predecessors?.length && n.start && n.start > n.due) throw new Error("開始日は期限以前にしてください");
+    if (n.start && n.start > n.due) throw new Error("開始日は期限以前にしてください");
     return n;
   });
 }
@@ -156,23 +156,23 @@ export function moveMilestone(data, projectId, index, days) {
 }
 
 // ---- ガントのドラッグ ----
-/** mode: "start" | "due" | "both"。前のタスクがあるタスクの開始は前のタスクの期限から決まるので、動かせるのは期限だけ */
+/** mode: "start" | "due" | "both"。前のタスクとの関係は見ない（開始を動かすと、その日が start として保存される） */
 export function moveTaskDates(data, taskId, mode, days) {
   const t = data.tasks.find((x) => x.id === taskId);
   if (!t) throw new Error(`タスク ${taskId} がありません`);
   if (!days) return { data };
-  const hasPre = (t.predecessors ?? []).length > 0;
-  if (hasPre && mode !== "due") return { data, error: "開始は前のタスクの期限から決まるため、動かせるのは期限だけです" };
   const patch = {};
-  if (mode === "start" || mode === "both") patch.start = addDays(t.start ?? t.due, days);
+  if (mode === "start" || mode === "both") patch.start = addDays(taskStart(data, taskId), days);
   if (mode === "due" || mode === "both") patch.due = addDays(t.due, days);
-  const due = patch.due ?? t.due;
-  if (hasPre ? due < taskStart(data, taskId) : (patch.start ?? t.start ?? due) > due) {
-    return { data, error: hasPre ? "期限を前のタスクの期限より前にはできません" : "開始日が期限より後になります" };
-  }
-  const next = mapTask(data, taskId, (x) => ({ ...x, ...patch }));
-  const later = patch.due ? data.tasks.filter((u) => (u.predecessors ?? []).includes(taskId) && u.due < patch.due).map((u) => u.id) : [];
-  return { data: next, ...(later.length && { warning: `次のタスク ${later.join(", ")} の期限より後になりました（「Claude Code に依頼する」で見直せます）` }) };
+  if ((patch.start ?? t.start ?? "") > (patch.due ?? t.due)) return { data, error: "開始日が期限より後になります" };
+  return { data: mapTask(data, taskId, (x) => ({ ...x, ...patch })) };
+}
+
+/** 前のタスクを足す。指定してあった開始日は外す（開始日は前のタスクの期限から決まる形に戻る。「Claude Code に依頼する」で足したときと同じ） */
+export function addPredecessor(data, taskId, predId, today = nowLocal().date) {
+  const t = data.tasks.find((x) => x.id === taskId);
+  if (!t) throw new Error(`タスク ${taskId} がありません`);
+  return updateTask(data, taskId, { predecessors: [...(t.predecessors ?? []), predId], ...(t.start && { start: null }) }, today);
 }
 
 export function moveProjectDates(data, projectId, edge, days) {
