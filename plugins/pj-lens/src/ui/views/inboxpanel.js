@@ -30,6 +30,10 @@ function sectionHtml(data, s) {
     const rows = s.rows.map((r) => `<li><span class="mono">${esc(r.predId)} → ${esc(r.taskId)}</span> <span class="pill ${r.action === "same" ? "off" : "ok"}">${label[r.action] ?? esc(r.action)}</span> <span class="muted">${taskLabel(data, r.predId)} → ${taskLabel(data, r.taskId)}</span></li>`).join("");
     return `<div class="ib-sec"><b>先行の対応付け</b><ul class="ib-list">${rows}</ul></div>`;
   }
+  if (s.kind === "project") {
+    const rows = s.rows.map((r) => `<tr><td class="id">${esc(r.id)}</td><td>${esc(r.name)}</td><td>${esc(r.type)}</td><td class="mono">${fmtMD(r.start)}</td><td class="mono">${fmtMD(r.due)}</td></tr>`).join("");
+    return `<div class="ib-sec"><b>プロジェクトの追加（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>ID</th><th>名前</th><th>種別</th><th>開始日</th><th>期限</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
   if (s.kind === "add") {
     const rows = s.rows.map((r, i) => `<tr data-row="${i + 1}"><td class="mono">${i + 1}</td><td>${esc(r.title)}</td><td>${r.group ? esc(r.group) : "（なし）"}${r.subgroup ? ` ▸ ${esc(r.subgroup)}` : ""}</td><td class="mono">${esc(r.businessDays ?? "—")}</td><td class="mono">${fmtMD(r.due)}</td><td class="mono">${(r.predecessors ?? []).length ? esc(r.predecessors.join(", ")) : "—"}</td></tr>`).join("");
     return `<div class="ib-sec"><b>タスクの登録（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>#</th><th>件名</th><th>大項目 ▸ 中項目</th><th>営業日</th><th>期限</th><th>先行</th></tr></thead><tbody>${rows}</tbody></table></div>`;

@@ -1,12 +1,12 @@
 // 受信箱の依頼の「変更の操作（ops）」の計画と適用。HTML と CLI（tools/inbox.js）が共有する。
 // 計画（planOps）は、操作を作業用のコピーに当てて、変更案の表・警告・適用前の確認用の値（base）を作る。データは変えない。
 // 適用（applyProposal）は、base が現在のデータと同じときだけ、同じ手順で操作を当てて、変更履歴を足す。
-// 当てる順: addTask → addPred・removePred → moveDue（それぞれ書かれた順）。後続の動きは computeImpact の規則に合わせる。
-import { diffDays, dueAfter } from "../core/dates.js";
+// 当てる順: addProject → addTask → addPred・removePred → moveDue（それぞれ書かれた順）。後続の動きは computeImpact の規則に合わせる。
+import { addDays, diffDays, dueAfter } from "../core/dates.js";
 import { calendarOf } from "../core/holidays.js";
 import { computeImpact } from "../core/impact.js";
-import { CAUSES, OP_KINDS, isClosed, validate } from "../core/schema.js";
-import { addTask, updateTask } from "./edit.js";
+import { CAUSES, OP_KINDS, PROJECT_TYPE, isClosed, validate } from "../core/schema.js";
+import { addProject, addTask, updateTask } from "./edit.js";
 
 const max = (a, b) => (a > b ? a : b);
 
@@ -27,6 +27,8 @@ function simulate(data, ops, today) {
   const predRows = [], addInfo = [], moves = [];
   const inboxIds = new Set();   // source: inbox の記録に載せるタスク
   const projects = new Set();
+  const projectRefs = new Map(); // addProject の ref → 採番した ID
+  const newProjects = [];        // { ref, id, dueGiven }
   let predCount = 0, addCount = 0;
 
   const setDue = (id, due, reason) => {
@@ -43,6 +45,24 @@ function simulate(data, ops, today) {
     for (const s of w.tasks.filter((x) => (x.predecessors ?? []).includes(id))) raise(s.id, minDue, `先行 ${id} の遅れ`, group);
   };
   const resolve = (token) => refs.get(token) ?? token;
+
+  // ⓪ addProject（書かれた順に。ID は画面の「プロジェクトを追加」と同じ規則で採番する）
+  for (const o of ops.filter((x) => x.op === "addProject")) {
+    const ref = String(o.ref ?? "").trim();
+    if (!ref) throw new Error("addProject には ref が必要です");
+    if (data.projects.some((p) => p.id === ref)) throw new Error(`addProject の ref "${ref}" は既存のプロジェクト ID と同じです。別の名前にしてください`);
+    if (projectRefs.has(ref)) throw new Error(`addProject の ref "${ref}" が重複しています`);
+    if (o.type !== undefined && !PROJECT_TYPE.includes(o.type)) throw new Error(`不明な種別です: ${o.type}`);
+    w = addProject(w, { name: o.name, type: o.type }, today);
+    const id = w.projects.at(-1).id;
+    const patch = {};
+    if (o.start !== undefined) patch.start = o.start;
+    if (o.due !== undefined) patch.due = o.due;
+    w = { ...w, projects: w.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)) };
+    projectRefs.set(ref, id);
+    newProjects.push({ ref, id, dueGiven: o.due !== undefined });
+  }
+  const pidOf = (o) => projectRefs.get(o.projectId) ?? o.projectId;
 
   // ① addTask（まず全部足し、先行は、足し終えてから結ぶ。ref で別の addTask を指せるように）
   // businessDays 指定の期限は、先行（既存のタスク、または別の addTask の ref）が決まってから計算する。ops の書く順には依存しない
@@ -81,11 +101,11 @@ function simulate(data, ops, today) {
     planned.set(o, o.businessDays === undefined ? o : (({ businessDays, ...rest }) => ({ ...rest, due }))(o));
     // 開始日: 書かれていればそのとおり。先行があるタスクは入れない（先行から決まる。入れると validate の注意が出る）。なければ今日（期限が過去なら入れない）
     const start = o.start ?? ((o.predecessors ?? []).length || due < today ? null : today);
-    w = addTask(w, { projectId: o.projectId, title: o.title, due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
+    w = addTask(w, { projectId: pidOf(o), title: o.title, due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
     const id = w.tasks.at(-1).id;
     refs.set(ref, id);
     inboxIds.add(id);
-    projects.add(o.projectId);
+    if (!projectRefs.has(o.projectId) && !newProjects.some((n) => n.id === o.projectId)) projects.add(o.projectId);
     addCount++;
   }
   for (const o of adds) {
@@ -154,6 +174,20 @@ function simulate(data, ops, today) {
     for (const x of ids) if (before.has(x)) touched.add(x);
   }
 
+  // 新規プロジェクトの期限と開始日（期限は指定がなければ、そのプロジェクトのタスクの最終的な期限の最大値。タスクが無ければ 30 日後）
+  const projectRows = newProjects.map(({ ref, id, dueGiven }) => {
+    const mine = w.projects.find((p) => p.id === id);
+    const latest = w.tasks.filter((t) => t.projectId === id).map((t) => t.due).reduce(max, "");
+    if (!dueGiven) {
+      const due = max(latest || addDays(today, 30), mine.start);
+      w = { ...w, projects: w.projects.map((p) => (p.id === id ? { ...p, due } : p)) };
+    } else if (latest > mine.due) {
+      warnings.push(`${mine.name}の期限（${mine.due}）を超えます（最後のタスクは ${latest}）`);
+    }
+    const p = w.projects.find((x) => x.id === id);
+    return { ref, id, name: p.name, type: p.type, start: p.start, due: p.due };
+  });
+
   const { errors } = validate(w);
   if (errors.length) throw new Error(errors.join(" / "));
 
@@ -178,22 +212,25 @@ function simulate(data, ops, today) {
   }
   const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, businessDays: o.businessDays ?? null, start: t.start ?? null, predecessors: o.predecessors ?? [] }; });
   const sections = [];
+  if (projectRows.length) sections.push({ kind: "project", rows: projectRows });
   if (addRows.length) sections.push({ kind: "add", rows: addRows });
   if (predRows.length) sections.push({ kind: "pred", rows: predRows });
   if (dueRows.length) sections.push({ kind: "due", rows: dueRows });
-  return { data: w, ops: ops.map((o) => planned.get(o) ?? o), sections, warnings, base: { tasks: baseTasks, projects: [...projects].sort() }, moves, inboxIds: [...inboxIds], predCount, addCount };
+  return { data: w, ops: ops.map((o) => planned.get(o) ?? o), sections, warnings, base: { tasks: baseTasks, projects: [...projects].sort() }, moves, inboxIds: [...inboxIds], predCount, addCount, projectCount: projectRows.length };
 }
 
 /** 変更案の表の同一性（提案と、いまのデータでの計算結果の比較用）。登録する開始日の既定（日付で変わる）と、理由の文は含めない */
 const sectionsKey = (sections) => JSON.stringify(sections.map((s) => [s.kind, s.rows.map((r) =>
   s.kind === "due" ? [r.taskId, r.oldDue, r.newDue]
+    : s.kind === "project" ? [r.ref, r.id, r.name, r.type]
     : s.kind === "pred" ? [r.taskId, r.predId, r.action]
       : [r.ref, r.title, r.projectId, r.group, r.subgroup, r.due, r.predecessors])]));
 
-/** 変更案（sections）の要約。例: 「期限 2 件・先行 1 件・登録 2 件」（変更なしの先行は数えない） */
+/** 変更案（sections）の要約。例: 「期限 2 件・先行 1 件・登録 2 件」（変更なしの先行は数えない）。プロジェクトの追加があるときだけ、先頭に「プロジェクト N 件・」が付く */
 export function summarizeSections(sections) {
   const n = (kind) => sections.find((s) => s.kind === kind)?.rows.filter((r) => r.action !== "same").length ?? 0;
-  return `期限 ${n("due")} 件・先行 ${n("pred")} 件・登録 ${n("add")} 件`;
+  const projects = n("project") ? `プロジェクト ${n("project")} 件・` : "";
+  return `${projects}期限 ${n("due")} 件・先行 ${n("pred")} 件・登録 ${n("add")} 件`;
 }
 
 /** 操作の計画（データは変えない）。例外: 不明なタスク・プロジェクト、循環、別のプロジェクトの先行、完了済みの moveDue、不明な op、など */
@@ -219,8 +256,9 @@ export function applyProposal(data, proposal, { reason, cause, today }) {
   if (proposal.sections && sectionsKey(s.sections) !== sectionsKey(proposal.sections)) throw stale();
   const log = [...(s.data.changeLog ?? [])];
   for (const m of s.moves) log.push({ at: today, taskIds: m.taskIds, reason: why, cause, deltaDays: m.deltaDays });
-  if (s.predCount || s.addCount) {
-    log.push({ at: today, taskIds: s.inboxIds, reason: `受信箱: 先行 ${s.predCount} 件・登録 ${s.addCount} 件`, cause: null, deltaDays: 0, source: "inbox" });
+  if (s.predCount || s.addCount || s.projectCount) {
+    const projects = s.projectCount ? `プロジェクト ${s.projectCount} 件・` : "";
+    log.push({ at: today, taskIds: s.inboxIds, reason: `受信箱: ${projects}先行 ${s.predCount} 件・登録 ${s.addCount} 件`, cause: null, deltaDays: 0, source: "inbox" });
   }
   const out = { ...s.data, changeLog: log };
   const { errors } = validate(out);

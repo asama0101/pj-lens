@@ -646,6 +646,18 @@ test("受信箱の提案カード: 登録の行に 1 始まりの行番号（dat
   assert.ok(html.includes('data-row="1"') && html.includes('data-row="2"') && !html.includes('data-row="3"'));
 });
 
+test("受信箱の提案カード: プロジェクトの追加の表（ID・名前・種別・開始日・期限）が登録の表の前に出る。名前は escape される", () => {
+  const evil = "<b>旅行</b>";
+  const sections = [
+    { kind: "project", rows: [{ ref: "p1", id: "D", name: evil, type: "増設", start: "2026-10-21", due: "2026-12-20" }] },
+    { kind: "add", rows: [{ ref: "t1", title: "要件確認", projectId: "D", group: null, subgroup: null, due: "2026-12-20", start: null, predecessors: [] }] },
+  ];
+  const html = ib(withInbox([reqOf("R1", "proposed", { proposal: { ...PROPOSAL, sections } })]), { open: true });
+  assert.ok(html.includes("プロジェクトの追加（1 件）") && html.includes("&lt;b&gt;旅行") && html.includes("増設"));
+  assert.ok(!html.includes("<b>旅行</b>"));
+  assert.ok(html.indexOf("プロジェクトの追加") < html.indexOf("タスクの登録"));
+});
+
 test("受信箱の履歴: 処理待ち・処理中でも、2 件目以降のやりとり（修正の依頼）を出す。依頼文は 1 回だけ", () => {
   for (const status of ["pending", "working"]) {
     const thread = [{ role: "user", at: T0, text: "最初の依頼文" }, { role: "claude", at: T0, text: "提案の要約です" }, { role: "user", at: T0, text: "3 行目を 10 日にして" }];

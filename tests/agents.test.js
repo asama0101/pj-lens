@@ -83,6 +83,15 @@ test("inbox: addTask は businessDays（due と排他）で営業日を書き、
   assert.doesNotMatch(t, /期限が書かれていない/);
 });
 
+test("inbox: addProject の書き方（ref・name・type）、addTask.projectId に ref を書けること、タスク 3〜5 件の目安が書かれ、プロジェクトの追加は対象外に書かれていない", () => {
+  const t = read("agents/inbox.md");
+  for (const w of ["addProject", "3〜5 件", "操作は 5 種類"]) assert.ok(t.includes(w), w);
+  assert.match(t, /projectId.*ref|ref.*projectId/);
+  const outOfScope = /\*\*対象外の依頼\*\*[^\n]*/.exec(t)?.[0] ?? "";
+  assert.ok(outOfScope, "対象外の依頼の行がある");
+  assert.doesNotMatch(outOfScope, /プロジェクト・会議の追加/);
+});
+
 test("replan: 原因が読み取れないときは『その他』にして聞き返さない", () => {
   const t = read("agents/replan.md");
   assert.match(t, /その他.*聞き返さ|聞き返さ.*その他/);
