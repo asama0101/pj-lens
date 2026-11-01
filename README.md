@@ -238,10 +238,6 @@ Claude Code がデータを直したあと、画面は自動で読み直しま�
 | 読み込み時に「注意: settings.…」と出る | `settings` の値の形が違います（例: 勤務時間が `9:00`）。「設定」タブで直せる項目は、そこで直します。それ以外は、`.pj-lens/data.json` を上の例の書式に合わせて直します。勤務時間が `HH:MM` でないと、スケジュール画面が動きません |
 | Excel の取り込みで専用環境が使えない | 承認のうえで venv を作ります。作れないときは、Excel を CSV に保存して取り込みます |
 
-## 開発者向け
-
-テスト・ビルド・構成・データ形式・設計判断・変更履歴は、[docs/development.md](docs/development.md) を参照してください。
-
 ## ライセンス・連絡先
 
 MIT（[LICENSE](LICENSE)）。不具合や要望は、[GitHub の Issues](https://github.com/asama0101/pj-lens/issues) へどうぞ。

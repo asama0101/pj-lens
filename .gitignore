@@ -14,8 +14,10 @@ desktop.ini
 .idea/
 *.log
 
-# 開発の記録（ローカルのみ。SPEC・計画・デザイン案）。docs/development.md だけ共有する
+# 開発の記録・開発者向け文書（ローカルのみ。development.md・SPEC・計画・デザイン案）。docs/images/ だけ共有する
 docs/*
 !docs/images/
-!docs/development.md
 grill-specs/
+
+# Claude Code 向けのプロジェクト指示（ローカルのみ）
+CLAUDE.md

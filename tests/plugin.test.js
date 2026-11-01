@@ -57,21 +57,10 @@ test("説明文に、廃止したコマンド（今日の計画・daily-planner�
   for (const t of texts) assert.doesNotMatch(String(t), /今日の計画|daily-planner/);
 });
 
-const devDoc = () => readFileSync(new URL("docs/development.md", repoRoot), "utf8");
-
-test("docs/development.md に変更履歴があり、廃止したコマンドと CLI を書いている", () => {
-  const doc = devDoc();
-  assert.match(doc, /## 変更履歴/);
-  for (const w of ["daily-planner", "/pj-lens:report", "tools/rank.js", "tools/free.js", "tools/report.js"]) assert.ok(doc.includes(w), w);
-});
-
-test("レポート(PDF)を廃止した: 画面にPDFボタンも印刷起動もなく、docs/development.md は廃止を書いている", () => {
+test("レポート(PDF)を廃止した: 画面にPDFボタンも印刷起動もない", () => {
   const html = readFileSync(new URL("assets/pj-lens.html", root), "utf8");
   assert.ok(!html.includes('data-report="pdf"') && !html.includes("setTimeout(print"));
   assert.ok(html.includes('data-report="html"'));
-  const doc = devDoc();
-  assert.ok(!doc.includes("- **レポート(PDF)**"));
-  assert.match(doc, /レポート\(PDF\)を廃止/);
 });
 
 // --- F1 の 3・4・8: パスの実在、禁止するパスの書き方、claude plugin validate ---
@@ -124,10 +113,9 @@ test("C3: intake は tools を省略し、その理由を本文に書いてい�
   assert.match(text, /`tools` を省略/);
 });
 
-test("README: アンインストールで消えるもの・残るもの(H4)、docs/development.md: 自動起動を外す理由(C5)を書いている", () => {
+test("README: アンインストールで消えるもの・残るもの(H4)を書き、intake・replan は自動起動を外していない(C5)", () => {
   const readme = readFileSync(new URL("README.md", repoRoot), "utf8");
   assert.match(readme, /### アンインストールで消えるもの・残るもの/);
   assert.match(readme, /pj-lens-mcp\.json/);
-  assert.match(devDoc(), /`disable-model-invocation` を付けていません/);
   for (const n of ["intake", "replan"]) assert.doesNotMatch(readFileSync(new URL(`skills/${n}/SKILL.md`, root), "utf8"), /disable-model-invocation/);
 });
