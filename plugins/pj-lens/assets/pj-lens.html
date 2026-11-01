@@ -511,7 +511,7 @@ function addDays(date, n) {
 
 /**
  * baseDate の businessDays 営業日後。businessDays は 0 以上の整数で、0 なら baseDate のまま。
- * cal.on（営業日の指定）の日は営業日。それ以外は、cal.off（休み）と土日を飛ばす。
+ * cal.on（営業日の指定）の日は営業日。それ以外は、cal.off（休み）と土日を飛ばす。cal.countWeekends が true なら、土日は飛ばさない。
  */
 function dueAfter(baseDate, businessDays, cal = {}) {
   if (!Number.isInteger(businessDays) || businessDays < 0) throw new Error(`営業日は 0 以上の整数にしてください: ${businessDays}`);
@@ -521,12 +521,12 @@ function dueAfter(baseDate, businessDays, cal = {}) {
     return new Set(list);
   };
   if (cal === null || typeof cal !== "object" || Array.isArray(cal)) throw new Error("休みと営業日の指定は { off, on } で渡してください");
-  const off = set("off", "休み"), on = set("on", "営業日の指定");
+  const off = set("off", "休み"), on = set("on", "営業日の指定"), countWeekends = cal.countWeekends === true;
   let d = baseDate;
   parse(d);
   for (let n = 0; n < businessDays;) {
     d = addDays(d, 1);
-    if (on.has(d) || !(off.has(d) || isWeekend(d))) n++;
+    if (on.has(d) || !(off.has(d) || (!countWeekends && isWeekend(d)))) n++;
   }
   return d;
 }
@@ -575,17 +575,21 @@ const { calendarOf, offDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent
 
 const datesOf = (list) => (Array.isArray(list) ? list.filter((x) => isDate(x?.date)).map((x) => x.date) : []);
 
-/** settings → dueAfter の cal。休み = 手動の休み + 日本の祝日、営業日 = 営業日の指定。形が違う値は無視する（validate が注意を出す） */
+/**
+ * settings → dueAfter の cal。休み = 手動の休み + 日本の祝日、営業日 = 営業日の指定。形が違う値は無視する（validate が注意を出す）。
+ * settings.countWeekendsAndHolidays が true のとき（土日祝を営業日に数える）は、休み = 手動の休みだけにして、countWeekends: true を足す
+ */
 function calendarOf(settings) {
   const st = settings ?? {};
+  if (st.countWeekendsAndHolidays === true) return { off: datesOf(st.holidays), on: datesOf(st.workdays), countWeekends: true };
   return { off: [...datesOf(st.holidays), ...datesOf(st.nationalHolidays?.dates)], on: datesOf(st.workdays) };
 }
 
-/** 休みの日か（土日・休み・日本の祝日）。営業日の指定の日は、それらでも休みでない。スケジュールで枠を置けない日の判定に使う */
+/** 休みの日か（土日・休み・日本の祝日。土日祝を営業日に数える設定のときは、手動の休みだけ）。営業日の指定の日は、それらでも休みでない。スケジュールで枠を置けない日の判定に使う */
 function offDayChecker(settings) {
-  const { off, on } = calendarOf(settings);
+  const { off, on, countWeekends } = calendarOf(settings);
   const offSet = new Set(off), onSet = new Set(on);
-  return (date) => !onSet.has(date) && (isWeekend(date) || offSet.has(date));
+  return (date) => !onSet.has(date) && ((!countWeekends && isWeekend(date)) || offSet.has(date));
 }
 
 /** 内閣府の祝日一覧（Shift_JIS）を文字列にする */
@@ -767,6 +771,9 @@ function validate(data, now = nowLocal()) {
   }
   if (st.reportShowMeetingTitles != null && typeof st.reportShowMeetingTitles !== "boolean") {
     warn("settings.reportShowMeetingTitles: true か false にしてください（既定の false で動きます）");
+  }
+  if (st.countWeekendsAndHolidays != null && typeof st.countWeekendsAndHolidays !== "boolean") {
+    warn("settings.countWeekendsAndHolidays: true か false にしてください（既定の false で動きます）");
   }
   const listOf = (v, ok) => Array.isArray(v) && v.every((x) => x && typeof x === "object" && isDate(x.date) && ok(x));
   if (st.holidays != null && !listOf(st.holidays, (x) => HOLIDAY_KINDS.includes(x.kind))) {
@@ -989,7 +996,7 @@ function check(data, slot, ignoreId) {
   if (s < toMin(wd.start) || e > toMin(wd.end)) return { error: `勤務時間（${wd.start}〜${wd.end}）の中に置いてください` };
   // 休みの日に置けないのは、新しく置く・別の日から動かすとき。休みの日にすでにある枠は、同じ日の中なら直せる
   const stays = ignoreId && allSessions(data).some((x) => x.id === ignoreId && x.date === slot.date);
-  if (!stays && offDayChecker(data.settings)(slot.date)) return { error: `${isWeekend(slot.date) ? "土日" : "休みの日"}には置けません（設定タブの「営業日として扱う日」に指定すると置けます）` };
+  if (!stays && offDayChecker(data.settings)(slot.date)) return { error: `${isWeekend(slot.date) && data.settings?.countWeekendsAndHolidays !== true ? "土日" : "休みの日"}には置けません（設定タブの「営業日として扱う日」に指定すると置けます）` };
   const other = allSessions(data).find((x) => x.id !== ignoreId && clash(x, slot));
   if (other) return { error: `他の枠（${other.start}〜${other.end}）と重なっています` };
   const mtg = (data.events ?? []).find((m) => !m.skip && clash(m, slot));
@@ -2366,7 +2373,7 @@ function deleteTask(data, taskId, { force = false } = {}) {
 }
 
 /**
- * 設定（勤務時間・待ち長期化の日数・見出しの呼び名）の変更。patch に含まれる項目だけ変える。
+ * 設定（勤務時間・待ち長期化の日数・土日祝を営業日に数えるか・見出しの呼び名）の変更。patch に含まれる項目だけ変える。
  * 勤務時間は開始・終了を組で渡す。呼び名は空にするとそのキーを消す（既定の呼び名に戻る）。不正な値は例外
  */
 function updateSettings(data, patch) {
@@ -2379,6 +2386,10 @@ function updateSettings(data, patch) {
   if ("waitingLongDays" in patch) {
     if (!Number.isInteger(patch.waitingLongDays) || patch.waitingLongDays < 1) throw new Error("待ち長期化の日数は 1 以上の整数にしてください");
     s.waitingLongDays = patch.waitingLongDays;
+  }
+  if ("countWeekendsAndHolidays" in patch) {
+    if (typeof patch.countWeekendsAndHolidays !== "boolean") throw new Error("「土日祝を営業日に数える」は true か false にしてください");
+    if (patch.countWeekendsAndHolidays) s.countWeekendsAndHolidays = true; else delete s.countWeekendsAndHolidays;
   }
   if ("labels" in patch) {
     const labels = s.labels && typeof s.labels === "object" && !Array.isArray(s.labels) ? { ...s.labels } : {};
@@ -2424,14 +2435,15 @@ function addHoliday(data, { date, kind, note }) {
   return withSetting(data, "holidays", upsertByDate(data.settings?.holidays, entryOf({ date, note }, { kind })));
 }
 
-/** from〜to（両端を含む）の各日から、土日と日本の祝日（取得済みのとき）を除いた日と、除いた日数。to < from と 366 日を超える期間は例外 */
+/** from〜to（両端を含む）の各日から、土日と日本の祝日（取得済みのとき）を除いた日と、除いた日数。土日祝を営業日に数える設定のときは、何も除かない。to < from と 366 日を超える期間は例外 */
 function holidayRangeDays(data, from, to) {
   if (!isDate(from) || !isDate(to)) throw new Error(`実在する日付（YYYY-MM-DD）にしてください: ${isDate(from) ? to : from}`);
   if (to < from) throw new Error("終了日は開始日以降にしてください");
   if (diffDays(to, from) >= 366) throw new Error("期間は 366 日以内にしてください");
+  const keepAll = data.settings?.countWeekendsAndHolidays === true;
   const national = new Set(calendarOf({ nationalHolidays: data.settings?.nationalHolidays }).off);
   const days = [];
-  for (let d = from; d <= to; d = addDays(d, 1)) if (!isWeekend(d) && !national.has(d)) days.push(d);
+  for (let d = from; d <= to; d = addDays(d, 1)) if (keepAll || (!isWeekend(d) && !national.has(d))) days.push(d);
   return { days, skipped: diffDays(to, from) + 1 - days.length };
 }
 

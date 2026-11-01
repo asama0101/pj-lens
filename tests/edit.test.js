@@ -297,3 +297,23 @@ test("addWorkday・removeWorkday: 営業日の指定。昇順・同日は置き�
   assert.deepEqual(d.settings, { waitingLongDays: 3 });
   assert.deepEqual(removeWorkday(d, "2026-01-01").settings, { waitingLongDays: 3 });
 });
+
+test("updateSettings: countWeekendsAndHolidays は true で保存、false でキーを消す。他の設定を保つ。真偽値以外は例外", async () => {
+  const { updateSettings } = await import("../plugins/pj-lens/src/ui/edit.js");
+  const d = { ...load(), settings: { waitingLongDays: 3, nationalHolidays: NH } };
+  const on = updateSettings(d, { countWeekendsAndHolidays: true });
+  assert.deepEqual(on.settings, { waitingLongDays: 3, nationalHolidays: NH, countWeekendsAndHolidays: true });
+  const back = updateSettings(on, { countWeekendsAndHolidays: false });
+  assert.deepEqual(back.settings, { waitingLongDays: 3, nationalHolidays: NH }, "オフに戻しても取得済みの祝日は残る");
+  for (const v of ["x", 1, null]) assert.throws(() => updateSettings(d, { countWeekendsAndHolidays: v }), /true か false/, String(v));
+});
+
+test("holidayRangeDays・addHolidayRange: オンのとき期間の全日を対象にし、除外は 0。366 日以上は例外のまま", () => {
+  const d = { ...load(), settings: { countWeekendsAndHolidays: true, nationalHolidays: NH } };
+  const r = holidayRangeDays(d, "2026-10-30", "2026-11-03"); // 金〜火（土・日・祝日を含む）
+  assert.equal(r.days.length, 5);
+  assert.equal(r.skipped, 0);
+  assert.throws(() => holidayRangeDays(d, "2026-01-01", "2027-01-02"), /366/);
+  const added = addHolidayRange(d, { from: "2026-10-31", to: "2026-11-01", kind: "有給" });
+  assert.deepEqual(hol(added).map((h) => h.date), ["2026-10-31", "2026-11-01"]);
+});

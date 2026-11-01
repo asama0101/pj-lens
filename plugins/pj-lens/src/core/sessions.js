@@ -32,7 +32,7 @@ function check(data, slot, ignoreId) {
   if (s < toMin(wd.start) || e > toMin(wd.end)) return { error: `勤務時間（${wd.start}〜${wd.end}）の中に置いてください` };
   // 休みの日に置けないのは、新しく置く・別の日から動かすとき。休みの日にすでにある枠は、同じ日の中なら直せる
   const stays = ignoreId && allSessions(data).some((x) => x.id === ignoreId && x.date === slot.date);
-  if (!stays && offDayChecker(data.settings)(slot.date)) return { error: `${isWeekend(slot.date) ? "土日" : "休みの日"}には置けません（設定タブの「営業日として扱う日」に指定すると置けます）` };
+  if (!stays && offDayChecker(data.settings)(slot.date)) return { error: `${isWeekend(slot.date) && data.settings?.countWeekendsAndHolidays !== true ? "土日" : "休みの日"}には置けません（設定タブの「営業日として扱う日」に指定すると置けます）` };
   const other = allSessions(data).find((x) => x.id !== ignoreId && clash(x, slot));
   if (other) return { error: `他の枠（${other.start}〜${other.end}）と重なっています` };
   const mtg = (data.events ?? []).find((m) => !m.skip && clash(m, slot));

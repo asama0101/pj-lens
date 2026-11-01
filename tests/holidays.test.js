@@ -52,3 +52,19 @@ test("offDayChecker: 土日・休み・日本の祝日は休みの日。営業�
   assert.equal(offDayChecker(undefined)("2026-10-24"), true);
   assert.equal(offDayChecker({ holidays: "x", workdays: 5 })("2026-10-26"), false);
 });
+
+test("calendarOf・offDayChecker: オンのとき、土日と日本の祝日を休みにしない。手動の休みは休み。true 以外はオフ", () => {
+  const s = {
+    countWeekendsAndHolidays: true,
+    holidays: [{ date: "2026-10-26", kind: "有給" }],
+    nationalHolidays: { fetchedAt: "2026-10-25", source: "u", dates: [{ date: "2026-11-03", name: "文化の日" }] },
+    workdays: [{ date: "2026-10-31" }],
+  };
+  assert.deepEqual(calendarOf(s), { off: ["2026-10-26"], on: ["2026-10-31"], countWeekends: true });
+  const off = offDayChecker(s);
+  assert.equal(off("2026-10-24"), false, "土");
+  assert.equal(off("2026-11-03"), false, "祝日");
+  assert.equal(off("2026-10-26"), true, "手動の休み");
+  for (const v of ["true", 1, false]) assert.deepEqual(calendarOf({ ...s, countWeekendsAndHolidays: v }), { off: ["2026-10-26", "2026-11-03"], on: ["2026-10-31"] }, String(v));
+  assert.equal(offDayChecker({ countWeekendsAndHolidays: "true" })("2026-10-24"), true);
+});

@@ -154,6 +154,9 @@ export function validate(data, now = nowLocal()) {
   if (st.reportShowMeetingTitles != null && typeof st.reportShowMeetingTitles !== "boolean") {
     warn("settings.reportShowMeetingTitles: true か false にしてください（既定の false で動きます）");
   }
+  if (st.countWeekendsAndHolidays != null && typeof st.countWeekendsAndHolidays !== "boolean") {
+    warn("settings.countWeekendsAndHolidays: true か false にしてください（既定の false で動きます）");
+  }
   const listOf = (v, ok) => Array.isArray(v) && v.every((x) => x && typeof x === "object" && isDate(x.date) && ok(x));
   if (st.holidays != null && !listOf(st.holidays, (x) => HOLIDAY_KINDS.includes(x.kind))) {
     warn(`settings.holidays: { date, kind } の配列にしてください（kind は ${HOLIDAY_KINDS.join("・")}。文字列の配列など、形の違う要素は画面から消せないので、data.json から直接直してください）`);

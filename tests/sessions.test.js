@@ -170,3 +170,23 @@ test("runningPlanned: 進行中（開始済みで未終了）の予定枠の ID�
   assert.deepEqual(runningPlanned(d, "A5", NOW), ["S20", "S21"]);
   assert.deepEqual(runningPlanned(d, "A1", NOW), []);
 });
+
+test("addSession: 土日祝を営業日に数える設定がオンなら、土日・祝日にも置ける。手動の休みには置けず、文は「休みの日」。オフに戻すと再び置けない", () => {
+  const d = load();
+  d.settings = {
+    ...d.settings,
+    countWeekendsAndHolidays: true,
+    holidays: [{ date: "2026-10-31", kind: "有給" }],
+    nationalHolidays: { fetchedAt: "2026-10-25", source: "u", dates: [{ date: "2026-11-03", name: "文化の日" }] },
+  };
+  const add = (date, data = d) => addSession(data, "A4", { date, start: "10:00", end: "11:00" }, NOW);
+  assert.equal(add("2026-10-24").error, undefined, "土");
+  assert.equal(add("2026-10-25").error, undefined, "日");
+  assert.equal(add("2026-11-03").error, undefined, "祝日");
+  const e = add("2026-10-31").error; // 土曜の手動の休み
+  assert.match(e, /休みの日には置けません/);
+  assert.doesNotMatch(e, /土日/);
+  const off = { ...d, settings: { ...d.settings, countWeekendsAndHolidays: false } };
+  assert.match(add("2026-10-24", off).error, /土日には置けません/);
+  assert.match(add("2026-11-03", off).error, /休みの日には置けません/);
+});
