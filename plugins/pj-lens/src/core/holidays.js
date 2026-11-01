@@ -20,6 +20,14 @@ export function offDayChecker(settings) {
   return (date) => !onSet.has(date) && ((!countWeekends && isWeekend(date)) || offSet.has(date));
 }
 
+/** ガントの着色用: 土日・手動の休み・日本の祝日か。「土日祝を営業日に数える」設定に関わらず同じ。営業日の指定の日は false */
+export function restDayChecker(settings) {
+  const st = settings ?? {};
+  const rest = new Set([...datesOf(st.holidays), ...datesOf(st.nationalHolidays?.dates)]);
+  const onSet = new Set(datesOf(st.workdays));
+  return (date) => !onSet.has(date) && (isWeekend(date) || rest.has(date));
+}
+
 /** 内閣府の祝日一覧（Shift_JIS）を文字列にする */
 export const decodeHolidayCsv = (bytes) => new TextDecoder("shift_jis").decode(bytes);
 

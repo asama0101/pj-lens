@@ -569,7 +569,7 @@ return { isDate, isTime, addDays, dueAfter, diffDays, weekday, isWeekend, toMin,
 })();
 
 /* src/core/holidays.js */
-const { calendarOf, offDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent } = (() => {
+const { calendarOf, offDayChecker, restDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent } = (() => {
 // 営業日の計算に使う休みと営業日の指定（settings から取り出す）と、内閣府の祝日一覧（CSV）の解析。ネットワークには触れない。
 
 
@@ -592,6 +592,14 @@ function offDayChecker(settings) {
   return (date) => !onSet.has(date) && ((!countWeekends && isWeekend(date)) || offSet.has(date));
 }
 
+/** ガントの着色用: 土日・手動の休み・日本の祝日か。「土日祝を営業日に数える」設定に関わらず同じ。営業日の指定の日は false */
+function restDayChecker(settings) {
+  const st = settings ?? {};
+  const rest = new Set([...datesOf(st.holidays), ...datesOf(st.nationalHolidays?.dates)]);
+  const onSet = new Set(datesOf(st.workdays));
+  return (date) => !onSet.has(date) && (isWeekend(date) || rest.has(date));
+}
+
 /** 内閣府の祝日一覧（Shift_JIS）を文字列にする */
 const decodeHolidayCsv = (bytes) => new TextDecoder("shift_jis").decode(bytes);
 
@@ -611,7 +619,7 @@ function parseHolidayCsv(text) {
 /** today の年の前年以降だけ残す（過去の全期間は保存しない） */
 const pickRecent = (rows, today) => rows.filter((r) => r.date.slice(0, 4) >= String(Number(today.slice(0, 4)) - 1));
 
-return { calendarOf, offDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent };
+return { calendarOf, offDayChecker, restDayChecker, decodeHolidayCsv, parseHolidayCsv, pickRecent };
 })();
 
 /* src/core/schema.js */
@@ -3044,6 +3052,7 @@ const { GANTT_WINDOWS, renderGantt } = (() => {
 
 
 
+
 const GANTT_WINDOWS = [["m1", "1か月"], ["m3", "3か月"], ["m6", "6か月"], ["y1", "1年"], ["all", "全期間"]];
 
 const legend = (showActual) => `<div class="legend"><span><i class="gbar b-todo" style="position:static;display:inline-block;width:22px;height:10px"></i>To Do</span><span><i class="gbar b-prog" style="position:static;display:inline-block;width:22px;height:10px"></i>In Progress</span><span><i class="gbar b-wait" style="position:static;display:inline-block;width:22px;height:10px"></i>Waiting</span><span><i class="gbar b-done" style="position:static;display:inline-block;width:22px;height:10px"></i>Done</span><span><i class="gbar gsum" style="position:static;display:inline-block;width:22px;height:8px"></i>プロジェクト全体</span><span><i class="ms" style="position:static;display:inline-block;transform:rotate(45deg);width:9px;height:9px"></i>マイルストーン</span>${showActual ? `<span><i class="gact" style="position:static;display:inline-block;width:22px;height:5px"></i>実績(最初の作業日〜完了日・今日)</span>` : ""}<span>開始日は、未入力なら前のタスクの期限から</span></div>`;
@@ -3087,6 +3096,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
   const dayScale = scale === "day";
   const x = (d) => `${((diffDays(d, s0) / total) * 100).toFixed(3)}%`;
   const ticks = timeTicks(range, scale);
+  const rest = restDayChecker(data.settings);
   const laneW = `calc((100cqw - var(--lw) - 12px) * ${ratio.toFixed(4)})`;
   const laneStyle = `style="width:var(--lanew)"`;
 
@@ -3094,7 +3104,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
     .filter((t) => dayScale || Math.abs(diffDays(t.date, today)) > visibleDays * 0.045)
     .map((t) => `<span class="mono ${t.yearStart ? "yr" : ""} ${dayScale && t.date === today ? "tdy" : ""}" data-tick="${t.date}" style="left:${x(t.date)}">${esc(t.label)}${dayScale ? `<small>${wdJa(t.date)}</small>` : ""}</span>`)
     .join("");
-  const grid = (dayScale ? ticks.filter((t) => t.weekend).map((t) => `<i class="gwk" style="left:${x(t.date)};width:${(100 / total).toFixed(3)}%"></i>`).join("") : "")
+  const grid = (dayScale ? ticks.filter((t) => rest(t.date)).map((t) => `<i class="gwk" style="left:${x(t.date)};width:${(100 / total).toFixed(3)}%"></i>`).join("") : "")
     + ticks.map((t) => `<i class="gl ${t.yearStart ? "yr" : ""}" style="left:${x(t.date)}"></i>`).join("");
   const todayLine = `<span class="todayline" style="left:${x(today)}"></span>`;
 

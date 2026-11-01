@@ -2,6 +2,7 @@
 import { addDays, diffDays } from "../../core/dates.js";
 import { ganttRows, ganttLayout, timeTicks, projectProgress, projectFlags, taskFlags } from "../../core/metrics.js";
 import { projectHours } from "../../core/workload.js";
+import { restDayChecker } from "../../core/holidays.js";
 import { groupSections } from "../../core/groups.js";
 import { esc, fmtMD, wdJa, STATUS_UI, flagPills } from "../common.js";
 
@@ -48,6 +49,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
   const dayScale = scale === "day";
   const x = (d) => `${((diffDays(d, s0) / total) * 100).toFixed(3)}%`;
   const ticks = timeTicks(range, scale);
+  const rest = restDayChecker(data.settings);
   const laneW = `calc((100cqw - var(--lw) - 12px) * ${ratio.toFixed(4)})`;
   const laneStyle = `style="width:var(--lanew)"`;
 
@@ -55,7 +57,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     .filter((t) => dayScale || Math.abs(diffDays(t.date, today)) > visibleDays * 0.045)
     .map((t) => `<span class="mono ${t.yearStart ? "yr" : ""} ${dayScale && t.date === today ? "tdy" : ""}" data-tick="${t.date}" style="left:${x(t.date)}">${esc(t.label)}${dayScale ? `<small>${wdJa(t.date)}</small>` : ""}</span>`)
     .join("");
-  const grid = (dayScale ? ticks.filter((t) => t.weekend).map((t) => `<i class="gwk" style="left:${x(t.date)};width:${(100 / total).toFixed(3)}%"></i>`).join("") : "")
+  const grid = (dayScale ? ticks.filter((t) => rest(t.date)).map((t) => `<i class="gwk" style="left:${x(t.date)};width:${(100 / total).toFixed(3)}%"></i>`).join("") : "")
     + ticks.map((t) => `<i class="gl ${t.yearStart ? "yr" : ""}" style="left:${x(t.date)}"></i>`).join("");
   const todayLine = `<span class="todayline" style="left:${x(today)}"></span>`;
 

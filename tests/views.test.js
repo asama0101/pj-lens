@@ -84,6 +84,15 @@ test("renderGantt: 行数＝タスク数、今日の線、マイルストーン�
   assert.equal(count(html, /class="gact" style="left/g), 1, "実績があるのは A5 だけ");
 });
 
+test("renderGantt: 日表示で、手動の休みと祝日の列にも土日と同じ着色（class=\"gwk\"）が付く。土日祝を営業日に数える設定がオンでも付く", () => {
+  const d = load();
+  const n = (settings) => count(gantt({ ...d, settings: { ...d.settings, ...settings } }, ["C"], { window: "m1" }), /class="gwk"/g);
+  const none = n({ holidays: [], nationalHolidays: { dates: [] }, workdays: [] });
+  const withRest = { holidays: [{ date: "2026-10-22", kind: "有給" }], nationalHolidays: { dates: [{ date: "2026-11-03", name: "文化の日" }] }, workdays: [] };
+  assert.equal(n(withRest), none + 2);
+  assert.equal(n({ ...withRest, countWeekendsAndHolidays: true }), none + 2);
+});
+
 test("renderGantt: 1か月は日目盛り（範囲の日数）と土日の着色、3か月は週目盛り", () => {
   const d = load();
   const m1 = gantt(d, ["C"], { window: "m1" });
