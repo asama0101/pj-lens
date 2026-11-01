@@ -8,7 +8,7 @@ import { predecessorCandidates } from "../edit.js";
 import { groupLabels, groupNames, groupSections } from "../../core/groups.js";
 import { renderGantt } from "./gantt.js";
 import { renderReplanPanel } from "./replan.js";
-import { renderSide, todayTaskIds, doneAskHtml } from "./prio.js";
+import { renderSide, renderSideToggle, todayTaskIds, doneAskHtml } from "./prio.js";
 
 const actText = (data, id) => {
   const a = taskActual(data, id);
@@ -114,5 +114,5 @@ export function renderProjects(data, today, opts = {}) {
   return `<div class="toolbar ptool"><div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="プロジェクトで絞り込み">${chips}${gsel}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${addBtn}</div></div>
     ${opts.pendingReplan ? renderReplanPanel(data, opts.pendingReplan) : ""}
-    <div class="cols${showPrio ? "" : " one"}">${body}${showPrio ? renderSide(data, today, { sched: false, pendingDone: opts.pendingDone }) : ""}</div>`;
+    <div class="cols${showPrio ? "" : " one"}">${body}${renderSideToggle(showPrio)}${showPrio ? renderSide(data, today, { sched: false, pendingDone: opts.pendingDone }) : ""}</div>`;
 }

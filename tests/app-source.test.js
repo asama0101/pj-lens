@@ -77,10 +77,12 @@ test("app.js: 画面（タブ）を切り替えるとき、未来の予定枠の
   assert.match(tab, /S\.pendingDone = null/);
 });
 
-test("app.js: 「今日の優先」のスイッチを切るとき、パネル内にしか出ない確認待ち（pendingDone）を捨てる。スイッチの説明に今日のタスクも書く", () => {
-  const pf = src.slice(src.indexOf('if (pf) {'), src.indexOf('if (pf) {') + 300);
+test("app.js: 「今日の優先」の取っ手を押すとき、パネル内にしか出ない確認待ち（pendingDone）を捨てる。取っ手は view のクリックで扱い、上部のバー（filebar）には prio のボタンがない（actual は残る）", () => {
+  const pf = src.slice(src.indexOf("function togglePref"), src.indexOf("function togglePref") + 400);
   assert.match(pf, /S\.pendingDone = null/);
-  assert.match(src, /title="画面右の「今日のタスク」「今日の優先」/);
+  assert.match(src, /view\.addEventListener\("click"[\s\S]*data-pref/);
+  assert.doesNotMatch(src, /data-pref="prio" aria-pressed/);
+  assert.match(src, /data-pref="actual" aria-pressed/);
 });
 
 test("schedule.js: ブロックの時刻は esc して出す（toMin が先に検証するが、描画側でも守る）", () => {

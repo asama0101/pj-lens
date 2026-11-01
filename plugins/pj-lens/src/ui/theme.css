@@ -226,7 +226,7 @@ label{font-size:13px}
 
 /* 幅は画面サイズに追従(全画面で統一) */
 .wrap{max-width:none}
-.cols{grid-template-columns:minmax(0,1fr) clamp(260px,22vw,340px)}
+.cols{grid-template-columns:minmax(0,1fr) 14px clamp(260px,22vw,340px)}
 @media(max-width:900px){.cols{grid-template-columns:minmax(0,1fr)}}
 .toolbar{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px}
 .cols>.panel>.toolbar{margin-bottom:10px}
@@ -347,7 +347,11 @@ tr.hl td{transition:background .3s}
 .filebar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .fsep{width:1px;align-self:stretch;background:var(--line)}
 .chip-btn.pref[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:400}
-.cols.one{grid-template-columns:minmax(0,1fr)}
+.cols.one{grid-template-columns:minmax(0,1fr) 14px}
+/* 右の列の開け閉めの取っ手。本体と右の列の境界線に置き、閉じても残る。900px 以下で列が 1 つに回り込むときは、横長の細い帯になる */
+.side-toggle{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + 8px);align-self:start;width:14px;height:64px;padding:0;border:1px solid var(--line);border-radius:4px;background:var(--line-soft);color:var(--muted);font:inherit;font-size:12px;line-height:1;cursor:pointer}
+.side-toggle:hover,.side-toggle:focus-visible{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+@media(max-width:900px){.cols,.cols.one{grid-template-columns:minmax(0,1fr)}.side-toggle{position:static;width:100%;height:20px}}
 .replan{border:2px solid var(--accent);display:flex;flex-direction:column;gap:12px;margin-bottom:16px}
 .rp-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px}
 .rp-head h2{font-size:15px;margin:0}

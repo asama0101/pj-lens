@@ -6,7 +6,7 @@ import { offDayChecker } from "../../core/holidays.js";
 import { sessionKind, allSessions } from "../../core/sessions.js";
 import { DEFAULT_WORKDAY } from "../../core/schema.js";
 import { esc, fmtMD, wdJa, STATUS_UI } from "../common.js";
-import { renderSide } from "./prio.js";
+import { renderSide, renderSideToggle } from "./prio.js";
 
 const SLOT_STEP = 15;
 
@@ -158,6 +158,6 @@ export function renderSchedule(data, today, opts) {
   const nav = `<div class="toolbar"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn" data-nav="${-step}" aria-label="前へ">←</button><button class="btn" data-nav="${step}" aria-label="次へ">→</button><button class="btn" data-sgoto>今日</button><strong style="margin-left:6px">${title}</strong></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" data-mtgadd>＋ 会議を追加</button><div class="seg" role="group" aria-label="表示"><button data-sview="week" aria-pressed="${view === "week"}">週</button><button data-sview="day" aria-pressed="${view === "day"}">日</button></div></div></div>
     <div class="summary"><span>実績 <b class="mono">${hours.toFixed(1)}時間</b></span><span>予定 <b class="mono">${planned}件</b></span>${unconf ? `<span class="pill wait">未確認 ${unconf}件（作業枠 ${unconfS}・会議 ${unconfM}）</span><button class="btn" data-confirmall>未確認をすべて実績にする</button>` : ""}<button class="btn danger" data-delsel ${delOk ? "" : "disabled"}>${delLabel}</button></div>`;
-  return `<div class="cols${opts.showPrio === false ? " one" : ""}"><section class="panel">${nav}<div id="mtgslot">${meetingForm(data, { mtgDraft: opts.mtgDraft, selMtg: selMtg?.id })}</div><div id="calslot">${renderCalendar(data, today, calOpts)}</div></section>${opts.showPrio === false ? "" : renderSide(data, today, { sched: true, picked: opts.picked, pendingDone: opts.pendingDone })}</div>`;
+  return `<div class="cols${opts.showPrio === false ? " one" : ""}"><section class="panel">${nav}<div id="mtgslot">${meetingForm(data, { mtgDraft: opts.mtgDraft, selMtg: selMtg?.id })}</div><div id="calslot">${renderCalendar(data, today, calOpts)}</div></section>${renderSideToggle(opts.showPrio !== false)}${opts.showPrio === false ? "" : renderSide(data, today, { sched: true, picked: opts.picked, pendingDone: opts.pendingDone })}</div>`;
 }
 

@@ -315,9 +315,9 @@ test("renderGantt: showActual:false で .gact と凡例の実績が消える（t
 test("renderProjects/renderSchedule: showPrio:false で『今日の優先』が出ず、cols に one が付く", () => {
   const d = load();
   const p = renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6", showPrio: false });
-  assert.ok(!p.includes("今日の優先") && p.includes('class="cols one"'));
+  assert.ok(!p.includes('id="h-rk"') && p.includes('class="cols one"'), "パネル（見出し h-rk）が出ない。取っ手の名前には「今日の優先」が入る");
   const s = sched(d, { showPrio: false });
-  assert.ok(!s.includes("今日の優先") && s.includes('class="cols one"'));
+  assert.ok(!s.includes('id="h-rk"') && s.includes('class="cols one"'));
   assert.ok(renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6" }).includes("今日の優先"));
   assert.ok(sched(d).includes("今日の優先"));
 });
@@ -774,12 +774,12 @@ test("今日のタスクは、スケジュール・プロジェクトの両方�
   const { d } = withToday();
   const pd = { id: "A5", status: "Done", n: 1, future: ["S3"] };
   for (const html of [sched(d, { pendingDone: pd }), renderProjects(d, TODAY, { filter: "all", view: "list", pendingDone: pd })]) {
-    assert.ok(html.includes("今日のタスク") && html.includes('data-today="A5"'));
-    assert.ok(html.indexOf("今日のタスク") < html.indexOf("今日の優先"), "優先の上");
+    assert.ok(html.includes('id="h-td"') && html.includes('data-today="A5"'));
+    assert.ok(html.indexOf('id="h-td"') < html.indexOf('id="h-rk"'), "優先の上（取っ手の名前にも文字が入るので、見出しの id で見る）");
   }
   assert.equal(count(sched(d, { pendingDone: pd }), /data-doneok=/g), 1);
-  assert.ok(!sched(d, { showPrio: false }).includes("今日のタスク"));
-  assert.ok(!renderProjects(d, TODAY, { filter: "all", view: "list", showPrio: false }).includes("今日のタスク"));
+  assert.ok(!sched(d, { showPrio: false }).includes('id="h-td"'));
+  assert.ok(!renderProjects(d, TODAY, { filter: "all", view: "list", showPrio: false }).includes('id="h-td"'));
   // 今日のタスクに居ないタスク（リストの select から押した）の確認は、リストの行に出る
   const other = renderProjects(d, TODAY, { filter: "all", view: "list", pendingDone: { id: "A1", status: "Done", n: 1, future: ["S3"] } });
   assert.equal(count(other, /data-doneok="A1"/g), 1);
@@ -1057,4 +1057,21 @@ test("renderGantt: 開始と期限が同じ日のタスクは点（dot）で、�
   const row = html.split('<div class="g-row">').find((r) => r.includes('data-gt="A1"'));
   const left = +/class="g-due mono" style="left:([\d.]+)%/.exec(row)[1];
   assert.ok(Math.abs(left - (diffDays(a1.due, s0) / span) * 100) < 0.01, `期限の表示は左端: ${left}`);
+});
+
+test("renderProjects・renderSchedule: showPrio が true でも false でも data-pref=\"prio\" の取っ手が 1 つ出る。aria-expanded は開閉に合わせ、閉じると「今日の優先」は出ない", () => {
+  const d = load();
+  const views = {
+    projects: (showPrio) => renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6", showPrio }),
+    schedule: (showPrio) => renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW, showPrio }),
+  };
+  for (const [name, render] of Object.entries(views)) {
+    const open = render(true), shut = render(false);
+    assert.equal(count(open, /data-pref="prio"/g), 1, `${name}: 開いているとき`);
+    assert.equal(count(shut, /data-pref="prio"/g), 1, `${name}: 閉じているとき`);
+    assert.match(open, /data-pref="prio"[^>]*aria-expanded="true"/, name);
+    assert.match(shut, /data-pref="prio"[^>]*aria-expanded="false"/, name);
+    assert.ok(open.includes(">今日の優先</h2>"), `${name}: 開いているとき見出しが出る`);
+    assert.ok(!shut.includes(">今日の優先</h2>"), `${name}: 閉じると見出しが出ない`);
+  }
 });

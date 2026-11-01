@@ -233,7 +233,7 @@ label{font-size:13px}
 
 /* 幅は画面サイズに追従(全画面で統一) */
 .wrap{max-width:none}
-.cols{grid-template-columns:minmax(0,1fr) clamp(260px,22vw,340px)}
+.cols{grid-template-columns:minmax(0,1fr) 14px clamp(260px,22vw,340px)}
 @media(max-width:900px){.cols{grid-template-columns:minmax(0,1fr)}}
 .toolbar{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px}
 .cols>.panel>.toolbar{margin-bottom:10px}
@@ -354,7 +354,11 @@ tr.hl td{transition:background .3s}
 .filebar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .fsep{width:1px;align-self:stretch;background:var(--line)}
 .chip-btn.pref[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:400}
-.cols.one{grid-template-columns:minmax(0,1fr)}
+.cols.one{grid-template-columns:minmax(0,1fr) 14px}
+/* 右の列の開け閉めの取っ手。本体と右の列の境界線に置き、閉じても残る。900px 以下で列が 1 つに回り込むときは、横長の細い帯になる */
+.side-toggle{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + 8px);align-self:start;width:14px;height:64px;padding:0;border:1px solid var(--line);border-radius:4px;background:var(--line-soft);color:var(--muted);font:inherit;font-size:12px;line-height:1;cursor:pointer}
+.side-toggle:hover,.side-toggle:focus-visible{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+@media(max-width:900px){.cols,.cols.one{grid-template-columns:minmax(0,1fr)}.side-toggle{position:static;width:100%;height:20px}}
 .replan{border:2px solid var(--accent);display:flex;flex-direction:column;gap:12px;margin-bottom:16px}
 .rp-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px}
 .rp-head h2{font-size:15px;margin:0}
@@ -2965,7 +2969,7 @@ return { summarizeSections, planOps, applyProposal };
 })();
 
 /* src/ui/views/prio.js */
-const { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide } = (() => {
+const { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide, renderSideToggle } = (() => {
 // 「今日のタスク」「今日の優先」パネル（プロジェクト画面・スケジュール画面で共通。右の列に並ぶ）
 
 
@@ -3041,7 +3045,11 @@ function renderSide(data, today, opts = {}) {
   return `<div class="side">${renderTodayTasks(data, today, opts)}${renderPrio(data, today, opts)}</div>`;
 }
 
-return { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide };
+/** 本体と右の列の境界線の取っ手。押すと右の列（今日のタスク・今日の優先）を開け閉めする。閉じても、この取っ手は残る */
+const renderSideToggle = (open) =>
+  `<button class="side-toggle" data-pref="prio" aria-expanded="${open}" aria-label="${open ? "今日の優先を閉じる" : "今日の優先を開く"}" title="${open ? "右の「今日のタスク」「今日の優先」を閉じます" : "右の「今日のタスク」「今日の優先」を開きます"}">${open ? "›" : "‹"}</button>`;
+
+return { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide, renderSideToggle };
 })();
 
 /* src/ui/views/gantt.js */
@@ -3364,7 +3372,7 @@ function renderSchedule(data, today, opts) {
   const nav = `<div class="toolbar"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn" data-nav="${-step}" aria-label="前へ">←</button><button class="btn" data-nav="${step}" aria-label="次へ">→</button><button class="btn" data-sgoto>今日</button><strong style="margin-left:6px">${title}</strong></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" data-mtgadd>＋ 会議を追加</button><div class="seg" role="group" aria-label="表示"><button data-sview="week" aria-pressed="${view === "week"}">週</button><button data-sview="day" aria-pressed="${view === "day"}">日</button></div></div></div>
     <div class="summary"><span>実績 <b class="mono">${hours.toFixed(1)}時間</b></span><span>予定 <b class="mono">${planned}件</b></span>${unconf ? `<span class="pill wait">未確認 ${unconf}件（作業枠 ${unconfS}・会議 ${unconfM}）</span><button class="btn" data-confirmall>未確認をすべて実績にする</button>` : ""}<button class="btn danger" data-delsel ${delOk ? "" : "disabled"}>${delLabel}</button></div>`;
-  return `<div class="cols${opts.showPrio === false ? " one" : ""}"><section class="panel">${nav}<div id="mtgslot">${meetingForm(data, { mtgDraft: opts.mtgDraft, selMtg: selMtg?.id })}</div><div id="calslot">${renderCalendar(data, today, calOpts)}</div></section>${opts.showPrio === false ? "" : renderSide(data, today, { sched: true, picked: opts.picked, pendingDone: opts.pendingDone })}</div>`;
+  return `<div class="cols${opts.showPrio === false ? " one" : ""}"><section class="panel">${nav}<div id="mtgslot">${meetingForm(data, { mtgDraft: opts.mtgDraft, selMtg: selMtg?.id })}</div><div id="calslot">${renderCalendar(data, today, calOpts)}</div></section>${renderSideToggle(opts.showPrio !== false)}${opts.showPrio === false ? "" : renderSide(data, today, { sched: true, picked: opts.picked, pendingDone: opts.pendingDone })}</div>`;
 }
 
 
@@ -3904,7 +3912,7 @@ function renderProjects(data, today, opts = {}) {
   return `<div class="toolbar ptool"><div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="プロジェクトで絞り込み">${chips}${gsel}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${addBtn}</div></div>
     ${opts.pendingReplan ? renderReplanPanel(data, opts.pendingReplan) : ""}
-    <div class="cols${showPrio ? "" : " one"}">${body}${showPrio ? renderSide(data, today, { sched: false, pendingDone: opts.pendingDone }) : ""}</div>`;
+    <div class="cols${showPrio ? "" : " one"}">${body}${renderSideToggle(showPrio)}${showPrio ? renderSide(data, today, { sched: false, pendingDone: opts.pendingDone }) : ""}</div>`;
 }
 
 return { renderProjects };
@@ -4106,7 +4114,7 @@ function render() {
   const c = clock();
   $("todaylabel").textContent = `${c.date.replace(/-/g, "/")}(${wdJa(c.date)})`;
   document.querySelectorAll("nav [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.id === "tab-" + S.screen)));
-  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="prio" aria-pressed="${S.prefs.showPrio}" title="画面右の「今日のタスク」「今日の優先」を出したり隠したりします">今日の優先</button><button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
+  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
   renderBar();
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
@@ -4410,6 +4418,14 @@ function deleteSelected() {
   apply((d) => removeSession(d, s.id), `${s.task.title} の${s.kind === "actual" ? "実績" : "予定"}の枠を削除しました`);
 }
 
+/** 表示の好み（今日の優先・ガント実績）を反転して保存する。今日の優先を閉じると、パネル内にしか出ない確認待ちは出す場所がなくなるので捨てる */
+function togglePref(key) {
+  S.pendingDone = null;
+  S.prefs = { ...S.prefs, [key]: !S.prefs[key] };
+  savePrefs(S.prefs);
+  render();
+}
+
 /* ---------- クリック ---------- */
 document.querySelector("nav").addEventListener("click", (e) => {
   const b = e.target.closest("[role=tab]");
@@ -4423,7 +4439,7 @@ document.querySelector("nav").addEventListener("click", (e) => {
 });
 $("filebar").addEventListener("click", async (e) => {
   const pf = e.target.closest("[data-pref]");
-  if (pf) { S.pendingDone = null; const k = pf.dataset.pref === "prio" ? "showPrio" : "showActual"; S.prefs = { ...S.prefs, [k]: !S.prefs[k] }; savePrefs(S.prefs); render(); return; }
+  if (pf) { togglePref(pf.dataset.pref === "prio" ? "showPrio" : "showActual"); return; }
   if (e.target.closest("[data-refresh]")) {
     await sync.whenIdle();
     if (sync.failed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }
@@ -4454,6 +4470,7 @@ document.addEventListener("click", (e) => {
 
 view.addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
+  if (q("[data-pref]")) { togglePref("showPrio"); return; } // 右の列の取っ手
   if (q("[data-rptclose]")) { S.reportPanel = null; render(); return; }
   if (q("[data-rptgo]")) { makeReport(); return; }
   let cleared = false;

@@ -56,7 +56,7 @@ function render() {
   const c = clock();
   $("todaylabel").textContent = `${c.date.replace(/-/g, "/")}(${wdJa(c.date)})`;
   document.querySelectorAll("nav [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.id === "tab-" + S.screen)));
-  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="prio" aria-pressed="${S.prefs.showPrio}" title="画面右の「今日のタスク」「今日の優先」を出したり隠したりします">今日の優先</button><button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
+  $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
   renderBar();
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
@@ -360,6 +360,14 @@ function deleteSelected() {
   apply((d) => removeSession(d, s.id), `${s.task.title} の${s.kind === "actual" ? "実績" : "予定"}の枠を削除しました`);
 }
 
+/** 表示の好み（今日の優先・ガント実績）を反転して保存する。今日の優先を閉じると、パネル内にしか出ない確認待ちは出す場所がなくなるので捨てる */
+function togglePref(key) {
+  S.pendingDone = null;
+  S.prefs = { ...S.prefs, [key]: !S.prefs[key] };
+  savePrefs(S.prefs);
+  render();
+}
+
 /* ---------- クリック ---------- */
 document.querySelector("nav").addEventListener("click", (e) => {
   const b = e.target.closest("[role=tab]");
@@ -373,7 +381,7 @@ document.querySelector("nav").addEventListener("click", (e) => {
 });
 $("filebar").addEventListener("click", async (e) => {
   const pf = e.target.closest("[data-pref]");
-  if (pf) { S.pendingDone = null; const k = pf.dataset.pref === "prio" ? "showPrio" : "showActual"; S.prefs = { ...S.prefs, [k]: !S.prefs[k] }; savePrefs(S.prefs); render(); return; }
+  if (pf) { togglePref(pf.dataset.pref === "prio" ? "showPrio" : "showActual"); return; }
   if (e.target.closest("[data-refresh]")) {
     await sync.whenIdle();
     if (sync.failed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }
@@ -404,6 +412,7 @@ document.addEventListener("click", (e) => {
 
 view.addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
+  if (q("[data-pref]")) { togglePref("showPrio"); return; } // 右の列の取っ手
   if (q("[data-rptclose]")) { S.reportPanel = null; render(); return; }
   if (q("[data-rptgo]")) { makeReport(); return; }
   let cleared = false;
