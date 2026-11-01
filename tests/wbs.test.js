@@ -97,7 +97,7 @@ test("apply: 更新が反映される（期限・状態）。Done にすると�
   assert.equal(n.changeLog.length, 2);
 });
 
-test("apply: 循環する先行を含むと例外になる", () => {
+test("apply: 循環する前のタスクを含むと例外になる", () => {
   const r = [
     { title: "A1", due: "2026-11-01", predecessorKeys: ["A2"] },
     { title: "A2", due: "2026-11-02", predecessorKeys: ["A1"] },
@@ -151,7 +151,7 @@ test("plan: 空の段の位置だけが違う2行は、重複として弾かれ�
   assert.equal(p.rejected.length, 0);
 });
 
-test("plan: 先行キーは、空の段を詰めた書き方（構築/機器設定）でも、曖昧でなければ解決できる", () => {
+test("plan: 前のタスクキーは、空の段を詰めた書き方（構築/機器設定）でも、曖昧でなければ解決できる", () => {
   const p = planWbsImport(empty(), "A", [
     { group: "構築", title: "機器設定", due: "2026-12-05" },
     { group: "構築", subgroup: "試験", title: "疎通", due: "2026-12-10", predecessorKeys: ["構築/機器設定"] },
@@ -179,7 +179,7 @@ test("plan/apply: wbsKey の無い手入力のタスクと同じ件名の行は�
   assert.deepEqual([a1.wbsKey, a1.group, a1.title], ["設計/要件/要件定義", "設計", "要件定義"]);
   const again = planWbsImport(n, "A", rows());
   assert.equal(again.add.length + again.update.length, 0);
-  assert.equal(n.tasks.find((t) => t.title === "基本設計").predecessors[0], "A1", "先行も手入力のタスクへ解決される");
+  assert.equal(n.tasks.find((t) => t.title === "基本設計").predecessors[0], "A1", "前のタスクも手入力のタスクへ解決される");
 });
 
 test("plan: 同じ件名の手入力のタスクが複数あるときは曖昧なので、照合せず追加にする", () => {

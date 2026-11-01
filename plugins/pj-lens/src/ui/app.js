@@ -318,13 +318,13 @@ function submitGAdd(input) {
   }
 }
 
-/* ---------- 日程変更の確認(期限を変えたとき、後続への影響を見てから反映する) ---------- */
-/** 期限の変更で後続が動く、プロジェクト期限を超える、または前倒しで詰められる後続があるときは、確認待ちにして true を返す。そうでなければ false(呼び出し側がそのまま反映する) */
+/* ---------- 日程変更の確認(期限を変えたとき、次のタスクへの影響を見てから反映する) ---------- */
+/** 期限の変更で次のタスクが動く、プロジェクト期限を超える、または前倒しで詰められる次のタスクがあるときは、確認待ちにして true を返す。そうでなければ false(呼び出し側がそのまま反映する) */
 function dueChange(id, base, orig, edit) {
   const delta = diffDays(base.tasks.find((t) => t.id === id).due, orig.tasks.find((t) => t.id === id).due);
   if (!delta) return false;
   const impact = computeImpact(orig, id, delta);
-  // 前倒しは、詰められる後続があるときも確認する(既定は詰めない。パネルのチェックで選ぶ)
+  // 前倒しは、詰められる次のタスクがあるときも確認する(既定は詰めない。パネルのチェックで選ぶ)
   const canCompress = delta < 0 && computeImpact(orig, id, delta, { compress: true }).changes.length > 1;
   if (!needsReplan(impact) && !canCompress) return false;
   S.pendingReplan = { taskId: id, delta, impact, compress: false, cause: "その他", reason: "画面で調整", edit, base, orig };
@@ -337,7 +337,7 @@ function replanAction(kind) {
   const p = S.pendingReplan;
   if (!p) return;
   if (kind === "cancel") { S.pendingReplan = null; render(); return; }
-  if (kind === "only") { S.pendingReplan = null; apply((d) => p.edit(d), "このタスクだけ変更しました。後続の日程は変えていません"); return; }
+  if (kind === "only") { S.pendingReplan = null; apply((d) => p.edit(d), "このタスクだけ変更しました。次のタスクの日程は変えていません"); return; }
   const reason = view.querySelector('[data-rp="reason"]')?.value ?? p.reason;
   const cause = view.querySelector('[data-rp="cause"]')?.value ?? p.cause;
   if (!reason.trim()) { toast("理由を入力してください"); return; }
@@ -446,7 +446,7 @@ view.addEventListener("click", (e) => {
     return;
   }
   const rp = q("[data-rmpre]");
-  if (rp) { const [id, pre] = rp.dataset.rmpre.split("|"); apply((d) => updateTask(d, id, { predecessors: d.tasks.find((t) => t.id === id).predecessors.filter((x) => x !== pre) }, today), "先行を外しました"); return; }
+  if (rp) { const [id, pre] = rp.dataset.rmpre.split("|"); apply((d) => updateTask(d, id, { predecessors: d.tasks.find((t) => t.id === id).predecessors.filter((x) => x !== pre) }, today), "前のタスクを外しました"); return; }
   const at = q("[data-addat]");
   if (at) {
     const pid = at.dataset.addat, place = placeOf(at), before = S.data.tasks.map((t) => t.id);
@@ -704,7 +704,7 @@ function onChange(el) {
     return;
   }
   if (el.dataset.addpre !== undefined) {
-    if (el.value) { const id = el.dataset.addpre; apply((d) => updateTask(d, id, { predecessors: [...d.tasks.find((t) => t.id === id).predecessors, el.value] }, today), "先行を追加しました"); }
+    if (el.value) { const id = el.dataset.addpre; apply((d) => updateTask(d, id, { predecessors: [...d.tasks.find((t) => t.id === id).predecessors, el.value] }, today), "前のタスクを追加しました"); }
     return;
   }
   if (el.dataset.f) {
@@ -921,8 +921,8 @@ view.addEventListener("keydown", (e) => {
 const nowIso = () => new Date().toISOString();
 const IB_EXAMPLES = {
   due: "<タスクの ID> が <N> 日遅れた（原因: ベンダー）。",
-  pred: "<先行の ID> の後に <後続の ID>, <後続の ID> を結んで。",
-  add: "次を登録して: <件名> <期限> <大項目▸中項目> 先行 <ID>",
+  pred: "<前のタスクの ID> の後に <次のタスクの ID>, <次のタスクの ID> を結んで。",
+  add: "次を登録して: <件名> <期限> <大項目▸中項目> 前のタスク <ID>",
 };
 
 /** 打ちかけの入力（依頼・対象・返信・理由・原因）を S.ib に取り込む。描き直しで消さないため */

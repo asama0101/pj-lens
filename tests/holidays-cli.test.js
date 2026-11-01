@@ -7,6 +7,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { validate } from "../plugins/pj-lens/src/core/schema.js";
+import { addDays, today } from "../plugins/pj-lens/src/core/dates.js";
+import { needsHolidayUpdate } from "../plugins/pj-lens/tools/holidays.js";
 
 const REPO = fileURLToPath(new URL("../plugins/pj-lens/", import.meta.url));
 const CLI = join(REPO, "tools/holidays.js");
@@ -115,4 +117,46 @@ test("update: 接続できないときの理由は日本語（接続できなか
   const r = await runAsync(["update", w.data], { PJ_LENS_HOLIDAYS_URL: url });
   assert.equal(r.status, 1);
   assert.match(r.err, /接続できませんでした/);
+});
+
+// ---- needsHolidayUpdate・ensure ----
+const nat = (ageDays, from = "2000-01-01", to = addDays(today(), 200)) => ({ nationalHolidays: { fetchedAt: addDays(today(), -ageDays), source: "u", dates: [{ date: from, name: "a" }, { date: to, name: "b" }] } });
+
+test("needsHolidayUpdate: 未取得・30 日超・一覧の最終日が今日以前・範囲外のとき true。新しい取得（30 日以内で最終日が未来）は false", () => {
+  assert.deepEqual(needsHolidayUpdate({}), { need: true, reason: "未取得" });
+  assert.deepEqual(needsHolidayUpdate(nat(31)), { need: true, reason: "30日超" });
+  assert.deepEqual(needsHolidayUpdate(nat(10, "2000-01-01", addDays(today(), -1))), { need: true, reason: "一覧の最終日が今日以前" });
+  assert.deepEqual(needsHolidayUpdate(nat(10)), { need: false, reason: null });
+  assert.deepEqual(needsHolidayUpdate(nat(10), addDays(today(), 300)), { need: true, reason: "範囲外" });
+  assert.deepEqual(needsHolidayUpdate(nat(10), addDays(today(), 100)), { need: false, reason: null });
+});
+
+test("needsHolidayUpdate: 今日取得したものは、最終日が今日以前でも範囲外でも取り直さない", () => {
+  assert.equal(needsHolidayUpdate(nat(0, "2000-01-01", addDays(today(), -1))).need, false);
+  assert.equal(needsHolidayUpdate(nat(0), addDays(today(), 999)).need, false);
+});
+
+test("ensure: 条件に当てはまらないときは取得せず {fetched:false}。当てはまるときは取得して保存し {fetched:true,reason}", async () => {
+  const fresh = work(nat(5));
+  const before = fresh.text();
+  const none = await runAsync(["ensure", fresh.data], { PJ_LENS_HOLIDAYS_URL: "http://127.0.0.1:1/x.csv" });
+  assert.deepEqual([none.status, none.out], [0, { fetched: false, reason: null }]);
+  assert.equal(fresh.text(), before);
+  const old = work(nat(40));
+  const s = await serve(200, CSV_SJIS);
+  const got = await runAsync(["ensure", old.data], { PJ_LENS_HOLIDAYS_URL: s.url });
+  await s.close();
+  assert.equal(got.status, 0, got.err);
+  assert.deepEqual([got.out.fetched, got.out.reason], [true, "30日超"]);
+  assert.equal(old.json().settings.nationalHolidays.dates.length, 2);
+  assert.deepEqual(validate(old.json()).errors, []);
+});
+
+test("ensure: 取得に失敗すると終了コード 1 で、data.json は変わらない", async () => {
+  const w = work();
+  const before = w.text();
+  const r = await runAsync(["ensure", w.data], { PJ_LENS_HOLIDAYS_URL: "http://127.0.0.1:1/x.csv" });
+  assert.equal(r.status, 1);
+  assert.ok(r.err.length > 0);
+  assert.equal(w.text(), before);
 });

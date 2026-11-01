@@ -20,7 +20,7 @@ export function wbsKey(row) {
   return `${g}/${sg}/${t}`;
 }
 
-/** 空の段を詰めた形（`構築/機器設定`）。先行キーの書き方の揺れを許すための比較用 */
+/** 空の段を詰めた形（`構築/機器設定`）。前のタスクキーの書き方の揺れを許すための比較用 */
 const squeeze = (k) => k.split("/").filter(Boolean).join("/");
 
 function rowProblem(r) {
@@ -69,7 +69,7 @@ export function planWbsImport(data, projectId, rows) {
     valid.push({ r, key, index, adopt });
   });
 
-  /** 先行キーを、既存・今回の行のキーへ解決する。空の段を詰めた書き方でも、曖昧でなければ解決する */
+  /** 前のタスクキーを、既存・今回の行のキーへ解決する。空の段を詰めた書き方でも、曖昧でなければ解決する */
   const known = [...new Set([...existing.keys(), ...seen])];
   const resolve = (k) => {
     if (known.includes(k)) return k;
@@ -84,7 +84,7 @@ export function planWbsImport(data, projectId, rows) {
       for (const k of r.predecessorKeys.map(s).filter(Boolean)) {
         const hit = resolve(k);
         if (hit) predKeys.push(hit);
-        else plan.warnings.push(`行 ${index + 1}「${key}」: 先行 "${k}" が見つかりません`);
+        else plan.warnings.push(`行 ${index + 1}「${key}」: 前のタスク "${k}" が見つかりません`);
       }
     }
     const row = { title: s(r.title) };
@@ -117,7 +117,7 @@ export function applyWbsImport(data, projectId, plan, { today, source = null }) 
   if (!plan.add.length && !plan.update.length) return data;
   let d = data;
   const idByKey = new Map(d.tasks.filter((t) => t.projectId === projectId && t.wbsKey).map((t) => [t.wbsKey, t.id]));
-  for (const u of plan.update) idByKey.set(u.key, u.taskId); // wbsKey を付けて取り込む手入力のタスクも、先行として解決できるように
+  for (const u of plan.update) idByKey.set(u.key, u.taskId); // wbsKey を付けて取り込む手入力のタスクも、前のタスクとして解決できるように
   const added = [];
   for (const a of plan.add) {
     const had = new Set(d.tasks.map((t) => t.id));

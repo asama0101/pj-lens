@@ -9,7 +9,7 @@ const taskOf = (data, id) => data.tasks.find((t) => t.id === id);
 const maxDate = (list) => list.reduce((a, b) => (a > b ? a : b));
 const minDate = (list) => list.reduce((a, b) => (a < b ? a : b));
 
-/** 先行があれば先行の期限の最大値（start は無視）、なければ start、それもなければ期限 */
+/** 前のタスクがあれば前のタスクの期限の最大値（start は無視）、なければ start、それもなければ期限 */
 export function taskStart(data, taskId) {
   const t = taskOf(data, taskId);
   const preds = (t.predecessors ?? []).map((id) => taskOf(data, id)).filter(Boolean);

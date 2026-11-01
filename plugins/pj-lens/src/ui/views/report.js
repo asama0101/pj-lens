@@ -58,7 +58,7 @@ function detail(data, p, today, period, row) {
   const heading = tasks.length ? "" : `<h3>${esc(p.name)}</h3><div class="sub">${esc(p.type)} ・ ${esc(p.status)} ・ ${fmtMD(p.start)}〜${fmtMD(p.due)}</div>`;
   return `<section class="proj">${heading}
     ${renderGantt(data, [p.id], today, { window: "all", readonly: true })}
-    ${tasks.length ? `<table style="margin-top:10px"><thead><tr><th>ID</th><th>件名</th><th>状態</th><th>計画（開始〜期限）</th><th>先行</th><th>待ち先</th><th>実績（期間内）</th></tr></thead><tbody>${trs}</tbody></table>` : ""}
+    ${tasks.length ? `<table style="margin-top:10px"><thead><tr><th>ID</th><th>件名</th><th>状態</th><th>計画（開始〜期限）</th><th>前のタスク</th><th>待ち先</th><th>実績（期間内）</th></tr></thead><tbody>${trs}</tbody></table>` : ""}
     <h4 style="margin:12px 0 4px;font-size:13px">日程変更の履歴</h4>
     ${log ? `<table><thead><tr><th>日付</th><th>対象</th><th>動いた日数</th><th>原因</th><th>理由</th></tr></thead><tbody>${log}</tbody></table>` : `<p class="muted" style="margin:0;font-size:12px">期間内の変更履歴はありません。</p>`}</section>`;
 }

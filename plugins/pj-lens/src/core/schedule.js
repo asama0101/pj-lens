@@ -21,7 +21,7 @@ export function freeSlots(events, date, workday = DEFAULT_WORKDAY) {
   return out;
 }
 
-/** このタスクを（推移的に）先行とする未完了タスクの数。循環でも終了する */
+/** このタスクを（推移的に）前のタスクとする未完了タスクの数。循環でも終了する */
 function openDownstream(tasks, id) {
   const next = new Map();
   for (const t of tasks) for (const p of t.predecessors ?? []) next.set(p, [...(next.get(p) ?? []), t]);
@@ -40,8 +40,8 @@ function openDownstream(tasks, id) {
 }
 
 /**
- * 今日の優先。対象は Done/Cancelled 以外で、先行がすべて完了しているもの。
- * 点数 = 期限超過 100 + max(0,14-日数)×3 + 後続の未完了 1 件ごとに 10 + 重要度(高12/中・未設定4/低0) + Waiting 15
+ * 今日の優先。対象は Done/Cancelled 以外で、前のタスクがすべて完了しているもの。
+ * 点数 = 期限超過 100 + max(0,14-日数)×3 + 次のタスクの未完了 1 件ごとに 10 + 重要度(高12/中・未設定4/低0) + Waiting 15
  */
 export function rankTasks(data, today) {
   const byId = new Map(data.tasks.map((t) => [t.id, t]));
@@ -57,7 +57,7 @@ export function rankTasks(data, today) {
     if (left >= 0 && left <= 14) reasons.push(left === 0 ? "期限は今日" : `期限まで ${left}日`);
     const blocked = openDownstream(data.tasks, t.id);
     score += blocked * 10;
-    if (blocked) reasons.push(`後続 ${blocked} 件を止めている`);
+    if (blocked) reasons.push(`次のタスク ${blocked} 件を止めている`);
     score += t.importance === "high" ? 12 : t.importance === "low" ? 0 : 4;
     if (t.importance === "high") reasons.push("重要度: 高");
     let action = "work";

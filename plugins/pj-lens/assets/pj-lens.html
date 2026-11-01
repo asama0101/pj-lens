@@ -423,6 +423,8 @@ body{padding-block:16px 76px}
 .ib-msg{font-size:13px;overflow-wrap:anywhere}
 .ib-sec b{font-size:13px}
 .ib-list{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.ib-danger{background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:8px 10px}
+.ib-danger>b{color:var(--bad)}
 .ib-warn{background:var(--warn-soft);color:var(--warn);border-radius:6px;padding:6px 10px;font-size:12px}
 .ib-ctl{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
 .ib-ctl label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
@@ -620,7 +622,7 @@ const IMPORTANCE = ["high", "mid", "low"];
 const CAUSES = ["ベンダー", "社内", "自分", "その他"];
 const HOLIDAY_KINDS = ["祝日", "有給", "その他"];
 const REQUEST_STATUS = ["pending", "working", "question", "proposed", "applied", "rejected", "failed"];
-const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask"];
+const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask", "addProject", "setStatus", "setImportance", "updateProject", "removeTask", "removeProject", "addMilestone", "moveMilestone", "removeMilestone"];
 const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 
 /** 終わったタスク（Done・Cancelled）か */
@@ -629,7 +631,7 @@ const isClosed = (t) => t.status === "Done" || t.status === "Cancelled";
 /** 同じ日の枠が重なるか（端が接するだけは重ならない） */
 const overlap = (a, b) => toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end);
 
-/** 先行の循環を DFS で探す。循環に含まれるタスク ID の一覧を返す */
+/** 前のタスクの循環を DFS で探す。循環に含まれるタスク ID の一覧を返す */
 function findCycle(tasks) {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const state = new Map(); // 1=探索中, 2=完了
@@ -701,14 +703,14 @@ function validate(data, now = nowLocal()) {
     if (t.importance != null && !IMPORTANCE.includes(t.importance)) err(`タスク ${t.id}: 不明な重要度 "${t.importance}"`);
     const preds = t.predecessors ?? [];
     for (const pid of preds) {
-      if (!taskIds.has(pid)) err(`タスク ${t.id}: 存在しない先行 "${pid}"`);
-      if (pid === t.id) err(`タスク ${t.id}: 自分自身を先行にしています（循環）`);
+      if (!taskIds.has(pid)) err(`タスク ${t.id}: 存在しない前のタスク "${pid}"`);
+      if (pid === t.id) err(`タスク ${t.id}: 自分自身を前のタスクにしています（循環）`);
     }
     const predDue = preds.map((id) => data.tasks.find((x) => x.id === id)?.due).filter(isDate);
-    if (isDate(t.due) && predDue.length && predDue.reduce((a, b) => (a > b ? a : b)) > t.due) warn(`タスク ${t.id}: 先行の期限が自分の期限より後です`);
+    if (isDate(t.due) && predDue.length && predDue.reduce((a, b) => (a > b ? a : b)) > t.due) warn(`タスク ${t.id}: 前のタスクの期限が自分の期限より後です`);
     if (t.waitingOn && !isDate(t.waitingOn.since)) err(`タスク ${t.id}: 待ち開始日 (waitingOn.since) の形式が不正です`);
     if (t.status === "Waiting" && !t.waitingOn) warn(`タスク ${t.id}: Waiting なのに待ち先 (waitingOn) がありません`);
-    if (preds.length && t.start != null) warn(`タスク ${t.id}: 先行があるため start は無視されます`);
+    if (preds.length && t.start != null) warn(`タスク ${t.id}: 前のタスクがあるため start は無視されます`);
     if (!preds.length && isDate(t.start) && isDate(t.due) && t.start > t.due) warn(`タスク ${t.id}: 開始日が期限より後です`);
 
     for (const s of t.sessions ?? []) {
@@ -722,7 +724,7 @@ function validate(data, now = nowLocal()) {
   }
 
   const cycle = findCycle(data.tasks);
-  if (cycle) err(`先行が循環しています: ${cycle.join(" → ")}`);
+  if (cycle) err(`前のタスクが循環しています: ${cycle.join(" → ")}`);
 
   // 同じ日の枠どうしの重なり（タスクをまたいで判定）。日付で束ねて、同じ日の中だけ総当たりにする（全枠の総当たりは、数年分で秒単位になる）
   const byDay = new Map();
@@ -775,7 +777,7 @@ function validate(data, now = nowLocal()) {
   }
   const nh = st.nationalHolidays;
   if (nh != null && !(typeof nh === "object" && isDate(nh.fetchedAt) && listOf(nh.dates, () => true))) {
-    warn("settings.nationalHolidays: { fetchedAt, dates: [{ date }] } にしてください（/pj-lens:holidays で取り直せます）");
+    warn("settings.nationalHolidays: { fetchedAt, dates: [{ date }] } にしてください（次に営業日を使う提案を作るか、見張りを始めると、自動で取り直されます）");
   }
   (st.projectRules ?? []).forEach((r, i) => {
     if (!String(r?.keyword ?? "").trim()) err(`settings.projectRules[${i}]: keyword が空です`);
@@ -843,7 +845,7 @@ const taskOf = (data, id) => data.tasks.find((t) => t.id === id);
 const maxDate = (list) => list.reduce((a, b) => (a > b ? a : b));
 const minDate = (list) => list.reduce((a, b) => (a < b ? a : b));
 
-/** 先行があれば先行の期限の最大値（start は無視）、なければ start、それもなければ期限 */
+/** 前のタスクがあれば前のタスクの期限の最大値（start は無視）、なければ start、それもなければ期限 */
 function taskStart(data, taskId) {
   const t = taskOf(data, taskId);
   const preds = (t.predecessors ?? []).map((id) => taskOf(data, id)).filter(Boolean);
@@ -1073,19 +1075,19 @@ return { allSessions, sessionKind, addSession, moveSession, resizeSession, confi
 
 /* src/core/impact.js */
 const { computeImpact, needsReplan, applyReplan, commitReplan } = (() => {
-// タスクの期限が動いたときの影響範囲。後続は「最小限だけ」動かす（先行の新しい期限を超えないようにする）。
+// タスクの期限が動いたときの影響範囲。次のタスクは「最小限だけ」動かす（前のタスクの新しい期限を超えないようにする）。
 
 
 
 /**
- * opts.compress: 前倒し(deltaDays < 0)のとき、後続も同じ日数だけ前倒しする(先行の新しい期限より前にはしない)
+ * opts.compress: 前倒し(deltaDays < 0)のとき、次のタスクも同じ日数だけ前倒しする(前のタスクの新しい期限より前にはしない)
  */
 function computeImpact(data, taskId, deltaDays, { compress = false } = {}) {
   const byId = new Map(data.tasks.map((t) => [t.id, t]));
   const target = byId.get(taskId);
   if (!target) throw new Error(`タスク ${taskId} がありません`);
 
-  const successors = new Map(); // 先行ID → 後続タスクの配列
+  const successors = new Map(); // 前のタスクID → 次のタスクの配列
   for (const t of data.tasks) {
     for (const p of t.predecessors ?? []) {
       if (!successors.has(p)) successors.set(p, []);
@@ -1107,7 +1109,7 @@ function computeImpact(data, taskId, deltaDays, { compress = false } = {}) {
         const cand = lower > shifted ? lower : shifted;
         if (cand < (newDue.get(s.id) ?? s.due)) {
           newDue.set(s.id, cand);
-          reason.set(s.id, `先行 ${cur} の前倒し`);
+          reason.set(s.id, `前のタスク ${cur} の前倒し`);
           queue.push(s.id);
         }
       }
@@ -1122,12 +1124,12 @@ function computeImpact(data, taskId, deltaDays, { compress = false } = {}) {
       let best = s.due;
       let by = null;
       for (const p of s.predecessors) {
-        const d = newDue.get(p); // 動いた先行だけが対象（元からの不整合は直さない）
+        const d = newDue.get(p); // 動いた前のタスクだけが対象（元からの不整合は直さない）
         if (d && d > best) { best = d; by = p; }
       }
       if (best > (newDue.get(s.id) ?? s.due)) {
         newDue.set(s.id, best);
-        reason.set(s.id, `先行 ${by} の遅れ`);
+        reason.set(s.id, `前のタスク ${by} の遅れ`);
         queue.push(s.id);
       }
     }
@@ -1150,7 +1152,7 @@ function computeImpact(data, taskId, deltaDays, { compress = false } = {}) {
   return { changes, projectDueExceeded };
 }
 
-/** 後続が動く、またはプロジェクト期限を超えるなら、利用者に確認してから反映する */
+/** 次のタスクが動く、またはプロジェクト期限を超えるなら、利用者に確認してから反映する */
 function needsReplan(impact) {
   return impact.changes.length > 1 || impact.projectDueExceeded.length > 0;
 }
@@ -1170,7 +1172,7 @@ function applyReplan(data, impact, { reason, cause, deltaDays, at }) {
 }
 
 /**
- * 確認のあとの反映。利用者の編集(edit: data → data)を、いまの最新のデータに対してやり直し、後続の影響もいまのデータで計算し直す。
+ * 確認のあとの反映。利用者の編集(edit: data → data)を、いまの最新のデータに対してやり直し、次のタスクの影響もいまのデータで計算し直す。
  * 確認パネルを出している間に入った別の編集を消さないため、パネルを出した時点のスナップショットは使わない
  */
 function commitReplan(data, edit, taskId, deltaDays, { compress = false, reason, cause, at }) {
@@ -1300,7 +1302,7 @@ function freeSlots(events, date, workday = DEFAULT_WORKDAY) {
   return out;
 }
 
-/** このタスクを（推移的に）先行とする未完了タスクの数。循環でも終了する */
+/** このタスクを（推移的に）前のタスクとする未完了タスクの数。循環でも終了する */
 function openDownstream(tasks, id) {
   const next = new Map();
   for (const t of tasks) for (const p of t.predecessors ?? []) next.set(p, [...(next.get(p) ?? []), t]);
@@ -1319,8 +1321,8 @@ function openDownstream(tasks, id) {
 }
 
 /**
- * 今日の優先。対象は Done/Cancelled 以外で、先行がすべて完了しているもの。
- * 点数 = 期限超過 100 + max(0,14-日数)×3 + 後続の未完了 1 件ごとに 10 + 重要度(高12/中・未設定4/低0) + Waiting 15
+ * 今日の優先。対象は Done/Cancelled 以外で、前のタスクがすべて完了しているもの。
+ * 点数 = 期限超過 100 + max(0,14-日数)×3 + 次のタスクの未完了 1 件ごとに 10 + 重要度(高12/中・未設定4/低0) + Waiting 15
  */
 function rankTasks(data, today) {
   const byId = new Map(data.tasks.map((t) => [t.id, t]));
@@ -1336,7 +1338,7 @@ function rankTasks(data, today) {
     if (left >= 0 && left <= 14) reasons.push(left === 0 ? "期限は今日" : `期限まで ${left}日`);
     const blocked = openDownstream(data.tasks, t.id);
     score += blocked * 10;
-    if (blocked) reasons.push(`後続 ${blocked} 件を止めている`);
+    if (blocked) reasons.push(`次のタスク ${blocked} 件を止めている`);
     score += t.importance === "high" ? 12 : t.importance === "low" ? 0 : 4;
     if (t.importance === "high") reasons.push("重要度: 高");
     let action = "work";
@@ -2150,7 +2152,7 @@ const mapProject = (data, id, fn) => {
 };
 const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
-/** このタスクの後続（推移的）の ID 集合 */
+/** このタスクの次のタスク（推移的）の ID 集合 */
 function downstream(data, id) {
   const down = new Set();
   const stack = [id];
@@ -2163,7 +2165,7 @@ function downstream(data, id) {
   return down;
 }
 
-/** 先行にできるタスク（同一プロジェクトで、自分・既に先行・自分の後続を除く。循環を作らせない） */
+/** 前のタスクにできるタスク（同一プロジェクトで、自分・既に前のタスク・自分の次のタスクを除く。循環を作らせない） */
 function predecessorCandidates(data, taskId) {
   const t = data.tasks.find((x) => x.id === taskId);
   const down = downstream(data, taskId);
@@ -2201,8 +2203,8 @@ function updateTask(data, taskId, patch, today = nowLocal().date) {
     if ("predecessors" in patch) {
       const ids = [...new Set(patch.predecessors)];
       for (const id of ids) {
-        if (!data.tasks.some((x) => x.id === id)) throw new Error(`先行 ${id} がありません`);
-        if (id === taskId || downstream(data, taskId).has(id)) throw new Error(`${id} を先行にすると循環します`);
+        if (!data.tasks.some((x) => x.id === id)) throw new Error(`前のタスク ${id} がありません`);
+        if (id === taskId || downstream(data, taskId).has(id)) throw new Error(`${id} を前のタスクにすると循環します`);
       }
       n.predecessors = ids;
     }
@@ -2292,23 +2294,23 @@ function moveMilestone(data, projectId, index, days) {
 }
 
 // ---- ガントのドラッグ ----
-/** mode: "start" | "due" | "both"。先行があるタスクの開始は先行の期限から決まるので、動かせるのは期限だけ */
+/** mode: "start" | "due" | "both"。前のタスクがあるタスクの開始は前のタスクの期限から決まるので、動かせるのは期限だけ */
 function moveTaskDates(data, taskId, mode, days) {
   const t = data.tasks.find((x) => x.id === taskId);
   if (!t) throw new Error(`タスク ${taskId} がありません`);
   if (!days) return { data };
   const hasPre = (t.predecessors ?? []).length > 0;
-  if (hasPre && mode !== "due") return { data, error: "開始は先行タスクの期限から決まるため、動かせるのは期限だけです" };
+  if (hasPre && mode !== "due") return { data, error: "開始は前のタスクの期限から決まるため、動かせるのは期限だけです" };
   const patch = {};
   if (mode === "start" || mode === "both") patch.start = addDays(t.start ?? t.due, days);
   if (mode === "due" || mode === "both") patch.due = addDays(t.due, days);
   const due = patch.due ?? t.due;
   if (hasPre ? due < taskStart(data, taskId) : (patch.start ?? t.start ?? due) > due) {
-    return { data, error: hasPre ? "期限を先行タスクの期限より前にはできません" : "開始日が期限より後になります" };
+    return { data, error: hasPre ? "期限を前のタスクの期限より前にはできません" : "開始日が期限より後になります" };
   }
   const next = mapTask(data, taskId, (x) => ({ ...x, ...patch }));
   const later = patch.due ? data.tasks.filter((u) => (u.predecessors ?? []).includes(taskId) && u.due < patch.due).map((u) => u.id) : [];
-  return { data: next, ...(later.length && { warning: `後続 ${later.join(", ")} の期限より後になりました（replan で見直せます）` }) };
+  return { data: next, ...(later.length && { warning: `次のタスク ${later.join(", ")} の期限より後になりました（「Claude Code に依頼する」で見直せます）` }) };
 }
 
 function moveProjectDates(data, projectId, edge, days) {
@@ -2352,7 +2354,7 @@ function addTask(data, task) {
   return { ...data, tasks: [...data.tasks, newTask(data, task.projectId, title, task.due, { ...rest, title })] };
 }
 
-/** 他のタスクの先行になっていれば dependents を返し、force でなければ何も変えない。force なら参照を取り除いて削除する */
+/** 他のタスクの前のタスクになっていれば dependents を返し、force でなければ何も変えない。force なら参照を取り除いて削除する */
 function deleteTask(data, taskId, { force = false } = {}) {
   if (!data.tasks.some((t) => t.id === taskId)) throw new Error(`タスク ${taskId} がありません`);
   const dependents = data.tasks.filter((t) => (t.predecessors ?? []).includes(taskId)).map((t) => t.id);
@@ -2481,12 +2483,145 @@ function deleteProject(data, projectId) {
 return { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject };
 })();
 
+/* src/ui/inboxedits.js */
+const { EDITS } = (() => {
+// 受信箱の依頼の操作のうち、1 つの対象（タスク・プロジェクト・マイルストーン）を直す操作。inboxops.js の simulate が、当てる順に呼ぶ。
+// ハンドラは (w, o, ctx) → 新しい w。w は作業用のコピー。対象が無い・値が不正なら例外にし、変更案の行は ctx.rows[節の名前] に足す。
+// ctx: { today, warnings, rows, taskId(token), projectId(token), touch(taskId), log(taskId), touchProject(projectId), dueGiven }
+//   taskId・projectId は、同じ依頼の addTask・addProject の ref を、採番後の ID にする。touch は承認時の確認（base）の対象、log は変更履歴に載せるタスク。
+
+
+
+const PROJECT_FIELDS = ["name", "type", "status", "start", "due"];
+
+const taskOf = (w, id) => {
+  const t = w.tasks.find((x) => x.id === id);
+  if (!t) throw new Error(`タスク ${id} がありません`);
+  return t;
+};
+const projectOf = (w, id) => {
+  const p = w.projects.find((x) => x.id === id);
+  if (!p) throw new Error(`プロジェクト ${id} がありません`);
+  return p;
+};
+
+/** プロジェクト pid の、名前が name のマイルストーンの位置。0 件・2 件以上は例外 */
+function milestoneIndex(w, pid, name) {
+  const list = projectOf(w, pid).milestones ?? [];
+  const hits = list.flatMap((m, i) => (m.name === name ? [i] : []));
+  if (!hits.length) throw new Error(`プロジェクト ${pid} にマイルストーン「${name}」がありません`);
+  if (hits.length > 1) throw new Error(`プロジェクト ${pid} にマイルストーン「${name}」が ${hits.length} 件あります。1 件に絞れません`);
+  return hits[0];
+}
+
+const EDITS = {
+  setStatus(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    const patch = { status: o.status };
+    if (o.waitingOn !== undefined) patch.waitingOn = o.waitingOn;
+    const next = updateTask(w, id, patch, ctx.today);
+    const n = taskOf(next, id);
+    if (n.status === t.status && (n.waitingOn?.party ?? null) === (t.waitingOn?.party ?? null)) {
+      ctx.warnings.push(`タスク ${id} は、すでに ${t.status} なので変わりません`);
+      return w;
+    }
+    ctx.touch(id); ctx.log(id);
+    ctx.rows.status.push({ taskId: id, title: t.title, oldStatus: t.status, newStatus: n.status, oldWaitingOn: t.waitingOn ?? null, newWaitingOn: n.waitingOn ?? null });
+    return next;
+  },
+
+  setImportance(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    if (!("importance" in o)) throw new Error(`setImportance（${id}）には importance が必要です（外すときは null）`);
+    const next = updateTask(w, id, { importance: o.importance }, ctx.today);
+    ctx.touch(id); ctx.log(id);
+    ctx.rows.importance.push({ taskId: id, title: t.title, old: t.importance ?? null, new: o.importance ?? null });
+    return next;
+  },
+
+  updateProject(w, o, ctx) {
+    const id = ctx.projectId(o.projectId);
+    const p = projectOf(w, id);
+    const patch = {};
+    for (const f of PROJECT_FIELDS) if (f in o) patch[f] = o[f];
+    if (!Object.keys(patch).length) throw new Error(`updateProject（${id}）には更新する項目（${PROJECT_FIELDS.join("・")}）が必要です`);
+    const next = updateProject(w, id, patch);
+    const n = projectOf(next, id);
+    const changes = PROJECT_FIELDS.filter((f) => f in patch && n[f] !== p[f]).map((f) => ({ field: f, old: p[f], new: n[f] }));
+    if ("due" in patch) ctx.dueGiven.add(id);
+    ctx.touchProject(id);
+    if (!changes.length) { ctx.warnings.push(`プロジェクト ${p.name} は、指定どおりの値なので変わりません`); return next; }
+    ctx.rows.projectChange.push({ projectId: id, name: p.name, changes });
+    return next;
+  },
+
+  addMilestone(w, o, ctx) {
+    const pid = ctx.projectId(o.projectId);
+    const p = projectOf(w, pid);
+    const name = String(o.name ?? "").trim();
+    if (!name) throw new Error(`addMilestone（${pid}）には名前が必要です`);
+    ctx.touchProject(pid);
+    ctx.rows.milestone.push({ projectId: pid, projectName: p.name, action: "add", name, oldDate: null, newDate: o.date });
+    return addMilestone(w, pid, { name, date: o.date });
+  },
+
+  moveMilestone(w, o, ctx) {
+    const pid = ctx.projectId(o.projectId);
+    const i = milestoneIndex(w, pid, o.name);
+    const cur = projectOf(w, pid).milestones[i];
+    let date;
+    if (typeof o.newDate === "string") date = o.newDate;
+    else if (Number.isInteger(o.deltaDays) && o.deltaDays) date = addDays(cur.date, o.deltaDays);
+    else throw new Error(`moveMilestone（${o.name}）には newDate か 0 でない deltaDays が必要です`);
+    const next = updateMilestone(w, pid, i, { date });
+    ctx.touchProject(pid);
+    ctx.rows.milestone.push({ projectId: pid, projectName: projectOf(w, pid).name, action: "move", name: cur.name, oldDate: cur.date, newDate: date });
+    return next;
+  },
+
+  removeMilestone(w, o, ctx) {
+    const pid = ctx.projectId(o.projectId);
+    const i = milestoneIndex(w, pid, o.name);
+    const cur = projectOf(w, pid).milestones[i];
+    ctx.touchProject(pid);
+    ctx.rows.milestone.push({ projectId: pid, projectName: projectOf(w, pid).name, action: "remove", name: cur.name, oldDate: cur.date, newDate: null });
+    return deleteMilestone(w, pid, i);
+  },
+
+  /** 他のタスクの前のタスクになっていれば、その参照を外して消す。外されるタスクを affected に出す */
+  removeTask(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    const affected = w.tasks.filter((x) => (x.predecessors ?? []).includes(id)).map((x) => ({ taskId: x.id, title: x.title }));
+    ctx.touch(id);
+    ctx.rows.removeTask.push({ taskId: id, title: t.title, status: t.status, affected });
+    return deleteTask(w, id, { force: true }).data;
+  },
+
+  /** 配下のタスクも消える。会議のひも付け・規則・WBS の対応も外れる（deleteProject の規則） */
+  removeProject(w, o, ctx) {
+    const id = ctx.projectId(o.projectId);
+    const p = projectOf(w, id);
+    const tasks = w.tasks.filter((t) => t.projectId === id);
+    for (const t of tasks) ctx.touch(t.id);
+    ctx.touchProject(id);
+    ctx.rows.removeProject.push({ projectId: id, name: p.name, tasks: tasks.map((t) => ({ taskId: t.id, title: t.title, status: t.status })), eventLinks: (w.events ?? []).filter((e) => e.projectId === id).length });
+    return deleteProject(w, id).data;
+  },
+};
+
+return { EDITS };
+})();
+
 /* src/ui/inboxops.js */
 const { summarizeSections, planOps, applyProposal } = (() => {
 // 受信箱の依頼の「変更の操作（ops）」の計画と適用。HTML と CLI（tools/inbox.js）が共有する。
 // 計画（planOps）は、操作を作業用のコピーに当てて、変更案の表・警告・適用前の確認用の値（base）を作る。データは変えない。
 // 適用（applyProposal）は、base が現在のデータと同じときだけ、同じ手順で操作を当てて、変更履歴を足す。
-// 当てる順: addTask → addPred・removePred → moveDue（それぞれ書かれた順）。後続の動きは computeImpact の規則に合わせる。
+// 当てる順: addProject → addTask → updateProject → setStatus・setImportance → addMilestone → moveMilestone → removeMilestone → addPred・removePred → moveDue → removeTask → removeProject（それぞれ書かれた順）。次のタスクの動きは computeImpact の規則に合わせる。
+
 
 
 
@@ -2512,6 +2647,10 @@ function simulate(data, ops, today) {
   const predRows = [], addInfo = [], moves = [];
   const inboxIds = new Set();   // source: inbox の記録に載せるタスク
   const projects = new Set();
+  const projectRefs = new Map(); // addProject の ref → 採番した ID
+  const newProjects = [];        // { ref, id }
+  const dueGiven = new Set();    // 期限が指定された新規プロジェクトの ID（それ以外は、タスクの最終期限から決める）
+  const rows = { status: [], importance: [], projectChange: [], milestone: [], removeTask: [], removeProject: [] }; // inboxedits.js の操作の変更案の行
   let predCount = 0, addCount = 0;
 
   const setDue = (id, due, reason) => {
@@ -2519,18 +2658,37 @@ function simulate(data, ops, today) {
     changed.add(id);
     reasons.set(id, reason);
   };
-  /** id の期限を minDue 以上にする。動いたら、後続も先行の新しい期限を超えないように連鎖させる */
+  /** id の期限を minDue 以上にする。動いたら、次のタスクも前のタスクの新しい期限を超えないように連鎖させる */
   const raise = (id, minDue, reason, group) => {
     const t = need(id);
     if (isClosed(t) || t.due >= minDue) return;
     setDue(id, minDue, reason);
     group.add(id);
-    for (const s of w.tasks.filter((x) => (x.predecessors ?? []).includes(id))) raise(s.id, minDue, `先行 ${id} の遅れ`, group);
+    for (const s of w.tasks.filter((x) => (x.predecessors ?? []).includes(id))) raise(s.id, minDue, `前のタスク ${id} の遅れ`, group);
   };
   const resolve = (token) => refs.get(token) ?? token;
 
-  // ① addTask（まず全部足し、先行は、足し終えてから結ぶ。ref で別の addTask を指せるように）
-  // businessDays 指定の期限は、先行（既存のタスク、または別の addTask の ref）が決まってから計算する。ops の書く順には依存しない
+  // ⓪ addProject（書かれた順に。ID は画面の「プロジェクトを追加」と同じ規則で採番する）
+  for (const o of ops.filter((x) => x.op === "addProject")) {
+    const ref = String(o.ref ?? "").trim();
+    if (!ref) throw new Error("addProject には ref が必要です");
+    if (data.projects.some((p) => p.id === ref)) throw new Error(`addProject の ref "${ref}" は既存のプロジェクト ID と同じです。別の名前にしてください`);
+    if (projectRefs.has(ref)) throw new Error(`addProject の ref "${ref}" が重複しています`);
+    if (o.type !== undefined && !PROJECT_TYPE.includes(o.type)) throw new Error(`不明な種別です: ${o.type}`);
+    w = addProject(w, { name: o.name, type: o.type }, today);
+    const id = w.projects.at(-1).id;
+    const patch = {};
+    if (o.start !== undefined) patch.start = o.start;
+    if (o.due !== undefined) patch.due = o.due;
+    w = { ...w, projects: w.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)) };
+    projectRefs.set(ref, id);
+    newProjects.push({ ref, id });
+    if (o.due !== undefined) dueGiven.add(id);
+  }
+  const pidOf = (o) => projectRefs.get(o.projectId) ?? o.projectId;
+
+  // ① addTask（まず全部足し、前のタスクは、足し終えてから結ぶ。ref で別の addTask を指せるように）
+  // businessDays 指定の期限は、前のタスク（既存のタスク、または別の addTask の ref）が決まってから計算する。ops の書く順には依存しない
   const adds = ops.filter((o) => o.op === "addTask");
   const dueOf = new Map(); // ref → 計算した期限（businessDays 指定のもの）
   const pending = adds.filter((o) => o.businessDays !== undefined);
@@ -2541,14 +2699,14 @@ function simulate(data, ops, today) {
     const hasDue = o.due !== undefined, hasDays = o.businessDays !== undefined;
     if (hasDue === hasDays) throw new Error(`addTask（${ref}）には due か businessDays のどちらか一方が必要です`);
   }
-  // 期限を動かす操作と同じ依頼に営業日指定の登録があると、先行の期限が動いて営業日が吸収される。2 回に分けてもらう（addTask 自体の誤りを先に知らせる）
+  // 期限を動かす操作と同じ依頼に営業日指定の登録があると、前のタスクの期限が動いて営業日が吸収される。2 回に分けてもらう（addTask 自体の誤りを先に知らせる）
   if (ops.some((o) => o.op === "moveDue") && pending.length) {
     throw new Error("期限の移動（moveDue）と営業日指定の登録（businessDays）は、同じ依頼にできません。先に期限の移動を承認してから、登録を依頼してください");
   }
   const refDue = new Map(adds.filter((o) => o.due !== undefined).map((o) => [String(o.ref).trim(), o.due]));
   while (pending.length) {
     const ready = pending.filter((o) => (o.predecessors ?? []).every((p) => !adds.some((x) => String(x.ref).trim() === p) || refDue.has(p)));
-    if (!ready.length) throw new Error("addTask の先行が循環しています");
+    if (!ready.length) throw new Error("addTask の前のタスクが循環しています");
     for (const o of ready) {
       const open = (o.predecessors ?? []).map((p) => (refDue.has(p) ? { due: refDue.get(p), status: "To Do" } : need(p))).filter((t) => !isClosed(t));
       const base = open.map((t) => t.due).reduce(max, "") || today;
@@ -2564,13 +2722,13 @@ function simulate(data, ops, today) {
     if (refs.has(ref)) throw new Error(`ref "${ref}" が重複しています`);
     const due = o.due ?? dueOf.get(ref);
     planned.set(o, o.businessDays === undefined ? o : (({ businessDays, ...rest }) => ({ ...rest, due }))(o));
-    // 開始日: 書かれていればそのとおり。先行があるタスクは入れない（先行から決まる。入れると validate の注意が出る）。なければ今日（期限が過去なら入れない）
+    // 開始日: 書かれていればそのとおり。前のタスクがあるタスクは入れない（前のタスクから決まる。入れると validate の注意が出る）。なければ今日（期限が過去なら入れない）
     const start = o.start ?? ((o.predecessors ?? []).length || due < today ? null : today);
-    w = addTask(w, { projectId: o.projectId, title: o.title, due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
+    w = addTask(w, { projectId: pidOf(o), title: o.title, due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
     const id = w.tasks.at(-1).id;
     refs.set(ref, id);
     inboxIds.add(id);
-    projects.add(o.projectId);
+    if (!projectRefs.has(o.projectId) && !newProjects.some((n) => n.id === o.projectId)) projects.add(o.projectId);
     addCount++;
   }
   for (const o of adds) {
@@ -2579,16 +2737,30 @@ function simulate(data, ops, today) {
     if (!preds.length) continue;
     for (const p of preds) {
       const pt = need(p);
-      if (pt.projectId !== T(id).projectId) throw new Error(`先行 ${p} は別のプロジェクトのタスクです`);
+      if (pt.projectId !== T(id).projectId) throw new Error(`前のタスク ${p} は別のプロジェクトのタスクです`);
       if (before.has(p)) touched.add(p);
     }
     w = updateTask(w, id, { predecessors: preds }, today);
     const lower = preds.map((p) => T(p)).filter((p) => !isClosed(p)).map((p) => p.due).reduce(max, "");
     if (lower > T(id).due) {
-      warnings.push(`登録するタスク ${id}（${T(id).title}）の期限は、先行より前なので ${lower} に合わせました`);
-      raise(id, lower, "先行の期限に合わせた", inboxIds);
+      warnings.push(`登録するタスク ${id}（${T(id).title}）の期限は、前のタスクより前なので ${lower} に合わせました`);
+      raise(id, lower, "前のタスクの期限に合わせた", inboxIds);
     }
   }
+
+  // 1 つの対象を直す操作（updateProject → setStatus・setImportance）
+  const editCtx = {
+    today, warnings, rows, dueGiven,
+    taskId: resolve,
+    projectId: (token) => projectRefs.get(token) ?? token,
+    touch: (id) => { if (before.has(id)) touched.add(id); },
+    log: (id) => inboxIds.add(id),
+    touchProject: (id) => { if (!newProjects.some((n) => n.id === id)) projects.add(id); },
+  };
+  for (const o of ops.filter((x) => x.op === "updateProject")) w = EDITS.updateProject(w, o, editCtx);
+  for (const o of ops.filter((x) => x.op === "setStatus" || x.op === "setImportance")) w = EDITS[o.op](w, o, editCtx);
+
+  for (const kind of ["addMilestone", "moveMilestone", "removeMilestone"]) for (const o of ops.filter((x) => x.op === kind)) w = EDITS[kind](w, o, editCtx);
 
   // ② addPred・removePred
   for (const o of ops.filter((x) => x.op === "addPred" || x.op === "removePred")) {
@@ -2599,16 +2771,16 @@ function simulate(data, ops, today) {
     if (before.has(taskId)) touched.add(taskId);
     if (before.has(predId)) touched.add(predId);
     if (o.op === "addPred") {
-      if (has) { predRows.push({ taskId, predId, action: "same" }); warnings.push(`${predId} は、すでに ${taskId} の先行です`); continue; }
-      // 先行があるタスクの開始日は、先行から決まる（残すと validate の注意が出る）。外すので、提案の注意に出す
+      if (has) { predRows.push({ taskId, predId, action: "same" }); warnings.push(`${predId} は、すでに ${taskId} の前のタスクです`); continue; }
+      // 前のタスクがあるタスクの開始日は、前のタスクから決まる（残すと validate の注意が出る）。外すので、提案の注意に出す
       const patch = { predecessors: [...(t.predecessors ?? []), predId] };
-      if (t.start) { patch.start = null; warnings.push(`${taskId} は先行ができるので、開始日 ${t.start} を外します（先行から決まります）`); }
+      if (t.start) { patch.start = null; warnings.push(`${taskId} は前のタスクができるので、開始日 ${t.start} を外します（前のタスクから決まります）`); }
       w = updateTask(w, taskId, patch, today);
       predRows.push({ taskId, predId, action: "add" });
       predCount++; inboxIds.add(taskId);
-      if (!isClosed(p)) raise(taskId, p.due, `先行 ${predId} を追加`, inboxIds);
+      if (!isClosed(p)) raise(taskId, p.due, `前のタスク ${predId} を追加`, inboxIds);
     } else {
-      if (!has) { predRows.push({ taskId, predId, action: "same" }); warnings.push(`${predId} は、${taskId} の先行ではありません`); continue; }
+      if (!has) { predRows.push({ taskId, predId, action: "same" }); warnings.push(`${predId} は、${taskId} の前のタスクではありません`); continue; }
       w = updateTask(w, taskId, { predecessors: t.predecessors.filter((x) => x !== predId) }, today);
       predRows.push({ taskId, predId, action: "remove" });
       predCount++; inboxIds.add(taskId);
@@ -2628,21 +2800,61 @@ function simulate(data, ops, today) {
     const impact = computeImpact(w, id, delta, { compress: !!o.compress });
     const ids = [];
     for (const c of impact.changes) { setDue(c.taskId, c.newDue, c.reason); ids.push(c.taskId); }
-    // この計画が触った（動かした・先行に足した）先行の期限より前には、手動の前倒しでもしない（遅い方を採る）
+    // この計画が触った（動かした・前のタスクに足した）前のタスクの期限より前には、手動の前倒しでもしない（遅い方を採る）
     const lower = (T(id).predecessors ?? []).filter((p) => changed.has(p) || touched.has(p)).map((p) => T(p)).filter((p) => !isClosed(p)).map((p) => ({ id: p.id, due: p.due }));
     const need2 = lower.reduce((a, b) => (b.due > a.due ? b : a), { id: null, due: "" });
     if (need2.id && need2.due > T(id).due) {
-      warnings.push(`${id} は、先行 ${need2.id} の新しい期限より前にできないので、${need2.due} にしました`);
-      raise(id, need2.due, `先行 ${need2.id} の期限より前にできない`, new Set(ids));
+      warnings.push(`${id} は、前のタスク ${need2.id} の新しい期限より前にできないので、${need2.due} にしました`);
+      raise(id, need2.due, `前のタスク ${need2.id} の期限より前にできない`, new Set(ids));
     }
     moves.push({ deltaDays: delta, taskIds: ids });
     for (const x of ids) if (before.has(x)) touched.add(x);
   }
 
+  // 削除（最後に当てる）。同じ依頼で追加した対象は消せない。消す対象を、他の操作が指していてもいけない
+  const removeTasks = ops.filter((x) => x.op === "removeTask"), removeProjects = ops.filter((x) => x.op === "removeProject");
+  if (removeTasks.length || removeProjects.length) {
+    const others = ops.filter((x) => x.op !== "removeTask" && x.op !== "removeProject");
+    const taskTargets = new Set(others.flatMap((x) => [x.taskId, x.predId, ...(x.op === "addTask" ? x.predecessors ?? [] : [])]).filter((v) => v != null).map(resolve));
+    const projectTargets = new Set(others.map((x) => x.projectId).filter((v) => v != null).map((v) => projectRefs.get(v) ?? v));
+    for (const o of removeTasks) {
+      if (refs.has(o.taskId)) throw new Error(`タスク ${o.taskId} は同じ依頼で追加したので、同じ依頼では削除できません`);
+      if (taskTargets.has(o.taskId)) throw new Error(`タスク ${o.taskId} は削除する対象なので、他の操作では使えません`);
+    }
+    for (const o of removeProjects) {
+      if (projectRefs.has(o.projectId)) throw new Error(`プロジェクト ${o.projectId} は同じ依頼で追加したので、同じ依頼では削除できません`);
+      if (projectTargets.has(o.projectId)) throw new Error(`プロジェクト ${o.projectId} は削除する対象なので、他の操作では使えません`);
+      const inside = [...taskTargets].find((id) => T(id)?.projectId === o.projectId);
+      if (inside) throw new Error(`タスク ${inside} は、削除するプロジェクト ${o.projectId} の中にあるので、他の操作では使えません`);
+    }
+    for (const o of removeTasks) w = EDITS.removeTask(w, o, editCtx);
+    for (const o of removeProjects) w = EDITS.removeProject(w, o, editCtx);
+  }
+
+  // 新規プロジェクトの期限と開始日（期限は指定がなければ、そのプロジェクトのタスクの最終的な期限の最大値。タスクが無ければ 30 日後）
+  const projectRows = newProjects.map(({ ref, id }) => {
+    const mine = w.projects.find((p) => p.id === id);
+    const latest = w.tasks.filter((t) => t.projectId === id).map((t) => t.due).reduce(max, "");
+    if (!dueGiven.has(id)) {
+      const due = max(latest || addDays(today, 30), mine.start);
+      w = { ...w, projects: w.projects.map((p) => (p.id === id ? { ...p, due } : p)) };
+    } else if (latest > mine.due) {
+      warnings.push(`${mine.name}の期限（${mine.due}）を超えます（最後のタスクは ${latest}）`);
+    }
+    const p = w.projects.find((x) => x.id === id);
+    return { ref, id, name: p.name, type: p.type, start: p.start, due: p.due };
+  });
+
+  // マイルストーンの日付がプロジェクトの期限（新規プロジェクトは決まった期限）を超えるときの警告
+  for (const r of rows.milestone) {
+    const p = w.projects.find((x) => x.id === r.projectId);
+    if (r.action !== "remove" && p && r.newDate > p.due) warnings.push(`マイルストーン「${r.name}」（${r.newDate}）は、${p.name}の期限（${p.due}）を超えます`);
+  }
+
   const { errors } = validate(w);
   if (errors.length) throw new Error(errors.join(" / "));
 
-  const dueRows = [...changed].filter((id) => before.has(id) && before.get(id).due !== T(id).due)
+  const dueRows = [...changed].filter((id) => before.has(id) && T(id) && before.get(id).due !== T(id).due)
     .map((id) => ({ taskId: id, title: T(id).title, oldDue: before.get(id).due, newDue: T(id).due, reason: reasons.get(id) }));
   // プロジェクト期限の超過（動いたタスクがあるプロジェクトだけ）
   for (const p of w.projects ?? []) {
@@ -2656,32 +2868,46 @@ function simulate(data, ops, today) {
   const baseTasks = {};
   for (const id of baseIds) { const t = before.get(id); baseTasks[id] = { due: t.due, predecessors: [...(t.predecessors ?? [])], status: t.status }; projects.add(t.projectId); }
 
-  // 先行が、その先行の先行に合わせて引き上げられると、businessDays の期限も引き上げられ、営業日が吸収される。表の営業日と食い違うので知らせる
+  // 前のタスクが、そのまた前のタスクに合わせて引き上げられると、businessDays の期限も引き上げられ、営業日が吸収される。表の営業日と食い違うので知らせる
   for (const o of adds.filter((x) => x.businessDays !== undefined)) {
     const ref = String(o.ref).trim();
-    if (T(refs.get(ref)).due !== dueOf.get(ref)) warnings.push(`登録するタスク ${ref}（${o.title}）の営業日 ${o.businessDays} は、先行の期限が引き上げられたため反映されていません（期限は ${T(refs.get(ref)).due}）`);
+    if (T(refs.get(ref)).due !== dueOf.get(ref)) warnings.push(`登録するタスク ${ref}（${o.title}）の営業日 ${o.businessDays} は、前のタスクの期限が引き上げられたため反映されていません（期限は ${T(refs.get(ref)).due}）`);
   }
   const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, businessDays: o.businessDays ?? null, start: t.start ?? null, predecessors: o.predecessors ?? [] }; });
   const sections = [];
+  if (projectRows.length) sections.push({ kind: "project", rows: projectRows });
   if (addRows.length) sections.push({ kind: "add", rows: addRows });
+  for (const kind of ["status", "importance", "projectChange", "milestone"]) if (rows[kind].length) sections.push({ kind, rows: rows[kind] });
   if (predRows.length) sections.push({ kind: "pred", rows: predRows });
   if (dueRows.length) sections.push({ kind: "due", rows: dueRows });
-  return { data: w, ops: ops.map((o) => planned.get(o) ?? o), sections, warnings, base: { tasks: baseTasks, projects: [...projects].sort() }, moves, inboxIds: [...inboxIds], predCount, addCount };
+  for (const kind of ["removeTask", "removeProject"]) if (rows[kind].length) sections.push({ kind, rows: rows[kind] });
+  return { data: w, ops: ops.map((o) => planned.get(o) ?? o), sections, warnings, base: { tasks: baseTasks, projects: [...projects].sort() }, moves, inboxIds: [...inboxIds], predCount, addCount, projectCount: projectRows.length };
 }
 
 /** 変更案の表の同一性（提案と、いまのデータでの計算結果の比較用）。登録する開始日の既定（日付で変わる）と、理由の文は含めない */
 const sectionsKey = (sections) => JSON.stringify(sections.map((s) => [s.kind, s.rows.map((r) =>
   s.kind === "due" ? [r.taskId, r.oldDue, r.newDue]
+    : s.kind === "project" ? [r.ref, r.id, r.name, r.type]
+    : s.kind === "status" ? [r.taskId, r.oldStatus, r.newStatus, r.oldWaitingOn, r.newWaitingOn?.party ?? null]
+    : s.kind === "importance" ? [r.taskId, r.old, r.new]
+    : s.kind === "projectChange" ? [r.projectId, r.name, r.changes]
+    : s.kind === "milestone" ? [r.projectId, r.action, r.name, r.oldDate, r.newDate]
+    : s.kind === "removeTask" ? [r.taskId, r.status, r.affected.map((a) => a.taskId)]
+    : s.kind === "removeProject" ? [r.projectId, r.tasks.map((t) => [t.taskId, t.status]), r.eventLinks]
     : s.kind === "pred" ? [r.taskId, r.predId, r.action]
       : [r.ref, r.title, r.projectId, r.group, r.subgroup, r.due, r.predecessors])]));
 
-/** 変更案（sections）の要約。例: 「期限 2 件・先行 1 件・登録 2 件」（変更なしの先行は数えない） */
+const count = (sections, ...kinds) => sections.filter((s) => kinds.includes(s.kind)).reduce((n, s) => n + s.rows.filter((r) => r.action !== "same").length, 0);
+/** 節の件数のうち、あるときだけ書く項目（プロジェクト・状態・重要度・プロジェクト変更・削除）。要約と変更履歴の reason の先頭に付く */
+const extraParts = (sections) => [[["project"], "プロジェクト"], [["status"], "状態"], [["importance"], "重要度"], [["projectChange"], "プロジェクト変更"], [["milestone"], "マイルストーン"], [["removeTask", "removeProject"], "削除"]]
+  .filter(([kinds]) => count(sections, ...kinds)).map(([kinds, label]) => `${label} ${count(sections, ...kinds)} 件`);
+
+/** 変更案（sections）の要約。例: 「期限 2 件・順番 1 件・登録 2 件」（変更なしの前のタスクは数えない）。ほかの節があるときだけ、先頭に「プロジェクト 1 件・」などが付く */
 function summarizeSections(sections) {
-  const n = (kind) => sections.find((s) => s.kind === kind)?.rows.filter((r) => r.action !== "same").length ?? 0;
-  return `期限 ${n("due")} 件・先行 ${n("pred")} 件・登録 ${n("add")} 件`;
+  return [...extraParts(sections), `期限 ${count(sections, "due")} 件`, `順番 ${count(sections, "pred")} 件`, `登録 ${count(sections, "add")} 件`].join("・");
 }
 
-/** 操作の計画（データは変えない）。例外: 不明なタスク・プロジェクト、循環、別のプロジェクトの先行、完了済みの moveDue、不明な op、など */
+/** 操作の計画（データは変えない）。例外: 不明なタスク・プロジェクト、循環、別のプロジェクトの前のタスク、完了済みの moveDue、不明な op、など */
 function planOps(data, ops, { today }) {
   const s = simulate(data, ops, today);
   return { ops: s.ops, sections: s.sections, warnings: s.warnings, base: s.base };
@@ -2700,12 +2926,13 @@ function applyProposal(data, proposal, { reason, cause, today }) {
   for (const pid of proposal.base?.projects ?? []) if (!(data.projects ?? []).some((p) => p.id === pid)) throw stale();
 
   const s = simulate(data, proposal.ops, today);
-  // base に入らない後続・別の先行が変わって、提案の表と結果が食い違うときは、適用しない
+  // base に入らない次のタスク・別の前のタスクが変わって、提案の表と結果が食い違うときは、適用しない
   if (proposal.sections && sectionsKey(s.sections) !== sectionsKey(proposal.sections)) throw stale();
   const log = [...(s.data.changeLog ?? [])];
   for (const m of s.moves) log.push({ at: today, taskIds: m.taskIds, reason: why, cause, deltaDays: m.deltaDays });
-  if (s.predCount || s.addCount) {
-    log.push({ at: today, taskIds: s.inboxIds, reason: `受信箱: 先行 ${s.predCount} 件・登録 ${s.addCount} 件`, cause: null, deltaDays: 0, source: "inbox" });
+  const extras = extraParts(s.sections);
+  if (s.predCount || s.addCount || extras.length) {
+    log.push({ at: today, taskIds: [...s.inboxIds], reason: `受信箱: ${[...extras, `順番 ${s.predCount} 件`, `登録 ${s.addCount} 件`].join("・")}`, cause: null, deltaDays: 0, source: "inbox" });
   }
   const out = { ...s.data, changeLog: log };
   const { errors } = validate(out);
@@ -2807,7 +3034,7 @@ const { GANTT_WINDOWS, renderGantt } = (() => {
 
 const GANTT_WINDOWS = [["m1", "1か月"], ["m3", "3か月"], ["m6", "6か月"], ["y1", "1年"], ["all", "全期間"]];
 
-const legend = (showActual) => `<div class="legend"><span><i class="gbar b-todo" style="position:static;display:inline-block;width:22px;height:10px"></i>To Do</span><span><i class="gbar b-prog" style="position:static;display:inline-block;width:22px;height:10px"></i>In Progress</span><span><i class="gbar b-wait" style="position:static;display:inline-block;width:22px;height:10px"></i>Waiting</span><span><i class="gbar b-done" style="position:static;display:inline-block;width:22px;height:10px"></i>Done</span><span><i class="gbar gsum" style="position:static;display:inline-block;width:22px;height:8px"></i>プロジェクト全体</span><span><i class="ms" style="position:static;display:inline-block;transform:rotate(45deg);width:9px;height:9px"></i>マイルストーン</span>${showActual ? `<span><i class="gact" style="position:static;display:inline-block;width:22px;height:5px"></i>実績(最初の作業日〜完了日・今日)</span>` : ""}<span>開始日は、未入力なら先行タスクの期限から</span></div>`;
+const legend = (showActual) => `<div class="legend"><span><i class="gbar b-todo" style="position:static;display:inline-block;width:22px;height:10px"></i>To Do</span><span><i class="gbar b-prog" style="position:static;display:inline-block;width:22px;height:10px"></i>In Progress</span><span><i class="gbar b-wait" style="position:static;display:inline-block;width:22px;height:10px"></i>Waiting</span><span><i class="gbar b-done" style="position:static;display:inline-block;width:22px;height:10px"></i>Done</span><span><i class="gbar gsum" style="position:static;display:inline-block;width:22px;height:8px"></i>プロジェクト全体</span><span><i class="ms" style="position:static;display:inline-block;transform:rotate(45deg);width:9px;height:9px"></i>マイルストーン</span>${showActual ? `<span><i class="gact" style="position:static;display:inline-block;width:22px;height:5px"></i>実績(最初の作業日〜完了日・今日)</span>` : ""}<span>開始日は、未入力なら前のタスクの期限から</span></div>`;
 
 function tools(win, hideDone) {
   const seg = GANTT_WINDOWS.map(([k, l]) => `<button data-gwin="${k}" aria-pressed="${win === k}">${l}</button>`).join("");
@@ -2903,14 +3130,14 @@ function renderGantt(data, projectIds, today, opts = {}) {
       const label = `${esc(t.id)} ${esc(t.title)} ${fmtMD(r.start)}〜${fmtMD(r.end)}`;
       const bar = r.point
         ? `<i class="dot mk${drag} ${ui.dot}${late ? " is-late" : ""}"${gt} style="left:${x(r.end)};top:13px" title="${label}${readonly ? "" : "(ドラッグで期限を変更)"}"></i>`
-        : `<i class="gbar${drag}${hasPre ? " fixl" : ""} ${ui.bar}${late ? " is-late" : ""}"${gt} style="left:${x(r.start)};width:${((diffDays(r.end, r.start) / total) * 100).toFixed(3)}%;min-width:5px" title="${label}${readonly ? "" : hasPre ? "(開始は先行から決まります。右端のドラッグで期限を変更)" : "(ドラッグで移動、両端で開始・期限を変更)"}">${readonly ? "" : `${hasPre ? "" : '<b class="gh l" data-gh="l"></b>'}<b class="gh r" data-gh="r"></b>`}</i>`;
+        : `<i class="gbar${drag}${hasPre ? " fixl" : ""} ${ui.bar}${late ? " is-late" : ""}"${gt} style="left:${x(r.start)};width:${((diffDays(r.end, r.start) / total) * 100).toFixed(3)}%;min-width:5px" title="${label}${readonly ? "" : hasPre ? "(開始は前のタスクから決まります。右端のドラッグで期限を変更)" : "(ドラッグで移動、両端で開始・期限を変更)"}">${readonly ? "" : `${hasPre ? "" : '<b class="gh l" data-gh="l"></b>'}<b class="gh r" data-gh="r"></b>`}</i>`;
       const act = r.actual && showActual
         ? `<i class="gact" style="left:${x(r.actual.start)};width:${(Math.max(diffDays(r.actual.end, r.actual.start), 0) / total * 100).toFixed(3)}%;min-width:4px" title="実績 ${fmtMD(r.actual.start)}〜${fmtMD(r.actual.end)}"></i>`
         : "";
       const dependents = data.tasks.filter((o) => (o.predecessors ?? []).includes(t.id)).map((o) => o.id);
       let lab;
       if (!readonly && askDel === t.id) {
-        lab = `<div class="g-label"><span class="id">${esc(t.id)}</span><div class="ask" style="grid-column:2/-1">${dependents.length ? `後続 ${esc(dependents.join(", "))} の先行から外れます。` : "このタスクを削除します。"}<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-delyes="${esc(t.id)}">削除する</button><button class="btn" data-delno>やめる</button></div></div></div>`;
+        lab = `<div class="g-label"><span class="id">${esc(t.id)}</span><div class="ask" style="grid-column:2/-1">${dependents.length ? `次のタスク ${esc(dependents.join(", "))} の前のタスクから外れます。` : "このタスクを削除します。"}<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-delyes="${esc(t.id)}">削除する</button><button class="btn" data-delno>やめる</button></div></div></div>`;
       } else {
         const name = readonly ? `<span class="g-name">${esc(t.title)}</span>` : `<button class="g-name" data-goto="${esc(t.id)}" title="リストで編集する">${esc(t.title)}</button>`;
         const del = readonly ? "" : `<button class="gx" data-del="${esc(t.id)}" aria-label="${esc(t.id)} を削除">×</button>`;
@@ -3121,7 +3348,7 @@ return { snapStart, weekStartOf, calendarGeometry, renderCalendar, renderSchedul
 
 /* src/ui/views/replan.js */
 const { renderReplanPanel } = (() => {
-// 日程変更の確認パネル（期限を変えたとき、後続への影響を見せて、反映のしかたを選んでもらう）
+// 日程変更の確認パネル（期限を変えたとき、次のタスクへの影響を見せて、反映のしかたを選んでもらう）
 
 
 
@@ -3140,10 +3367,10 @@ function renderReplanPanel(data, pending) {
   }).join("");
   const warns = impact.projectDueExceeded.map((x) => {
     const p = data.projects.find((o) => o.id === x.projectId);
-    return `<div class="rp-warn"><b>プロジェクト期限を超えます。</b> ${esc(p?.name ?? x.projectId)}の期限 <span class="mono">${fmtMD(x.due)}</span> に対し、最後のタスクは <span class="mono">${fmtMD(x.latestTaskDue)}</span> です。期限の見直しや、先行の短縮を検討してください。</div>`;
+    return `<div class="rp-warn"><b>プロジェクト期限を超えます。</b> ${esc(p?.name ?? x.projectId)}の期限 <span class="mono">${fmtMD(x.due)}</span> に対し、最後のタスクは <span class="mono">${fmtMD(x.latestTaskDue)}</span> です。期限の見直しや、前のタスクの短縮を検討してください。</div>`;
   }).join("");
   const early = delta < 0
-    ? `<label class="chk"><input type="checkbox" data-rp="compress"${compress ? " checked" : ""}>後続も詰める（前倒しした日数だけ、後続も前倒しする）</label>`
+    ? `<label class="chk"><input type="checkbox" data-rp="compress"${compress ? " checked" : ""}>次のタスクも詰める（前倒しした日数だけ、次のタスクも前倒しする）</label>`
     : "";
   return `<section class="panel replan" role="group" aria-label="日程変更の確認">
     <div class="rp-head"><h2>${esc(taskId)} の期限を <span class="mono">${fmtMD(self.oldDue)}</span> → <span class="mono">${fmtMD(self.newDue)}</span> に変更します <span class="muted">（${delta > 0 ? "+" : ""}${delta}日）</span></h2><span class="note">保存はまだされていません。確認して選んでください。</span></div>
@@ -3154,7 +3381,7 @@ function renderReplanPanel(data, pending) {
       <label style="flex:1 1 280px">理由<input class="in" data-rp="reason" value="${esc(reason)}" placeholder="例: ベンダーの工事日程が変更になった" aria-label="理由"></label>
       ${early}
     </div>
-    <div class="rp-act"><button class="btn primary" data-replan="apply">後続も反映して履歴に残す</button><button class="btn" data-replan="only">このタスクだけ変える</button><button class="btn" data-replan="cancel">やめる</button></div>
+    <div class="rp-act"><button class="btn primary" data-replan="apply">次のタスクも反映して履歴に残す</button><button class="btn" data-replan="only">このタスクだけ変える</button><button class="btn" data-replan="cancel">やめる</button></div>
   </section>`;
 }
 
@@ -3322,12 +3549,12 @@ function renderSettings(data, today, opts = {}) {
   const nh = st.nationalHolidays, nhDates = entries(nh?.dates);
   const nhRows = nhDates.filter((x) => x.date >= today).slice(0, 12).map((x) => `<tr><td class="mono" data-l="日付">${esc(x.date)}</td><td data-l="名称">${esc(x.name ?? "")}</td></tr>`).join("");
   const nationalSec = `<section class="panel" aria-labelledby="h-nat"><h2 id="h-nat" style="margin-top:0">日本の祝日</h2>
-      <p class="note" style="margin:0 0 10px">営業日の計算で飛ばす日です。内閣府の祝日一覧から、Claude Code が取得して保存します（更新は <span class="mono">/pj-lens:holidays</span>。この画面からは取得しません）。</p>
+      <p class="note" style="margin:0 0 10px">営業日の計算で飛ばす日です。内閣府の祝日一覧から、Claude Code が取得して保存します（営業日を使う提案を作るときと、見張りを始めるときに、自動で更新します。この画面からは取得しません）。</p>
       ${warnOf("nationalHolidays")}
       ${nh && typeof nh === "object" && isDate(nh.fetchedAt) && nhDates.length
         ? `<p style="margin:0 0 8px">取得日 <span class="mono">${esc(nh.fetchedAt)}</span>・<span class="mono">${nhDates.length} 件</span>（<span class="mono">${esc(nhDates[0].date)}〜${esc(nhDates.at(-1).date)}</span>）。今日以降の祝日:</p>
-         ${nhRows ? `<div class="tscroll"><table class="tbl"><tbody>${nhRows}</tbody></table></div>` : `<p class="muted" style="margin:0">今日以降の祝日は、取得した範囲にありません。<span class="mono">/pj-lens:holidays</span> で取り直してください。</p>`}`
-        : `<p class="muted" style="margin:0">まだ取得していません。Claude Code で <span class="mono">/pj-lens:holidays</span> を実行すると取得します。</p>`}
+         ${nhRows ? `<div class="tscroll"><table class="tbl"><tbody>${nhRows}</tbody></table></div>` : `<p class="muted" style="margin:0">今日以降の祝日は、取得した範囲にありません。次に自動で更新されます。</p>`}`
+        : `<p class="muted" style="margin:0">まだ取得していません。営業日を使う提案を作るときと、見張りを始めるときに、自動で取得します。</p>`}
     </section>`;
 
   const kindOptions = (cur) => HOLIDAY_KINDS.concat(HOLIDAY_KINDS.includes(cur) || cur === undefined ? [] : [cur]).map((k) => `<option${k === (cur ?? HOLIDAY_KINDS[0]) ? " selected" : ""}>${esc(k)}</option>`).join("");
@@ -3402,7 +3629,7 @@ const STATUS = {
   pending: ["送信済み", "wait"], working: ["処理中", "wait"], question: ["聞き返しがあります", "warn"], proposed: ["提案があります", "ok"],
   applied: ["反映済み", "done"], rejected: ["却下", "off"], failed: ["失敗", "bad"],
 };
-const EXAMPLES = [["due", "期限が動いた"], ["pred", "先行を結ぶ"], ["add", "タスクを登録"]];
+const EXAMPLES = [["due", "期限が動いた"], ["pred", "作業の順番を決める"], ["add", "タスクを登録"]];
 
 const two = (n) => String(n).padStart(2, "0");
 /** ISO 日時 → 「10/21 14:32」（この端末の時刻） */
@@ -3421,11 +3648,42 @@ function sectionHtml(data, s) {
   if (s.kind === "pred") {
     const label = { add: "追加", remove: "削除", same: "変更なし" };
     const rows = s.rows.map((r) => `<li><span class="mono">${esc(r.predId)} → ${esc(r.taskId)}</span> <span class="pill ${r.action === "same" ? "off" : "ok"}">${label[r.action] ?? esc(r.action)}</span> <span class="muted">${taskLabel(data, r.predId)} → ${taskLabel(data, r.taskId)}</span></li>`).join("");
-    return `<div class="ib-sec"><b>先行の対応付け</b><ul class="ib-list">${rows}</ul></div>`;
+    return `<div class="ib-sec"><b>作業の順番</b><ul class="ib-list">${rows}</ul></div>`;
+  }
+  if (s.kind === "project") {
+    const rows = s.rows.map((r) => `<tr><td class="id">${esc(r.id)}</td><td>${esc(r.name)}</td><td>${esc(r.type)}</td><td class="mono">${fmtMD(r.start)}</td><td class="mono">${fmtMD(r.due)}</td></tr>`).join("");
+    return `<div class="ib-sec"><b>プロジェクトの追加（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>ID</th><th>名前</th><th>種別</th><th>開始日</th><th>期限</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  if (s.kind === "status") {
+    const wait = (w) => (w?.party ? `（待ち先: ${esc(w.party)}）` : "");
+    const rows = s.rows.map((r) => `<tr><td class="id">${esc(r.taskId)}</td><td>${esc(r.title)}</td><td>${esc(r.oldStatus)}${wait(r.oldWaitingOn)}</td><td><b>${esc(r.newStatus)}</b>${wait(r.newWaitingOn)}</td></tr>`).join("");
+    return `<div class="ib-sec"><b>状態の変更（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>ID</th><th>件名</th><th>今の状態</th><th>新しい状態</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  if (s.kind === "importance") {
+    const rows = s.rows.map((r) => `<tr><td class="id">${esc(r.taskId)}</td><td>${esc(r.title)}</td><td>${esc(r.old ?? "（なし）")}</td><td><b>${esc(r.new ?? "（外す）")}</b></td></tr>`).join("");
+    return `<div class="ib-sec"><b>重要度の変更（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>ID</th><th>件名</th><th>今の重要度</th><th>新しい重要度</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  if (s.kind === "projectChange") {
+    const label = { name: "名前", type: "種別", status: "状態", start: "開始日", due: "期限" };
+    const rows = s.rows.flatMap((r) => r.changes.map((c) => `<tr><td class="id">${esc(r.projectId)}</td><td>${esc(r.name)}</td><td>${label[c.field] ?? esc(c.field)}</td><td>${esc(c.old)}</td><td><b>${esc(c.new)}</b></td></tr>`)).join("");
+    return `<div class="ib-sec"><b>プロジェクトの変更（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>ID</th><th>名前</th><th>項目</th><th>今の値</th><th>新しい値</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  if (s.kind === "milestone") {
+    const label = { add: "追加", move: "日付の変更", remove: "削除" };
+    const rows = s.rows.map((r) => `<tr><td>${esc(r.projectName)}</td><td>${esc(r.name)}</td><td><span class="pill ${r.action === "remove" ? "bad" : "ok"}">${label[r.action] ?? esc(r.action)}</span></td><td class="mono">${r.oldDate ? fmtMD(r.oldDate) : "—"}</td><td class="mono">${r.newDate ? `<b>${fmtMD(r.newDate)}</b>` : "—"}</td></tr>`).join("");
+    return `<div class="ib-sec"><b>マイルストーンの変更（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>プロジェクト</th><th>名前</th><th>操作</th><th>今の日付</th><th>新しい日付</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  if (s.kind === "removeTask") {
+    const rows = s.rows.map((r) => `<li><span class="mono">${esc(r.taskId)}</span> ${esc(r.title)} <span class="muted">（${esc(r.status)}）</span>${r.affected.length ? `<div class="muted">前のタスクから外れる: ${r.affected.map((a) => `${esc(a.taskId)} ${esc(a.title)}`).join("、")}</div>` : ""}</li>`).join("");
+    return `<div class="ib-sec ib-danger"><b>タスクの削除（${s.rows.length} 件）</b><ul class="ib-list">${rows}</ul></div>`;
+  }
+  if (s.kind === "removeProject") {
+    const rows = s.rows.map((r) => `<li><span class="mono">${esc(r.projectId)}</span> <b>${esc(r.name)}</b> <span class="muted">配下のタスク ${r.tasks.length} 件も消えます。会議のひも付け ${r.eventLinks} 件が外れます</span><ul class="ib-list">${r.tasks.map((t) => `<li><span class="mono">${esc(t.taskId)}</span> ${esc(t.title)} <span class="muted">（${esc(t.status)}）</span></li>`).join("")}</ul></li>`).join("");
+    return `<div class="ib-sec ib-danger"><b>プロジェクトの削除（${s.rows.length} 件）</b><ul class="ib-list">${rows}</ul></div>`;
   }
   if (s.kind === "add") {
     const rows = s.rows.map((r, i) => `<tr data-row="${i + 1}"><td class="mono">${i + 1}</td><td>${esc(r.title)}</td><td>${r.group ? esc(r.group) : "（なし）"}${r.subgroup ? ` ▸ ${esc(r.subgroup)}` : ""}</td><td class="mono">${esc(r.businessDays ?? "—")}</td><td class="mono">${fmtMD(r.due)}</td><td class="mono">${(r.predecessors ?? []).length ? esc(r.predecessors.join(", ")) : "—"}</td></tr>`).join("");
-    return `<div class="ib-sec"><b>タスクの登録（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>#</th><th>件名</th><th>大項目 ▸ 中項目</th><th>営業日</th><th>期限</th><th>先行</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    return `<div class="ib-sec"><b>タスクの登録（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>#</th><th>件名</th><th>大項目 ▸ 中項目</th><th>営業日</th><th>期限</th><th>前のタスク</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   return "";
 }
@@ -3522,12 +3780,12 @@ function renderList(data, p, today, opts) {
   const rowOf = (t) => {
     const preds = t.predecessors ?? [];
     const cand = predecessorCandidates(data, t.id).map((id) => data.tasks.find((u) => u.id === id));
-    const chips = preds.map((id) => `<span class="chip">${esc(id)}<button data-rmpre="${esc(t.id)}|${esc(id)}" aria-label="${esc(id)} を先行から外す">×</button></span>`).join("");
-    const add = cand.length ? `<select class="in sm" data-addpre="${esc(t.id)}" aria-label="先行タスクを追加"><option value="">＋先行</option>${cand.map((u) => `<option value="${esc(u.id)}">${esc(u.id)} ${esc(u.title)}</option>`).join("")}</select>` : "";
+    const chips = preds.map((id) => `<span class="chip">${esc(id)}<button data-rmpre="${esc(t.id)}|${esc(id)}" aria-label="${esc(id)} を前のタスクから外す">×</button></span>`).join("");
+    const add = cand.length ? `<select class="in sm" data-addpre="${esc(t.id)}" aria-label="前のタスクを追加"><option value="">＋前のタスク</option>${cand.map((u) => `<option value="${esc(u.id)}">${esc(u.id)} ${esc(u.title)}</option>`).join("")}</select>` : "";
     const needParty = t.status === "Waiting" && !t.waitingOn?.party ? `<span class="pill wait">待ち先を入力</span>` : "";
     const dependents = data.tasks.filter((o) => (o.predecessors ?? []).includes(t.id)).map((o) => o.id);
     const delCell = opts.askDel === t.id
-      ? `<div class="ask">${dependents.length ? `後続 ${esc(dependents.join(", "))} の先行から外れます。` : "このタスクを削除します。"}<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-delyes="${esc(t.id)}">削除する</button><button class="btn" data-delno>やめる</button></div></div>`
+      ? `<div class="ask">${dependents.length ? `次のタスク ${esc(dependents.join(", "))} の前のタスクから外れます。` : "このタスクを削除します。"}<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-delyes="${esc(t.id)}">削除する</button><button class="btn" data-delno>やめる</button></div></div>`
       : `<button class="btn" data-del="${esc(t.id)}" aria-label="${esc(t.id)} を削除">削除</button>`;
     const late = taskFlags(t, today, data.settings).includes("overdue");
     return `<tr data-row="${esc(t.id)}"><td class="id" data-l="ID">${esc(t.id)}</td>
@@ -3539,9 +3797,9 @@ function renderList(data, p, today, opts) {
         : opts.pendingDone?.id === t.id && !opts.todayIds?.has(t.id)
         ? doneAskHtml(opts.pendingDone)
         : `<select class="in" data-f="status" data-id="${esc(t.id)}" aria-label="${esc(t.id)} の状態">${TASK_STATUS.map((o) => `<option ${o === t.status ? "selected" : ""}>${o}</option>`).join("")}</select>${late ? ` <span class="pill late">期限超過</span>` : ""}`}</td>
-      <td data-l="開始">${preds.length ? `<span class="mono muted" title="先行タスクの期限から決まります">${fmtMD(taskStart(data, t.id))} <small>先行から</small></span>` : `<input class="in" type="date" data-f="start" data-id="${esc(t.id)}" value="${esc(t.start ?? "")}" aria-label="${esc(t.id)} の開始日">`}</td>
+      <td data-l="開始">${preds.length ? `<span class="mono muted" title="前のタスクの期限から決まります">${fmtMD(taskStart(data, t.id))} <small>前のタスクから</small></span>` : `<input class="in" type="date" data-f="start" data-id="${esc(t.id)}" value="${esc(t.start ?? "")}" aria-label="${esc(t.id)} の開始日">`}</td>
       <td data-l="期限"><input class="in" type="date" data-f="due" data-id="${esc(t.id)}" value="${esc(t.due)}" aria-label="${esc(t.id)} の期限"></td>
-      <td data-l="先行"><div class="chips">${chips}${add}</div></td>
+      <td data-l="前のタスク"><div class="chips">${chips}${add}</div></td>
       <td data-l="待ち先"><input class="in" data-f="party" data-id="${esc(t.id)}" value="${esc(t.waitingOn?.party ?? "")}" placeholder="${t.status === "Waiting" ? "ベンダー・部署名" : "—"}" ${t.status === "Waiting" ? "" : "disabled"} aria-label="${esc(t.id)} の待ち先">${needParty}</td>
       <td data-l="重要度"><select class="in sm" data-f="importance" data-id="${esc(t.id)}" aria-label="${esc(t.id)} の重要度">${[["", "—"], ["high", "高"], ["mid", "中"], ["low", "低"]].map(([v, l]) => `<option value="${v}" ${(t.importance ?? "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></td>
       <td data-l="メモ"><input class="in" data-f="memo" data-id="${esc(t.id)}" value="${esc(t.memo ?? "")}" placeholder="メモ" aria-label="${esc(t.id)} のメモ"></td>
@@ -3574,11 +3832,11 @@ function renderList(data, p, today, opts) {
       <label>開始 <input class="in sm" type="date" data-pf="start" data-pid="${esc(p.id)}" value="${esc(p.start)}" aria-label="${esc(p.name)} の開始日"></label>
       <label>期限 <input class="in sm" type="date" data-pf="due" data-pid="${esc(p.id)}" value="${esc(p.due)}" aria-label="${esc(p.name)} の期限"></label>
       <span>進捗 <b class="mono">${prog.done}/${prog.total}</b> (${Math.round(prog.rate * 100)}%)</span><span class="mono hrs">${(() => { const hh = projectHours(data, p.id); return `稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）`; })()}</span></div></div><div>${flagPills(data, p.id, today, projectFlags(data, p.id, today))}</div></div>
-    <div class="tscroll"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>先行</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="note">変更はその場でファイルに保存されます。後続の日程をまとめて見直すときは、Claude Code の replan に頼みます。</span></div>
+    <div class="tscroll"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>前のタスク</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="note">変更はその場でファイルに保存されます。次のタスクの日程をまとめて見直すときは、画面の下端の「Claude Code に依頼する」に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>
     <div class="mslist">${ms}<div><button class="btn" data-msadd="${esc(p.id)}">＋ マイルストーンを追加</button> <span class="note">ガントに◆で表示されます。</span></div></div>
-    <h2 style="margin:18px 0 2px;font-size:13px">日程変更の履歴</h2><p class="note" style="margin:0 0 8px">日程が動いたとき、いつ・何が・なぜ動いたか(原因: ベンダー／社内／自分)の記録です。画面の確認パネルで「後続も反映して履歴に残す」を選んだとき、Claude Code の replan・受信箱で反映したときに記録されます。</p><ul class="log">${log}</ul>
+    <h2 style="margin:18px 0 2px;font-size:13px">日程変更の履歴</h2><p class="note" style="margin:0 0 8px">日程が動いたとき、いつ・何が・なぜ動いたか(原因: ベンダー／社内／自分)の記録です。画面の確認パネルで「次のタスクも反映して履歴に残す」を選んだとき、Claude Code の依頼（受信箱）で反映したときに記録されます。</p><ul class="log">${log}</ul>
     <div style="margin-top:18px">${delProj}</div></section>`;
 }
 
@@ -3681,7 +3939,7 @@ function detail(data, p, today, period, row) {
   const heading = tasks.length ? "" : `<h3>${esc(p.name)}</h3><div class="sub">${esc(p.type)} ・ ${esc(p.status)} ・ ${fmtMD(p.start)}〜${fmtMD(p.due)}</div>`;
   return `<section class="proj">${heading}
     ${renderGantt(data, [p.id], today, { window: "all", readonly: true })}
-    ${tasks.length ? `<table style="margin-top:10px"><thead><tr><th>ID</th><th>件名</th><th>状態</th><th>計画（開始〜期限）</th><th>先行</th><th>待ち先</th><th>実績（期間内）</th></tr></thead><tbody>${trs}</tbody></table>` : ""}
+    ${tasks.length ? `<table style="margin-top:10px"><thead><tr><th>ID</th><th>件名</th><th>状態</th><th>計画（開始〜期限）</th><th>前のタスク</th><th>待ち先</th><th>実績（期間内）</th></tr></thead><tbody>${trs}</tbody></table>` : ""}
     <h4 style="margin:12px 0 4px;font-size:13px">日程変更の履歴</h4>
     ${log ? `<table><thead><tr><th>日付</th><th>対象</th><th>動いた日数</th><th>原因</th><th>理由</th></tr></thead><tbody>${log}</tbody></table>` : `<p class="muted" style="margin:0;font-size:12px">期間内の変更履歴はありません。</p>`}</section>`;
 }
@@ -4077,13 +4335,13 @@ function submitGAdd(input) {
   }
 }
 
-/* ---------- 日程変更の確認(期限を変えたとき、後続への影響を見てから反映する) ---------- */
-/** 期限の変更で後続が動く、プロジェクト期限を超える、または前倒しで詰められる後続があるときは、確認待ちにして true を返す。そうでなければ false(呼び出し側がそのまま反映する) */
+/* ---------- 日程変更の確認(期限を変えたとき、次のタスクへの影響を見てから反映する) ---------- */
+/** 期限の変更で次のタスクが動く、プロジェクト期限を超える、または前倒しで詰められる次のタスクがあるときは、確認待ちにして true を返す。そうでなければ false(呼び出し側がそのまま反映する) */
 function dueChange(id, base, orig, edit) {
   const delta = diffDays(base.tasks.find((t) => t.id === id).due, orig.tasks.find((t) => t.id === id).due);
   if (!delta) return false;
   const impact = computeImpact(orig, id, delta);
-  // 前倒しは、詰められる後続があるときも確認する(既定は詰めない。パネルのチェックで選ぶ)
+  // 前倒しは、詰められる次のタスクがあるときも確認する(既定は詰めない。パネルのチェックで選ぶ)
   const canCompress = delta < 0 && computeImpact(orig, id, delta, { compress: true }).changes.length > 1;
   if (!needsReplan(impact) && !canCompress) return false;
   S.pendingReplan = { taskId: id, delta, impact, compress: false, cause: "その他", reason: "画面で調整", edit, base, orig };
@@ -4096,7 +4354,7 @@ function replanAction(kind) {
   const p = S.pendingReplan;
   if (!p) return;
   if (kind === "cancel") { S.pendingReplan = null; render(); return; }
-  if (kind === "only") { S.pendingReplan = null; apply((d) => p.edit(d), "このタスクだけ変更しました。後続の日程は変えていません"); return; }
+  if (kind === "only") { S.pendingReplan = null; apply((d) => p.edit(d), "このタスクだけ変更しました。次のタスクの日程は変えていません"); return; }
   const reason = view.querySelector('[data-rp="reason"]')?.value ?? p.reason;
   const cause = view.querySelector('[data-rp="cause"]')?.value ?? p.cause;
   if (!reason.trim()) { toast("理由を入力してください"); return; }
@@ -4205,7 +4463,7 @@ view.addEventListener("click", (e) => {
     return;
   }
   const rp = q("[data-rmpre]");
-  if (rp) { const [id, pre] = rp.dataset.rmpre.split("|"); apply((d) => updateTask(d, id, { predecessors: d.tasks.find((t) => t.id === id).predecessors.filter((x) => x !== pre) }, today), "先行を外しました"); return; }
+  if (rp) { const [id, pre] = rp.dataset.rmpre.split("|"); apply((d) => updateTask(d, id, { predecessors: d.tasks.find((t) => t.id === id).predecessors.filter((x) => x !== pre) }, today), "前のタスクを外しました"); return; }
   const at = q("[data-addat]");
   if (at) {
     const pid = at.dataset.addat, place = placeOf(at), before = S.data.tasks.map((t) => t.id);
@@ -4463,7 +4721,7 @@ function onChange(el) {
     return;
   }
   if (el.dataset.addpre !== undefined) {
-    if (el.value) { const id = el.dataset.addpre; apply((d) => updateTask(d, id, { predecessors: [...d.tasks.find((t) => t.id === id).predecessors, el.value] }, today), "先行を追加しました"); }
+    if (el.value) { const id = el.dataset.addpre; apply((d) => updateTask(d, id, { predecessors: [...d.tasks.find((t) => t.id === id).predecessors, el.value] }, today), "前のタスクを追加しました"); }
     return;
   }
   if (el.dataset.f) {
@@ -4680,8 +4938,8 @@ view.addEventListener("keydown", (e) => {
 const nowIso = () => new Date().toISOString();
 const IB_EXAMPLES = {
   due: "<タスクの ID> が <N> 日遅れた（原因: ベンダー）。",
-  pred: "<先行の ID> の後に <後続の ID>, <後続の ID> を結んで。",
-  add: "次を登録して: <件名> <期限> <大項目▸中項目> 先行 <ID>",
+  pred: "<前のタスクの ID> の後に <次のタスクの ID>, <次のタスクの ID> を結んで。",
+  add: "次を登録して: <件名> <期限> <大項目▸中項目> 前のタスク <ID>",
 };
 
 /** 打ちかけの入力（依頼・対象・返信・理由・原因）を S.ib に取り込む。描き直しで消さないため */

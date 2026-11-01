@@ -9,7 +9,7 @@ const STATUS = {
   pending: ["送信済み", "wait"], working: ["処理中", "wait"], question: ["聞き返しがあります", "warn"], proposed: ["提案があります", "ok"],
   applied: ["反映済み", "done"], rejected: ["却下", "off"], failed: ["失敗", "bad"],
 };
-const EXAMPLES = [["due", "期限が動いた"], ["pred", "先行を結ぶ"], ["add", "タスクを登録"]];
+const EXAMPLES = [["due", "期限が動いた"], ["pred", "作業の順番を決める"], ["add", "タスクを登録"]];
 
 const two = (n) => String(n).padStart(2, "0");
 /** ISO 日時 → 「10/21 14:32」（この端末の時刻） */
@@ -28,11 +28,42 @@ function sectionHtml(data, s) {
   if (s.kind === "pred") {
     const label = { add: "追加", remove: "削除", same: "変更なし" };
     const rows = s.rows.map((r) => `<li><span class="mono">${esc(r.predId)} → ${esc(r.taskId)}</span> <span class="pill ${r.action === "same" ? "off" : "ok"}">${label[r.action] ?? esc(r.action)}</span> <span class="muted">${taskLabel(data, r.predId)} → ${taskLabel(data, r.taskId)}</span></li>`).join("");
-    return `<div class="ib-sec"><b>先行の対応付け</b><ul class="ib-list">${rows}</ul></div>`;
+    return `<div class="ib-sec"><b>作業の順番</b><ul class="ib-list">${rows}</ul></div>`;
+  }
+  if (s.kind === "project") {
+    const rows = s.rows.map((r) => `<tr><td class="id">${esc(r.id)}</td><td>${esc(r.name)}</td><td>${esc(r.type)}</td><td class="mono">${fmtMD(r.start)}</td><td class="mono">${fmtMD(r.due)}</td></tr>`).join("");
+    return `<div class="ib-sec"><b>プロジェクトの追加（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>ID</th><th>名前</th><th>種別</th><th>開始日</th><th>期限</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  if (s.kind === "status") {
+    const wait = (w) => (w?.party ? `（待ち先: ${esc(w.party)}）` : "");
+    const rows = s.rows.map((r) => `<tr><td class="id">${esc(r.taskId)}</td><td>${esc(r.title)}</td><td>${esc(r.oldStatus)}${wait(r.oldWaitingOn)}</td><td><b>${esc(r.newStatus)}</b>${wait(r.newWaitingOn)}</td></tr>`).join("");
+    return `<div class="ib-sec"><b>状態の変更（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>ID</th><th>件名</th><th>今の状態</th><th>新しい状態</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  if (s.kind === "importance") {
+    const rows = s.rows.map((r) => `<tr><td class="id">${esc(r.taskId)}</td><td>${esc(r.title)}</td><td>${esc(r.old ?? "（なし）")}</td><td><b>${esc(r.new ?? "（外す）")}</b></td></tr>`).join("");
+    return `<div class="ib-sec"><b>重要度の変更（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>ID</th><th>件名</th><th>今の重要度</th><th>新しい重要度</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  if (s.kind === "projectChange") {
+    const label = { name: "名前", type: "種別", status: "状態", start: "開始日", due: "期限" };
+    const rows = s.rows.flatMap((r) => r.changes.map((c) => `<tr><td class="id">${esc(r.projectId)}</td><td>${esc(r.name)}</td><td>${label[c.field] ?? esc(c.field)}</td><td>${esc(c.old)}</td><td><b>${esc(c.new)}</b></td></tr>`)).join("");
+    return `<div class="ib-sec"><b>プロジェクトの変更（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>ID</th><th>名前</th><th>項目</th><th>今の値</th><th>新しい値</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  if (s.kind === "milestone") {
+    const label = { add: "追加", move: "日付の変更", remove: "削除" };
+    const rows = s.rows.map((r) => `<tr><td>${esc(r.projectName)}</td><td>${esc(r.name)}</td><td><span class="pill ${r.action === "remove" ? "bad" : "ok"}">${label[r.action] ?? esc(r.action)}</span></td><td class="mono">${r.oldDate ? fmtMD(r.oldDate) : "—"}</td><td class="mono">${r.newDate ? `<b>${fmtMD(r.newDate)}</b>` : "—"}</td></tr>`).join("");
+    return `<div class="ib-sec"><b>マイルストーンの変更（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>プロジェクト</th><th>名前</th><th>操作</th><th>今の日付</th><th>新しい日付</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  if (s.kind === "removeTask") {
+    const rows = s.rows.map((r) => `<li><span class="mono">${esc(r.taskId)}</span> ${esc(r.title)} <span class="muted">（${esc(r.status)}）</span>${r.affected.length ? `<div class="muted">前のタスクから外れる: ${r.affected.map((a) => `${esc(a.taskId)} ${esc(a.title)}`).join("、")}</div>` : ""}</li>`).join("");
+    return `<div class="ib-sec ib-danger"><b>タスクの削除（${s.rows.length} 件）</b><ul class="ib-list">${rows}</ul></div>`;
+  }
+  if (s.kind === "removeProject") {
+    const rows = s.rows.map((r) => `<li><span class="mono">${esc(r.projectId)}</span> <b>${esc(r.name)}</b> <span class="muted">配下のタスク ${r.tasks.length} 件も消えます。会議のひも付け ${r.eventLinks} 件が外れます</span><ul class="ib-list">${r.tasks.map((t) => `<li><span class="mono">${esc(t.taskId)}</span> ${esc(t.title)} <span class="muted">（${esc(t.status)}）</span></li>`).join("")}</ul></li>`).join("");
+    return `<div class="ib-sec ib-danger"><b>プロジェクトの削除（${s.rows.length} 件）</b><ul class="ib-list">${rows}</ul></div>`;
   }
   if (s.kind === "add") {
     const rows = s.rows.map((r, i) => `<tr data-row="${i + 1}"><td class="mono">${i + 1}</td><td>${esc(r.title)}</td><td>${r.group ? esc(r.group) : "（なし）"}${r.subgroup ? ` ▸ ${esc(r.subgroup)}` : ""}</td><td class="mono">${esc(r.businessDays ?? "—")}</td><td class="mono">${fmtMD(r.due)}</td><td class="mono">${(r.predecessors ?? []).length ? esc(r.predecessors.join(", ")) : "—"}</td></tr>`).join("");
-    return `<div class="ib-sec"><b>タスクの登録（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>#</th><th>件名</th><th>大項目 ▸ 中項目</th><th>営業日</th><th>期限</th><th>先行</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    return `<div class="ib-sec"><b>タスクの登録（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>#</th><th>件名</th><th>大項目 ▸ 中項目</th><th>営業日</th><th>期限</th><th>前のタスク</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   return "";
 }

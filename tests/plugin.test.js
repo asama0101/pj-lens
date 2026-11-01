@@ -12,7 +12,7 @@ const marketplace = () => json(".claude-plugin/marketplace.json", repoRoot);
 test("plugin.json: 名前とバージョンが package.json と一致する", () => {
   const plugin = json(".claude-plugin/plugin.json");
   assert.equal(plugin.name, "pj-lens");
-  assert.equal(plugin.version, "1.1.0");
+  assert.equal(plugin.version, "1.2.0");
   assert.equal(plugin.version, json("package.json").version);
   assert.ok(plugin.description);
 });
@@ -39,8 +39,8 @@ test("配布に必要なファイルが git に入っている（.gitignore で�
   const need = [
     ".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "assets/pj-lens.html", "data/sample.json", "tools/init.js",
     "tools/intake.js", "tools/inbox.js", "tools/validate.js", "tools/holidays.js", "tools/mcpconf.js", "tools/xlsx.js", "tools/xlsx_dump.py", "tools/home.js", "tools/cli.js",
-    ...["init", "replan", "intake", "mcp", "watch", "inbox", "holidays"].map((n) => `skills/${n}/SKILL.md`),
-    ...["replan", "intake", "inbox"].map((n) => `agents/${n}.md`),
+    ...["init", "intake", "mcp", "watch"].map((n) => `skills/${n}/SKILL.md`),
+    ...["intake", "inbox"].map((n) => `agents/${n}.md`),
   ];
   assert.deepEqual(need.filter((p) => !tracked.has(p)), []);
 });
@@ -113,9 +113,16 @@ test("C3: intake は tools を省略し、その理由を本文に書いてい�
   assert.match(text, /`tools` を省略/);
 });
 
-test("README: アンインストールで消えるもの・残るもの(H4)を書き、intake・replan は自動起動を外していない(C5)", () => {
+test("README: アンインストールで消えるもの・残るもの(H4)を書き、intake は自動起動を外していない(C5)", () => {
   const readme = readFileSync(new URL("README.md", repoRoot), "utf8");
   assert.match(readme, /### アンインストールで消えるもの・残るもの/);
   assert.match(readme, /pj-lens-mcp\.json/);
-  for (const n of ["intake", "replan"]) assert.doesNotMatch(readFileSync(new URL(`skills/${n}/SKILL.md`, root), "utf8"), /disable-model-invocation/);
+  for (const n of ["intake"]) assert.doesNotMatch(readFileSync(new URL(`skills/${n}/SKILL.md`, root), "utf8"), /disable-model-invocation/);
+});
+
+test("README: コマンド一覧に inbox・replan・holidays が無く、init・mcp・watch・intake がある。日程変更の例は /pj-lens:replan を使わない", () => {
+  const readme = readFileSync(new URL("README.md", repoRoot), "utf8");
+  const table = readme.slice(readme.indexOf("### Claude Code に頼む"), readme.indexOf("#### 画面から頼む"));
+  for (const n of ["init", "mcp", "watch", "intake"]) assert.ok(table.includes(`/pj-lens:${n}`), n);
+  for (const n of ["inbox", "replan", "holidays"]) assert.ok(!readme.includes(`/pj-lens:${n}`), n);
 });

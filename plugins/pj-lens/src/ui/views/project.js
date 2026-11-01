@@ -23,12 +23,12 @@ function renderList(data, p, today, opts) {
   const rowOf = (t) => {
     const preds = t.predecessors ?? [];
     const cand = predecessorCandidates(data, t.id).map((id) => data.tasks.find((u) => u.id === id));
-    const chips = preds.map((id) => `<span class="chip">${esc(id)}<button data-rmpre="${esc(t.id)}|${esc(id)}" aria-label="${esc(id)} を先行から外す">×</button></span>`).join("");
-    const add = cand.length ? `<select class="in sm" data-addpre="${esc(t.id)}" aria-label="先行タスクを追加"><option value="">＋先行</option>${cand.map((u) => `<option value="${esc(u.id)}">${esc(u.id)} ${esc(u.title)}</option>`).join("")}</select>` : "";
+    const chips = preds.map((id) => `<span class="chip">${esc(id)}<button data-rmpre="${esc(t.id)}|${esc(id)}" aria-label="${esc(id)} を前のタスクから外す">×</button></span>`).join("");
+    const add = cand.length ? `<select class="in sm" data-addpre="${esc(t.id)}" aria-label="前のタスクを追加"><option value="">＋前のタスク</option>${cand.map((u) => `<option value="${esc(u.id)}">${esc(u.id)} ${esc(u.title)}</option>`).join("")}</select>` : "";
     const needParty = t.status === "Waiting" && !t.waitingOn?.party ? `<span class="pill wait">待ち先を入力</span>` : "";
     const dependents = data.tasks.filter((o) => (o.predecessors ?? []).includes(t.id)).map((o) => o.id);
     const delCell = opts.askDel === t.id
-      ? `<div class="ask">${dependents.length ? `後続 ${esc(dependents.join(", "))} の先行から外れます。` : "このタスクを削除します。"}<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-delyes="${esc(t.id)}">削除する</button><button class="btn" data-delno>やめる</button></div></div>`
+      ? `<div class="ask">${dependents.length ? `次のタスク ${esc(dependents.join(", "))} の前のタスクから外れます。` : "このタスクを削除します。"}<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-delyes="${esc(t.id)}">削除する</button><button class="btn" data-delno>やめる</button></div></div>`
       : `<button class="btn" data-del="${esc(t.id)}" aria-label="${esc(t.id)} を削除">削除</button>`;
     const late = taskFlags(t, today, data.settings).includes("overdue");
     return `<tr data-row="${esc(t.id)}"><td class="id" data-l="ID">${esc(t.id)}</td>
@@ -40,9 +40,9 @@ function renderList(data, p, today, opts) {
         : opts.pendingDone?.id === t.id && !opts.todayIds?.has(t.id)
         ? doneAskHtml(opts.pendingDone)
         : `<select class="in" data-f="status" data-id="${esc(t.id)}" aria-label="${esc(t.id)} の状態">${TASK_STATUS.map((o) => `<option ${o === t.status ? "selected" : ""}>${o}</option>`).join("")}</select>${late ? ` <span class="pill late">期限超過</span>` : ""}`}</td>
-      <td data-l="開始">${preds.length ? `<span class="mono muted" title="先行タスクの期限から決まります">${fmtMD(taskStart(data, t.id))} <small>先行から</small></span>` : `<input class="in" type="date" data-f="start" data-id="${esc(t.id)}" value="${esc(t.start ?? "")}" aria-label="${esc(t.id)} の開始日">`}</td>
+      <td data-l="開始">${preds.length ? `<span class="mono muted" title="前のタスクの期限から決まります">${fmtMD(taskStart(data, t.id))} <small>前のタスクから</small></span>` : `<input class="in" type="date" data-f="start" data-id="${esc(t.id)}" value="${esc(t.start ?? "")}" aria-label="${esc(t.id)} の開始日">`}</td>
       <td data-l="期限"><input class="in" type="date" data-f="due" data-id="${esc(t.id)}" value="${esc(t.due)}" aria-label="${esc(t.id)} の期限"></td>
-      <td data-l="先行"><div class="chips">${chips}${add}</div></td>
+      <td data-l="前のタスク"><div class="chips">${chips}${add}</div></td>
       <td data-l="待ち先"><input class="in" data-f="party" data-id="${esc(t.id)}" value="${esc(t.waitingOn?.party ?? "")}" placeholder="${t.status === "Waiting" ? "ベンダー・部署名" : "—"}" ${t.status === "Waiting" ? "" : "disabled"} aria-label="${esc(t.id)} の待ち先">${needParty}</td>
       <td data-l="重要度"><select class="in sm" data-f="importance" data-id="${esc(t.id)}" aria-label="${esc(t.id)} の重要度">${[["", "—"], ["high", "高"], ["mid", "中"], ["low", "低"]].map(([v, l]) => `<option value="${v}" ${(t.importance ?? "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></td>
       <td data-l="メモ"><input class="in" data-f="memo" data-id="${esc(t.id)}" value="${esc(t.memo ?? "")}" placeholder="メモ" aria-label="${esc(t.id)} のメモ"></td>
@@ -75,11 +75,11 @@ function renderList(data, p, today, opts) {
       <label>開始 <input class="in sm" type="date" data-pf="start" data-pid="${esc(p.id)}" value="${esc(p.start)}" aria-label="${esc(p.name)} の開始日"></label>
       <label>期限 <input class="in sm" type="date" data-pf="due" data-pid="${esc(p.id)}" value="${esc(p.due)}" aria-label="${esc(p.name)} の期限"></label>
       <span>進捗 <b class="mono">${prog.done}/${prog.total}</b> (${Math.round(prog.rate * 100)}%)</span><span class="mono hrs">${(() => { const hh = projectHours(data, p.id); return `稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）`; })()}</span></div></div><div>${flagPills(data, p.id, today, projectFlags(data, p.id, today))}</div></div>
-    <div class="tscroll"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>先行</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="note">変更はその場でファイルに保存されます。後続の日程をまとめて見直すときは、Claude Code の replan に頼みます。</span></div>
+    <div class="tscroll"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>前のタスク</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="note">変更はその場でファイルに保存されます。次のタスクの日程をまとめて見直すときは、画面の下端の「Claude Code に依頼する」に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>
     <div class="mslist">${ms}<div><button class="btn" data-msadd="${esc(p.id)}">＋ マイルストーンを追加</button> <span class="note">ガントに◆で表示されます。</span></div></div>
-    <h2 style="margin:18px 0 2px;font-size:13px">日程変更の履歴</h2><p class="note" style="margin:0 0 8px">日程が動いたとき、いつ・何が・なぜ動いたか(原因: ベンダー／社内／自分)の記録です。画面の確認パネルで「後続も反映して履歴に残す」を選んだとき、Claude Code の replan・受信箱で反映したときに記録されます。</p><ul class="log">${log}</ul>
+    <h2 style="margin:18px 0 2px;font-size:13px">日程変更の履歴</h2><p class="note" style="margin:0 0 8px">日程が動いたとき、いつ・何が・なぜ動いたか(原因: ベンダー／社内／自分)の記録です。画面の確認パネルで「次のタスクも反映して履歴に残す」を選んだとき、Claude Code の依頼（受信箱）で反映したときに記録されます。</p><ul class="log">${log}</ul>
     <div style="margin-top:18px">${delProj}</div></section>`;
 }
 

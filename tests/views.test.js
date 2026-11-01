@@ -69,8 +69,8 @@ test("renderProjects(list): 状態（英語表記）・待ち先・日程変更�
   assert.ok(html.includes('value="ベンダーX"'));
   assert.ok(html.includes("ベンダーX の納期回答が遅れたため"));
   assert.ok(html.includes("3.5h・初回 10/14・3回"), "A5 の実績");
-  assert.ok(html.includes("先行から"), "先行ありは開始が読み取り専用");
-  assert.ok(html.includes('type="date" data-f="start" data-id="A5"'), "先行なしは開始日を入力できる");
+  assert.ok(html.includes("前のタスクから"), "前のタスクありは開始が読み取り専用");
+  assert.ok(html.includes('type="date" data-f="start" data-id="A5"'), "前のタスクなしは開始日を入力できる");
   assert.ok(!html.includes('data-f="start" data-id="A6"'));
 });
 
@@ -176,7 +176,7 @@ test("利用者入力はエスケープされる", () => {
   }
 });
 
-test("先行ありのバーに左端のつまみがなく、先行なしにはある", () => {
+test("前のタスクありのバーに左端のつまみがなく、前のタスクなしにはある", () => {
   const html = gantt(load(), ["A"]);
   const bar = (id) => new RegExp(`<i class="gbar[^"]*"[^>]*data-gt="${id}"[^>]*>(.*?)</i>`).exec(html)?.[1] ?? "";
   assert.ok(!bar("A4").includes('data-gh="l"'));
@@ -600,7 +600,7 @@ test("受信箱の履歴: 新しい順に、状態（送信済み・処理中・
   for (const w of ["反映済み", "却下", "送信済み", "処理中", "聞き返しがあります", "提案があります", "失敗", "期限 1 件を反映しました"]) assert.ok(html.includes(w), w);
 });
 
-test("提案のカード: 期限・先行・登録の表、警告、理由・原因の入力、承認・修正の依頼・却下", () => {
+test("提案のカード: 期限・前のタスク・登録の表、警告、理由・原因の入力、承認・修正の依頼・却下", () => {
   const html = ib(withInbox([reqOf("R1", "proposed", { proposal: PROPOSAL })]), { open: true, reasons: { R1: "手で直した理由" }, causes: { R1: "社内" } });
   assert.ok(html.includes("疎通確認テスト") && html.includes("構築") && html.includes("検証環境") && html.includes("2026-12-10") || html.includes("12/10"));
   assert.ok(html.includes("A3") && html.includes("機器の発注（ベンダーX）") && html.includes("10/16") && html.includes("11/30") && html.includes("指定（+45日）"));
@@ -644,6 +644,52 @@ test("受信箱の提案カード: 登録の行に 1 始まりの行番号（dat
   ];
   const html = ib(withInbox([reqOf("R1", "proposed", { proposal: { ...PROPOSAL, sections: [{ kind: "add", rows }] } })]), { open: true });
   assert.ok(html.includes('data-row="1"') && html.includes('data-row="2"') && !html.includes('data-row="3"'));
+});
+
+test("受信箱の提案カード: プロジェクトの追加の表（ID・名前・種別・開始日・期限）が登録の表の前に出る。名前は escape される", () => {
+  const evil = "<b>旅行</b>";
+  const sections = [
+    { kind: "project", rows: [{ ref: "p1", id: "D", name: evil, type: "増設", start: "2026-10-21", due: "2026-12-20" }] },
+    { kind: "add", rows: [{ ref: "t1", title: "要件確認", projectId: "D", group: null, subgroup: null, due: "2026-12-20", start: null, predecessors: [] }] },
+  ];
+  const html = ib(withInbox([reqOf("R1", "proposed", { proposal: { ...PROPOSAL, sections } })]), { open: true });
+  assert.ok(html.includes("プロジェクトの追加（1 件）") && html.includes("&lt;b&gt;旅行") && html.includes("増設"));
+  assert.ok(!html.includes("<b>旅行</b>"));
+  assert.ok(html.indexOf("プロジェクトの追加") < html.indexOf("タスクの登録"));
+});
+
+const cardOf = (sections) => ib(withInbox([reqOf("R1", "proposed", { proposal: { ...PROPOSAL, sections } })]), { open: true });
+
+test("受信箱の提案カード: 状態・重要度・プロジェクト変更・マイルストーンの節が、見出しと行を出す", () => {
+  const html = cardOf([
+    { kind: "status", rows: [{ taskId: "A3", title: "機器の発注", oldStatus: "Waiting", newStatus: "Done", oldWaitingOn: { party: "ベンダーX", since: "2026-10-09" }, newWaitingOn: null }] },
+    { kind: "importance", rows: [{ taskId: "A4", title: "検証環境の構築", old: null, new: "high" }] },
+    { kind: "projectChange", rows: [{ projectId: "A", name: "本社コアSW更改", changes: [{ field: "status", old: "進行中", new: "保留" }, { field: "due", old: "2027-03-31", new: "2027-04-30" }] }] },
+    { kind: "milestone", rows: [{ projectId: "A", projectName: "本社コアSW更改", action: "move", name: "本番切替", oldDate: "2027-02-20", newDate: "2027-03-13" }, { projectId: "A", projectName: "本社コアSW更改", action: "add", name: "検収", oldDate: null, newDate: "2027-03-10" }] },
+  ]);
+  for (const w of ["状態の変更（1 件）", "Waiting", "Done", "重要度の変更（1 件）", "high", "プロジェクトの変更（1 件）", "保留", "マイルストーンの変更（2 件）", "本番切替", "検収", "3/13"]) assert.ok(html.includes(w), w);
+  assert.ok(!html.includes("ib-danger"));
+});
+
+test("受信箱の提案カード: removeTask は ib-danger つきで、削除するタスクと、前のタスクから外されるタスクを出す", () => {
+  const html = cardOf([{ kind: "removeTask", rows: [{ taskId: "A4", title: "検証環境の構築", status: "To Do", affected: [{ taskId: "A6", title: "切替リハーサル" }] }] }]);
+  assert.ok(html.includes("ib-danger") && html.includes("タスクの削除（1 件）") && html.includes("A4") && html.includes("A6") && html.includes("切替リハーサル"));
+});
+
+test("受信箱の提案カード: removeProject は ib-danger つきで、消えるタスクの数と一覧、外される会議のひも付けの数を出す", () => {
+  const html = cardOf([{ kind: "removeProject", rows: [{ projectId: "C", name: "旧拠点の整理", tasks: [{ taskId: "C1", title: "棚卸し", status: "In Progress" }, { taskId: "C2", title: "撤去", status: "To Do" }], eventLinks: 3 }] }]);
+  assert.ok(html.includes("ib-danger") && html.includes("プロジェクトの削除（1 件）") && html.includes("旧拠点の整理"));
+  assert.ok(html.includes("タスク 2 件") && html.includes("棚卸し") && html.includes("撤去") && html.includes("会議のひも付け 3 件"));
+});
+
+test("受信箱の提案カード: 新しい節の文字は escape される", () => {
+  const evil = "<img src=x onerror=1>";
+  const html = cardOf([
+    { kind: "status", rows: [{ taskId: "A3", title: evil, oldStatus: "To Do", newStatus: "Waiting", oldWaitingOn: null, newWaitingOn: { party: evil, since: "2026-10-21" } }] },
+    { kind: "milestone", rows: [{ projectId: "A", projectName: evil, action: "add", name: evil, oldDate: null, newDate: "2027-03-10" }] },
+    { kind: "removeProject", rows: [{ projectId: "C", name: evil, tasks: [{ taskId: "C1", title: evil, status: "To Do" }], eventLinks: 0 }] },
+  ]);
+  assert.ok(!html.includes("<img src=x") && html.includes("&lt;img src=x"));
 });
 
 test("受信箱の履歴: 処理待ち・処理中でも、2 件目以降のやりとり（修正の依頼）を出す。依頼文は 1 回だけ", () => {
@@ -772,7 +818,7 @@ const withSet = (o) => { const d = load(); d.settings = { ...d.settings, ...o };
 
 test("設定: 「日本の祝日」の節。未取得は案内、取得済みは取得日・件数・範囲と、今日以降の祝日だけ（読み取り専用）", () => {
   const none = setv(load());
-  assert.ok(none.includes("日本の祝日") && none.includes("まだ取得していません") && none.includes("/pj-lens:holidays"));
+  assert.ok(none.includes("日本の祝日") && none.includes("まだ取得していません") && none.includes("自動で更新") && !none.includes("/pj-lens:holidays"));
   const html = setv(withSet({ nationalHolidays: NHOL }));
   assert.ok(html.includes("2026-10-25") && html.includes("3 件") && html.includes("2026-01-01") && html.includes("2026-11-23"), "取得日・件数・範囲");
   assert.ok(html.includes("文化の日") && html.includes("勤労感謝の日"));

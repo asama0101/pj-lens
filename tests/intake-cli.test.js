@@ -62,7 +62,7 @@ test("wbs-apply: --source のファイル名が取り込み記録に入る（な
   assert.equal(w2.json().settings.wbsImports.A.file, null);
 });
 
-test("wbs-apply: 先行が循環する rows では終了コード1で data.json は変わらない", () => {
+test("wbs-apply: 前のタスクが循環する rows では終了コード1で data.json は変わらない", () => {
   const w = work(); const before = w.read();
   const rows = w.put("rows.json", [
     { title: "X1", due: "2026-11-01", predecessorKeys: ["X2"] }, { title: "X2", due: "2026-11-02", predecessorKeys: ["X1"] },

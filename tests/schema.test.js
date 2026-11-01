@@ -32,14 +32,14 @@ test("不明な状態値はエラー", () => {
   assert.ok(hit(v(p).errors, "プロジェクト A"));
 });
 
-test("存在しない先行・projectId はエラー", () => {
+test("存在しない前のタスク・projectId はエラー", () => {
   const d = load(); task(d, "A2").predecessors = ["ZZ"];
   assert.ok(hit(v(d).errors, "ZZ"));
   const e = load(); task(e, "A2").projectId = "Q";
   assert.ok(hit(v(e).errors, "projectId"));
 });
 
-test("先行の循環はエラー", () => {
+test("前のタスクの循環はエラー", () => {
   const d = load(); task(d, "A1").predecessors = ["A2"];
   assert.ok(hit(v(d).errors, "循環"));
 });
@@ -55,7 +55,7 @@ test("日付形式の不正・プロジェクト開始>期限・枠の不正は�
   assert.ok(hit(v(e).errors, "重な"));
 });
 
-test("警告: Waiting で待ち先なし／先行ありで start／終了済みで未来の予定／start>due", () => {
+test("警告: Waiting で待ち先なし／前のタスクありで start／終了済みで未来の予定／start>due", () => {
   const a = load(); task(a, "A3").waitingOn = null;
   assert.ok(hit(v(a).warnings, "A3"));
   const b = load(); task(b, "A6").start = "2026-12-01";
@@ -72,7 +72,7 @@ test("空データは有効", () => {
   assert.deepEqual(v(d).errors, []);
 });
 
-test("警告: 先行の期限が自分の期限より後（I2）", () => {
+test("警告: 前のタスクの期限が自分の期限より後（I2）", () => {
   const d = load(); task(d, "A2").due = "2020-01-01";
   assert.ok(hit(v(d).warnings, "A2"));
 });

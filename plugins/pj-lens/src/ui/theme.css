@@ -416,6 +416,8 @@ body{padding-block:16px 76px}
 .ib-msg{font-size:13px;overflow-wrap:anywhere}
 .ib-sec b{font-size:13px}
 .ib-list{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.ib-danger{background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:8px 10px}
+.ib-danger>b{color:var(--bad)}
 .ib-warn{background:var(--warn-soft);color:var(--warn);border-radius:6px;padding:6px 10px;font-size:12px}
 .ib-ctl{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
 .ib-ctl label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:2px}

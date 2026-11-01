@@ -14,7 +14,7 @@ const mapProject = (data, id, fn) => {
 };
 const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
-/** このタスクの後続（推移的）の ID 集合 */
+/** このタスクの次のタスク（推移的）の ID 集合 */
 function downstream(data, id) {
   const down = new Set();
   const stack = [id];
@@ -27,7 +27,7 @@ function downstream(data, id) {
   return down;
 }
 
-/** 先行にできるタスク（同一プロジェクトで、自分・既に先行・自分の後続を除く。循環を作らせない） */
+/** 前のタスクにできるタスク（同一プロジェクトで、自分・既に前のタスク・自分の次のタスクを除く。循環を作らせない） */
 export function predecessorCandidates(data, taskId) {
   const t = data.tasks.find((x) => x.id === taskId);
   const down = downstream(data, taskId);
@@ -65,8 +65,8 @@ export function updateTask(data, taskId, patch, today = nowLocal().date) {
     if ("predecessors" in patch) {
       const ids = [...new Set(patch.predecessors)];
       for (const id of ids) {
-        if (!data.tasks.some((x) => x.id === id)) throw new Error(`先行 ${id} がありません`);
-        if (id === taskId || downstream(data, taskId).has(id)) throw new Error(`${id} を先行にすると循環します`);
+        if (!data.tasks.some((x) => x.id === id)) throw new Error(`前のタスク ${id} がありません`);
+        if (id === taskId || downstream(data, taskId).has(id)) throw new Error(`${id} を前のタスクにすると循環します`);
       }
       n.predecessors = ids;
     }
@@ -156,23 +156,23 @@ export function moveMilestone(data, projectId, index, days) {
 }
 
 // ---- ガントのドラッグ ----
-/** mode: "start" | "due" | "both"。先行があるタスクの開始は先行の期限から決まるので、動かせるのは期限だけ */
+/** mode: "start" | "due" | "both"。前のタスクがあるタスクの開始は前のタスクの期限から決まるので、動かせるのは期限だけ */
 export function moveTaskDates(data, taskId, mode, days) {
   const t = data.tasks.find((x) => x.id === taskId);
   if (!t) throw new Error(`タスク ${taskId} がありません`);
   if (!days) return { data };
   const hasPre = (t.predecessors ?? []).length > 0;
-  if (hasPre && mode !== "due") return { data, error: "開始は先行タスクの期限から決まるため、動かせるのは期限だけです" };
+  if (hasPre && mode !== "due") return { data, error: "開始は前のタスクの期限から決まるため、動かせるのは期限だけです" };
   const patch = {};
   if (mode === "start" || mode === "both") patch.start = addDays(t.start ?? t.due, days);
   if (mode === "due" || mode === "both") patch.due = addDays(t.due, days);
   const due = patch.due ?? t.due;
   if (hasPre ? due < taskStart(data, taskId) : (patch.start ?? t.start ?? due) > due) {
-    return { data, error: hasPre ? "期限を先行タスクの期限より前にはできません" : "開始日が期限より後になります" };
+    return { data, error: hasPre ? "期限を前のタスクの期限より前にはできません" : "開始日が期限より後になります" };
   }
   const next = mapTask(data, taskId, (x) => ({ ...x, ...patch }));
   const later = patch.due ? data.tasks.filter((u) => (u.predecessors ?? []).includes(taskId) && u.due < patch.due).map((u) => u.id) : [];
-  return { data: next, ...(later.length && { warning: `後続 ${later.join(", ")} の期限より後になりました（replan で見直せます）` }) };
+  return { data: next, ...(later.length && { warning: `次のタスク ${later.join(", ")} の期限より後になりました（「Claude Code に依頼する」で見直せます）` }) };
 }
 
 export function moveProjectDates(data, projectId, edge, days) {
@@ -216,7 +216,7 @@ export function addTask(data, task) {
   return { ...data, tasks: [...data.tasks, newTask(data, task.projectId, title, task.due, { ...rest, title })] };
 }
 
-/** 他のタスクの先行になっていれば dependents を返し、force でなければ何も変えない。force なら参照を取り除いて削除する */
+/** 他のタスクの前のタスクになっていれば dependents を返し、force でなければ何も変えない。force なら参照を取り除いて削除する */
 export function deleteTask(data, taskId, { force = false } = {}) {
   if (!data.tasks.some((t) => t.id === taskId)) throw new Error(`タスク ${taskId} がありません`);
   const dependents = data.tasks.filter((t) => (t.predecessors ?? []).includes(taskId)).map((t) => t.id);

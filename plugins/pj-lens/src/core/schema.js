@@ -8,7 +8,7 @@ export const IMPORTANCE = ["high", "mid", "low"];
 export const CAUSES = ["ベンダー", "社内", "自分", "その他"];
 export const HOLIDAY_KINDS = ["祝日", "有給", "その他"];
 export const REQUEST_STATUS = ["pending", "working", "question", "proposed", "applied", "rejected", "failed"];
-export const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask"];
+export const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask", "addProject", "setStatus", "setImportance", "updateProject", "removeTask", "removeProject", "addMilestone", "moveMilestone", "removeMilestone"];
 export const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 
 /** 終わったタスク（Done・Cancelled）か */
@@ -17,7 +17,7 @@ export const isClosed = (t) => t.status === "Done" || t.status === "Cancelled";
 /** 同じ日の枠が重なるか（端が接するだけは重ならない） */
 const overlap = (a, b) => toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end);
 
-/** 先行の循環を DFS で探す。循環に含まれるタスク ID の一覧を返す */
+/** 前のタスクの循環を DFS で探す。循環に含まれるタスク ID の一覧を返す */
 function findCycle(tasks) {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const state = new Map(); // 1=探索中, 2=完了
@@ -89,14 +89,14 @@ export function validate(data, now = nowLocal()) {
     if (t.importance != null && !IMPORTANCE.includes(t.importance)) err(`タスク ${t.id}: 不明な重要度 "${t.importance}"`);
     const preds = t.predecessors ?? [];
     for (const pid of preds) {
-      if (!taskIds.has(pid)) err(`タスク ${t.id}: 存在しない先行 "${pid}"`);
-      if (pid === t.id) err(`タスク ${t.id}: 自分自身を先行にしています（循環）`);
+      if (!taskIds.has(pid)) err(`タスク ${t.id}: 存在しない前のタスク "${pid}"`);
+      if (pid === t.id) err(`タスク ${t.id}: 自分自身を前のタスクにしています（循環）`);
     }
     const predDue = preds.map((id) => data.tasks.find((x) => x.id === id)?.due).filter(isDate);
-    if (isDate(t.due) && predDue.length && predDue.reduce((a, b) => (a > b ? a : b)) > t.due) warn(`タスク ${t.id}: 先行の期限が自分の期限より後です`);
+    if (isDate(t.due) && predDue.length && predDue.reduce((a, b) => (a > b ? a : b)) > t.due) warn(`タスク ${t.id}: 前のタスクの期限が自分の期限より後です`);
     if (t.waitingOn && !isDate(t.waitingOn.since)) err(`タスク ${t.id}: 待ち開始日 (waitingOn.since) の形式が不正です`);
     if (t.status === "Waiting" && !t.waitingOn) warn(`タスク ${t.id}: Waiting なのに待ち先 (waitingOn) がありません`);
-    if (preds.length && t.start != null) warn(`タスク ${t.id}: 先行があるため start は無視されます`);
+    if (preds.length && t.start != null) warn(`タスク ${t.id}: 前のタスクがあるため start は無視されます`);
     if (!preds.length && isDate(t.start) && isDate(t.due) && t.start > t.due) warn(`タスク ${t.id}: 開始日が期限より後です`);
 
     for (const s of t.sessions ?? []) {
@@ -110,7 +110,7 @@ export function validate(data, now = nowLocal()) {
   }
 
   const cycle = findCycle(data.tasks);
-  if (cycle) err(`先行が循環しています: ${cycle.join(" → ")}`);
+  if (cycle) err(`前のタスクが循環しています: ${cycle.join(" → ")}`);
 
   // 同じ日の枠どうしの重なり（タスクをまたいで判定）。日付で束ねて、同じ日の中だけ総当たりにする（全枠の総当たりは、数年分で秒単位になる）
   const byDay = new Map();
@@ -163,7 +163,7 @@ export function validate(data, now = nowLocal()) {
   }
   const nh = st.nationalHolidays;
   if (nh != null && !(typeof nh === "object" && isDate(nh.fetchedAt) && listOf(nh.dates, () => true))) {
-    warn("settings.nationalHolidays: { fetchedAt, dates: [{ date }] } にしてください（/pj-lens:holidays で取り直せます）");
+    warn("settings.nationalHolidays: { fetchedAt, dates: [{ date }] } にしてください（次に営業日を使う提案を作るか、見張りを始めると、自動で取り直されます）");
   }
   (st.projectRules ?? []).forEach((r, i) => {
     if (!String(r?.keyword ?? "").trim()) err(`settings.projectRules[${i}]: keyword が空です`);

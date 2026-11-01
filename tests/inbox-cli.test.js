@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
+import { validate } from "../plugins/pj-lens/src/core/schema.js";
 import { markApplied } from "../plugins/pj-lens/src/core/inbox.js";
 import { addDays, dueAfter, today } from "../plugins/pj-lens/src/core/dates.js";
 
@@ -88,7 +89,7 @@ test("approve: HTML で先に applied になっていたら、何も変えず終
   assert.equal(w.read(), before);
 });
 
-test("propose: 循環する先行の ops は終了コード 1 で、データは変わらない", () => {
+test("propose: 循環する前のタスクの ops は終了コード 1 で、データは変わらない", () => {
   const w = work();
   run("submit", w.data, "A", "x"); run("claim", w.data, "R1");
   const before = w.read();
@@ -175,6 +176,47 @@ test("submit --working: working の依頼ができ、businessDays 入りの prop
   assert.ok(!ev.some((e) => e.event === "request"), JSON.stringify(ev));
 });
 
+test("propose: addProject と addTask（projectId は ref）→ sections に project が入り、approve 後に projects が 1 件増えて validate が通る", () => {
+  const w = work();
+  run("submit", w.data, "-", "新しいプロジェクト「ルータの増設」を追加して、タスク含めて提案して", "--working");
+  const ops = [
+    { op: "addProject", ref: "p1", name: "ルータの増設", type: "増設" },
+    { op: "addTask", ref: "t1", projectId: "p1", title: "要件確認", businessDays: 3 },
+    { op: "addTask", ref: "t2", projectId: "p1", title: "設置", businessDays: 5, predecessors: ["t1"] },
+  ];
+  const p = run("propose", w.data, "R1", w.put("ops.json", ops), "--summary", "プロジェクト 1 件の案");
+  assert.equal(p.status, 0, p.err);
+  assert.deepEqual(p.out.sections.map((x) => x.kind), ["project", "add"]);
+  assert.equal(w.json().projects.length, 3, "承認前は変わらない");
+  const a = run("approve", w.data, "R1");
+  assert.equal(a.status, 0, a.err);
+  const d = w.json();
+  assert.deepEqual(d.projects.at(-1), { id: "D", name: "ルータの増設", type: "増設", status: "計画中", start: today(), due: d.tasks.filter((t) => t.projectId === "D").map((t) => t.due).sort().at(-1), milestones: [] });
+  assert.equal(d.tasks.filter((t) => t.projectId === "D").length, 2);
+  assert.deepEqual(validate(d).errors, []);
+});
+
+test("propose: 新しい操作（setStatus・setImportance・addMilestone・removeTask）→ sections に各節が入り、approve 後にデータが変わって validate が通る", () => {
+  const w = work();
+  run("submit", w.data, "-", "A3 を完了、A4 を重要に、検収を足して、A7 を削除して", "--working");
+  const ops = [
+    { op: "setStatus", taskId: "A3", status: "Done" },
+    { op: "setImportance", taskId: "A4", importance: "high" },
+    { op: "addMilestone", projectId: "A", name: "検収", date: "2027-03-10" },
+    { op: "removeTask", taskId: "A7" },
+  ];
+  const p = run("propose", w.data, "R1", w.put("ops.json", ops), "--summary", "4 種類の変更案");
+  assert.equal(p.status, 0, p.err);
+  assert.deepEqual(p.out.sections.map((x) => x.kind), ["status", "importance", "milestone", "removeTask"]);
+  assert.ok(w.json().tasks.some((t) => t.id === "A7"), "承認前は変わらない");
+  const a = run("approve", w.data, "R1");
+  assert.equal(a.status, 0, a.err);
+  const d = w.json();
+  assert.deepEqual([d.tasks.find((t) => t.id === "A3").status, d.tasks.find((t) => t.id === "A4").importance, d.tasks.some((t) => t.id === "A7")], ["Done", "high", false]);
+  assert.ok(d.projects.find((x) => x.id === "A").milestones.some((m) => m.name === "検収"));
+  assert.deepEqual(validate(d).errors, []);
+});
+
 test("propose は、提案済みの依頼にもう一度できる（直した ops で差し替わり、approve は直した方を反映する）", () => {
   const w = work();
   run("submit", w.data, "A", "文章の要約", "--working");
@@ -217,7 +259,7 @@ const runWith = (url, ...args) => new Promise((resolve) => {
 });
 const NEXT_BD = dueAfter(today(), 1); // 今日の次の平日（この日を祝日にする）
 const FAR = addDays(today(), 400); // 一覧の末尾（範囲が足りている状態にする）
-const BD_OPS = [{ op: "addTask", ref: "t1", projectId: "A", title: "営業日の登録", businessDays: 1 }]; // 先行なし → 今日から 1 営業日
+const BD_OPS = [{ op: "addTask", ref: "t1", projectId: "A", title: "営業日の登録", businessDays: 1 }]; // 前のタスクなし → 今日から 1 営業日
 const addDue = (r) => r.out.sections.find((s) => s.kind === "add").rows[0].due;
 const ready = (w) => { run("submit", w.data, "A", "x", "--working"); return w; };
 

@@ -11,23 +11,23 @@ const dueRows = (p) => p.sections.find((s) => s.kind === "due")?.rows ?? [];
 const rowOf = (p, id) => dueRows(p).find((r) => r.taskId === id);
 const apply = (d, ops, extra = {}) => applyProposal(d, planOps(d, ops, { today: TODAY }), { reason: "ベンダーX の納期回答が遅れた", cause: "ベンダー", today: TODAY, ...extra });
 
-test("planOps(moveDue): A3 を +45 日 → A3 は 11/30、後続 A4 は先行の期限と同じ日（11/30）まで動く。A6 以降は動かない", () => {
+test("planOps(moveDue): A3 を +45 日 → A3 は 11/30、次のタスク A4 は前のタスクの期限と同じ日（11/30）まで動く。A6 以降は動かない", () => {
   const p = planOps(load(), [{ op: "moveDue", taskId: "A3", deltaDays: 45 }], { today: TODAY });
   assert.deepEqual(dueRows(p).map((r) => [r.taskId, r.oldDue, r.newDue]), [["A3", "2026-10-16", "2026-11-30"], ["A4", "2026-11-27", "2026-11-30"]]);
   assert.match(rowOf(p, "A3").reason, /\+45/);
   assert.match(rowOf(p, "A4").reason, /A3/);
 });
 
-test("planOps(moveDue): newDue 指定は deltaDays と同じ結果。前倒し＋compress は後続も詰める", () => {
+test("planOps(moveDue): newDue 指定は deltaDays と同じ結果。前倒し＋compress は次のタスクも詰める", () => {
   const a = planOps(load(), [{ op: "moveDue", taskId: "A3", newDue: "2026-11-30" }], { today: TODAY });
   assert.deepEqual(dueRows(a).map((r) => [r.taskId, r.newDue]), [["A3", "2026-11-30"], ["A4", "2026-11-30"]]);
   const c = planOps(load(), [{ op: "moveDue", taskId: "A5", deltaDays: -10, compress: true }], { today: TODAY });
   assert.deepEqual(dueRows(c).map((r) => [r.taskId, r.newDue]), [["A5", "2026-12-15"], ["A6", "2027-01-26"], ["A7", "2027-02-10"]]);
   const n = planOps(load(), [{ op: "moveDue", taskId: "A5", deltaDays: -10 }], { today: TODAY });
-  assert.deepEqual(dueRows(n).map((r) => r.taskId), ["A5"], "compress なしは後続を詰めない");
+  assert.deepEqual(dueRows(n).map((r) => r.taskId), ["A5"], "compress なしは次のタスクを詰めない");
 });
 
-test("planOps(addPred): 後続の期限が先行より前なら、先行の期限と同じ日まで動く。すでにある先行は same と警告", () => {
+test("planOps(addPred): 次のタスクの期限が前のタスクより前なら、前のタスクの期限と同じ日まで動く。すでにある前のタスクは same と警告", () => {
   const p = planOps(load(), [{ op: "addPred", taskId: "A4", predId: "A5" }], { today: TODAY });
   assert.deepEqual(dueRows(p).map((r) => [r.taskId, r.oldDue, r.newDue]), [["A4", "2026-11-27", "2026-12-25"]]);
   assert.deepEqual(p.sections.find((s) => s.kind === "pred").rows, [{ taskId: "A4", predId: "A5", action: "add" }]);
@@ -56,7 +56,7 @@ test("planOps: 循環・自分自身・存在しない ID・他のプロジェ�
   assert.equal(JSON.stringify(d), before);
 });
 
-test("planOps(addTask): ref で別の addTask を先行にできる。ID が既存と重ならない。ref の重複・解決不可は例外", () => {
+test("planOps(addTask): ref で別の addTask を前のタスクにできる。ID が既存と重ならない。ref の重複・解決不可は例外", () => {
   const ops = [
     { op: "addTask", ref: "t1", projectId: "A", title: "疎通確認テスト", due: "2026-12-10", group: "構築", subgroup: "検証環境", predecessors: ["A4"] },
     { op: "addTask", ref: "t2", projectId: "A", title: "切替手順書のレビュー", due: "2026-12-15", predecessors: ["t1"] },
@@ -70,13 +70,13 @@ test("planOps(addTask): ref で別の addTask を先行にできる。ID が既�
   assert.deepEqual(added.map((t) => t.title), ["疎通確認テスト", "切替手順書のレビュー"]);
   assert.deepEqual(added[0].predecessors, ["A4"]);
   assert.deepEqual(added[1].predecessors, [added[0].id]);
-  assert.deepEqual([added[0].group, added[0].subgroup, added[0].start], ["構築", "検証環境", null], "先行があるタスクは、開始日を入れない（先行から決まる。入れると validate の注意が出る）");
+  assert.deepEqual([added[0].group, added[0].subgroup, added[0].start], ["構築", "検証環境", null], "前のタスクがあるタスクは、開始日を入れない（前のタスクから決まる。入れると validate の注意が出る）");
   assert.throws(() => planOps(d, [ops[0], ops[0]], { today: TODAY }), /t1/);
   assert.throws(() => planOps(d, [{ ...ops[1], predecessors: ["zz"] }], { today: TODAY }), /zz/);
   assert.throws(() => planOps(d, [{ op: "addTask", ref: "t3", projectId: "ZZ", title: "x", due: "2026-12-10" }], { today: TODAY }), /ZZ/);
 });
 
-test("planOps: 操作の順は、addTask → 先行 → 期限。書く順が違っても結果が同じ", () => {
+test("planOps: 操作の順は、addTask → 前のタスク → 期限。書く順が違っても結果が同じ", () => {
   const ops = [
     { op: "moveDue", taskId: "A3", deltaDays: 45 },
     { op: "addPred", taskId: "A5", predId: "A3" },
@@ -88,7 +88,7 @@ test("planOps: 操作の順は、addTask → 先行 → 期限。書く順が違
   assert.deepEqual(task(a, "A5").predecessors, ["A3"]);
 });
 
-test("planOps: 連鎖で上がった期限を、手動の前倒しで先行より前にはしない（遅い方を採り、警告）", () => {
+test("planOps: 連鎖で上がった期限を、手動の前倒しで前のタスクより前にはしない（遅い方を採り、警告）", () => {
   const ops = [{ op: "addPred", taskId: "A4", predId: "A5" }, { op: "moveDue", taskId: "A4", deltaDays: -20 }];
   const p = planOps(load(), ops, { today: TODAY });
   assert.equal(rowOf(p, "A4").newDue, "2026-12-25");
@@ -107,7 +107,7 @@ test("planOps: base は、触る・動かすタスクの現在の値と、対象
   assert.deepEqual([...p.base.projects].sort(), ["A", "B"]);
 });
 
-test("applyProposal: tasks が計画どおりになり、changeLog は moveDue ごとに 1 件＋先行・登録の source: inbox が 1 件。validate が通る。元のデータは変わらない", () => {
+test("applyProposal: tasks が計画どおりになり、changeLog は moveDue ごとに 1 件＋前のタスク・登録の source: inbox が 1 件。validate が通る。元のデータは変わらない", () => {
   const d = load(); const before = JSON.stringify(d);
   const ops = [
     { op: "moveDue", taskId: "A3", deltaDays: 45 },
@@ -125,11 +125,11 @@ test("applyProposal: tasks が計画どおりになり、changeLog は moveDue �
     [["A5"], 3, "ベンダー", "ベンダーX の納期回答が遅れた", null],
   ]);
   assert.deepEqual([added[2].source, added[2].deltaDays, added[2].cause], ["inbox", 0, null]);
-  assert.match(added[2].reason, /先行 1 件・登録 1 件/);
+  assert.match(added[2].reason, /順番 1 件・登録 1 件/);
   assert.deepEqual(validate(out, { date: TODAY, time: "10:00" }).errors, []);
 });
 
-test("applyProposal: 先行・登録だけなら、source: inbox の 1 件だけ（日程変更の履歴に出ない）。期限だけなら inbox の記録は付かない", () => {
+test("applyProposal: 前のタスク・登録だけなら、source: inbox の 1 件だけ（日程変更の履歴に出ない）。期限だけなら inbox の記録は付かない", () => {
   const a = apply(load(), [{ op: "addPred", taskId: "A5", predId: "A3" }]);
   assert.deepEqual(a.changeLog.slice(load().changeLog.length).map((c) => c.source), ["inbox"]);
   const b = apply(load(), [{ op: "moveDue", taskId: "A5", deltaDays: 3 }]);
@@ -154,21 +154,21 @@ test("applyProposal: 空の理由・不正な原因は例外", () => {
   assert.throws(() => applyProposal(d, p, { reason: "r", cause: "不明", today: TODAY }), /原因/);
 });
 
-test("summarizeSections: 期限・先行・登録の件数（変更なしの先行は数えない）", () => {
+test("summarizeSections: 期限・前のタスク・登録の件数（変更なしの前のタスクは数えない）", () => {
   const sections = [
     { kind: "add", rows: [{ ref: "a" }, { ref: "b" }] },
     { kind: "pred", rows: [{ action: "add" }, { action: "same" }, { action: "remove" }] },
     { kind: "due", rows: [{ taskId: "A3" }, { taskId: "A4" }, { taskId: "A5" }] },
   ];
-  assert.equal(summarizeSections(sections), "期限 3 件・先行 2 件・登録 2 件");
-  assert.equal(summarizeSections([]), "期限 0 件・先行 0 件・登録 0 件");
+  assert.equal(summarizeSections(sections), "期限 3 件・順番 2 件・登録 2 件");
+  assert.equal(summarizeSections([]), "期限 0 件・順番 0 件・登録 0 件");
 });
 
-test("applyProposal: 提案の表にない後続が動いてしまうほど、データが変わっていたら stale（触らなかったタスクが変わった場合）", () => {
+test("applyProposal: 提案の表にない次のタスクが動いてしまうほど、データが変わっていたら stale（触らなかったタスクが変わった場合）", () => {
   const d = load();
   const p = planOps(d, [{ op: "moveDue", taskId: "A3", deltaDays: 45 }], { today: TODAY });
   assert.deepEqual(dueRows(p).map((r) => r.taskId), ["A3", "A4"]);
-  // 提案のあとに、A5 が「先行 A3・期限 11/05」に変わった（base には入っていないが、承認すると A5 が 11/30 に動いてしまう）
+  // 提案のあとに、A5 が「前のタスク A3・期限 11/05」に変わった（base には入っていないが、承認すると A5 が 11/30 に動いてしまう）
   const changed = { ...d, tasks: d.tasks.map((t) => (t.id === "A5" ? { ...t, predecessors: ["A3"], due: "2026-11-05", start: null } : t)) };
   const before = JSON.stringify(changed);
   assert.throws(() => applyProposal(changed, p, { reason: "r", cause: "ベンダー", today: TODAY }), (e) => e.code === "stale");
@@ -182,22 +182,22 @@ test("applyProposal: 提案した日と承認した日が違っても（登録�
   assert.doesNotThrow(() => applyProposal(d, p, { reason: "r", cause: "社内", today: "2026-10-22" }));
 });
 
-test("planOps(addTask): 先行がなければ開始日は今日（期限が今日より前なら null）、start を書けばそのとおり。登録しても validate の注意が増えない", () => {
+test("planOps(addTask): 前のタスクがなければ開始日は今日（期限が今日より前なら null）、start を書けばそのとおり。登録しても validate の注意が増えない", () => {
   const d = load();
   const ops = [
-    { op: "addTask", ref: "a", projectId: "A", title: "先行なし", due: "2026-12-10" },
+    { op: "addTask", ref: "a", projectId: "A", title: "前のタスクなし", due: "2026-12-10" },
     { op: "addTask", ref: "b", projectId: "A", title: "過去の期限", due: "2026-10-01" },
     { op: "addTask", ref: "c", projectId: "A", title: "開始を指定", due: "2026-12-10", start: "2026-11-01" },
-    { op: "addTask", ref: "e", projectId: "A", title: "先行あり", due: "2026-12-10", predecessors: ["A4"] },
+    { op: "addTask", ref: "e", projectId: "A", title: "前のタスクあり", due: "2026-12-10", predecessors: ["A4"] },
   ];
   const out = apply(d, ops);
   const by = (title) => out.tasks.find((t) => t.title === title);
-  assert.deepEqual(["先行なし", "過去の期限", "開始を指定", "先行あり"].map((t) => by(t).start), [TODAY, null, "2026-11-01", null]);
+  assert.deepEqual(["前のタスクなし", "過去の期限", "開始を指定", "前のタスクあり"].map((t) => by(t).start), [TODAY, null, "2026-11-01", null]);
   const warn = (x) => validate(x, { date: TODAY, time: "10:00" }).warnings;
   assert.deepEqual(warn(out).filter((w) => !warn(d).includes(w)), [], "登録で、新しい注意が増えない");
 });
 
-test("planOps(addPred): 開始日のあるタスクに先行を足すと、開始日を外し（先行から決まる）、その旨を警告する。validate の注意が増えない", () => {
+test("planOps(addPred): 開始日のあるタスクに前のタスクを足すと、開始日を外し（前のタスクから決まる）、その旨を警告する。validate の注意が増えない", () => {
   const d = load();
   assert.ok(d.tasks.find((t) => t.id === "A5").start, "前提: A5 は開始日を持つ");
   const p = planOps(d, [{ op: "addPred", taskId: "A5", predId: "A3" }], { today: TODAY });
@@ -212,21 +212,21 @@ test("planOps(addPred): 開始日のあるタスクに先行を足すと、開�
 const addRows = (p) => p.sections.find((s) => s.kind === "add").rows;
 const addOp = (ref, extra) => ({ op: "addTask", ref, projectId: "A", title: `タスク ${ref}`, ...extra });
 
-test("planOps(addTask businessDays): 先行の期限 + 営業日。先行なしは今日 + 営業日。表の行に businessDays と期限が出る", () => {
+test("planOps(addTask businessDays): 前のタスクの期限 + 営業日。前のタスクなしは今日 + 営業日。表の行に businessDays と期限が出る", () => {
   const withPred = planOps(load(), [addOp("t1", { businessDays: 10, predecessors: ["A4"] })], { today: TODAY });
   assert.deepEqual([addRows(withPred)[0].due, addRows(withPred)[0].businessDays], ["2026-12-11", 10]);
   const alone = planOps(load(), [addOp("t1", { businessDays: 10 })], { today: TODAY });
   assert.equal(addRows(alone)[0].due, "2026-11-04");
 });
 
-test("planOps(addTask businessDays): 先行がすべて Done・Cancelled なら今日 + 営業日（期限が過去にならない）", () => {
+test("planOps(addTask businessDays): 前のタスクがすべて Done・Cancelled なら今日 + 営業日（期限が過去にならない）", () => {
   const d = load();
   d.tasks.find((t) => t.id === "A4").status = "Done";
   const p = planOps(d, [addOp("t1", { businessDays: 7, predecessors: ["A4"] })], { today: TODAY });
   assert.equal(addRows(p)[0].due, "2026-10-30");
 });
 
-test("planOps(addTask businessDays): ops の書く順が逆でも、ref の先行から順に連鎖する", () => {
+test("planOps(addTask businessDays): ops の書く順が逆でも、ref の前のタスクから順に連鎖する", () => {
   const p = planOps(load(), [addOp("t2", { businessDays: 5, predecessors: ["t1"] }), addOp("t1", { businessDays: 3, predecessors: ["A4"] })], { today: TODAY });
   const due = Object.fromEntries(addRows(p).map((r) => [r.ref, r.due]));
   assert.deepEqual(due, { t1: "2026-12-02", t2: "2026-12-09" });
@@ -251,14 +251,14 @@ test("planOps(addTask businessDays): 提案の ops は businessDays を due に�
   assert.deepEqual(validate(out).errors, []);
 });
 
-test("planOps(addTask businessDays): 先行の期限が引き上げられて営業日が吸収されたときは、注意に出す（表の日数と実際の期限が食い違うため）", () => {
+test("planOps(addTask businessDays): 前のタスクの期限が引き上げられて営業日が吸収されたときは、注意に出す（表の日数と実際の期限が食い違うため）", () => {
   const p = planOps(load(), [addOp("t1", { due: "2026-10-21", predecessors: ["A7"] }), addOp("t2", { businessDays: 5, predecessors: ["t1"] })], { today: TODAY });
   assert.ok(p.warnings.some((w) => w.includes("t2") && w.includes("営業日")), p.warnings.join(" / "));
   const ok = planOps(load(), [addOp("t1", { businessDays: 10, predecessors: ["A4"] })], { today: TODAY });
   assert.ok(!ok.warnings.some((w) => w.includes("営業日")));
 });
 
-test("planOps(addTask businessDays): 先行なしでも、提案の翌日以降に承認して stale にならず、提案の期限のまま登録される", () => {
+test("planOps(addTask businessDays): 前のタスクなしでも、提案の翌日以降に承認して stale にならず、提案の期限のまま登録される", () => {
   const d = load();
   const plan = planOps(d, [addOp("t1", { businessDays: 10 })], { today: TODAY });
   const out = applyProposal(d, plan, { reason: "x", cause: "その他", today: "2026-10-25" });
@@ -300,4 +300,102 @@ test("planOps: moveDue と businessDays 指定の addTask を同じ依頼に書�
 test("planOps: moveDue があっても、addTask 自体の誤り（due と businessDays の両方）は、その誤りのまま知らせる", () => {
   const ops = [{ op: "moveDue", taskId: "A4", deltaDays: 10 }, addOp("t1", { due: "2026-12-30", businessDays: 3 })];
   assert.throws(() => planOps(load(), ops, { today: TODAY }), /due か businessDays のどちらか一方/);
+});
+
+// ---- addProject ----
+const projRows = (p) => p.sections.find((s) => s.kind === "project")?.rows ?? [];
+const NEW_PROJ = { op: "addProject", ref: "p1", name: "ルータの増設", type: "増設" };
+const NEW_TASKS = [
+  { op: "addTask", ref: "t1", projectId: "p1", title: "要件確認", businessDays: 3 },
+  { op: "addTask", ref: "t2", projectId: "p1", title: "機器手配", businessDays: 5, predecessors: ["t1"] },
+  { op: "addTask", ref: "t3", projectId: "p1", title: "設置", due: "2026-12-20", predecessors: ["t2"] },
+];
+
+test("planOps(addProject): プロジェクト 1 件とタスク 3 件 → project 1 行・add 3 行。ID は D、start は今日、due は最も遅いタスクの期限。元のデータは変わらない", () => {
+  const d = load();
+  const p = planOps(d, [NEW_PROJ, ...NEW_TASKS], { today: TODAY });
+  assert.equal(p.sections[0].kind, "project");
+  assert.deepEqual(projRows(p).map((r) => [r.ref, r.id, r.name, r.type, r.start, r.due]), [["p1", "D", "ルータの増設", "増設", TODAY, "2026-12-20"]]);
+  assert.deepEqual(p.sections.find((s) => s.kind === "add").rows.map((r) => r.projectId), ["D", "D", "D"]);
+  assert.equal(d.projects.length, 3);
+});
+
+test("planOps(addProject): タスク 0 件なら due は今日から 30 日後。type 省略は「その他」", () => {
+  const p = planOps(load(), [{ op: "addProject", ref: "p1", name: "〇〇旅行" }], { today: TODAY });
+  assert.deepEqual(projRows(p).map((r) => [r.type, r.due]), [["その他", "2026-11-20"]]);
+});
+
+test("planOps(addProject): 2 件同時 → ID は D・E で、それぞれのタスクが正しいプロジェクトに入る", () => {
+  const p = planOps(load(), [
+    { op: "addProject", ref: "p1", name: "ルータの増設" }, { op: "addProject", ref: "p2", name: "〇〇旅行" },
+    { op: "addTask", ref: "t1", projectId: "p1", title: "A", due: "2026-12-01" }, { op: "addTask", ref: "t2", projectId: "p2", title: "B", due: "2026-12-10" },
+  ], { today: TODAY });
+  assert.deepEqual(projRows(p).map((r) => [r.id, r.name, r.due]), [["D", "ルータの増設", "2026-12-01"], ["E", "〇〇旅行", "2026-12-10"]]);
+  assert.deepEqual(p.sections.find((s) => s.kind === "add").rows.map((r) => [r.title, r.projectId]), [["A", "D"], ["B", "E"]]);
+});
+
+test("planOps(addProject): 算出した due が start より前なら、due を start に合わせる", () => {
+  const p = planOps(load(), [{ ...NEW_PROJ, start: "2027-01-15" }, { op: "addTask", ref: "t1", projectId: "p1", title: "A", due: "2026-12-20" }], { today: TODAY });
+  assert.deepEqual(projRows(p).map((r) => [r.start, r.due]), [["2027-01-15", "2027-01-15"]]);
+});
+
+test("planOps(addProject): 指定した start > due は例外。利用者が指定した due を超えるタスクは警告", () => {
+  assert.throws(() => planOps(load(), [{ ...NEW_PROJ, start: "2027-02-01", due: "2027-01-01" }], { today: TODAY }), /開始日が期限より後/);
+  const p = planOps(load(), [{ ...NEW_PROJ, due: "2026-12-01" }, { op: "addTask", ref: "t1", projectId: "p1", title: "A", due: "2026-12-20" }], { today: TODAY });
+  assert.ok(p.warnings.some((w) => w.includes("ルータの増設") && w.includes("を超えます") && w.includes("2026-12-20")));
+});
+
+test("planOps(addProject): 不正な入力は例外（ref の重複・ref が空・名前が空・範囲外の種別・存在しない ref）", () => {
+  const run = (ops) => () => planOps(load(), ops, { today: TODAY });
+  assert.throws(run([NEW_PROJ, NEW_PROJ]), /ref/);
+  assert.throws(run([{ ...NEW_PROJ, ref: " " }]), /ref/);
+  assert.throws(run([{ ...NEW_PROJ, name: " " }]), /プロジェクト名/);
+  assert.throws(run([{ ...NEW_PROJ, type: "旅行" }]), /種別/);
+  assert.throws(run([{ ...NEW_PROJ, ref: "A" }]), /既存のプロジェクト/);
+  assert.throws(run([NEW_PROJ, { op: "addTask", ref: "t1", projectId: "zz", title: "A", due: "2026-12-01" }]), /zz/);
+});
+
+test("planOps(addProject): base.projects に新規の ID も ref も入らない。既存プロジェクトのタスクを同時に登録したときは既存の ID だけ", () => {
+  assert.deepEqual(planOps(load(), [NEW_PROJ, ...NEW_TASKS], { today: TODAY }).base.projects, []);
+  const mixed = planOps(load(), [NEW_PROJ, NEW_TASKS[0], { op: "addTask", ref: "t9", projectId: "A", title: "既存へ", due: "2026-12-01" }], { today: TODAY });
+  assert.deepEqual(mixed.base.projects, ["A"]);
+});
+
+test("applyProposal(addProject): projects と tasks が増え、changeLog の source:inbox の 1 件に「プロジェクト 1 件」が入り、validate のエラーが 0 件", () => {
+  const d = load();
+  const out = apply(d, [NEW_PROJ, ...NEW_TASKS, { op: "addPred", taskId: "A4", predId: "A5" }]);
+  assert.equal(out.projects.length, 4);
+  assert.equal(out.tasks.length, d.tasks.length + 3);
+  assert.equal(out.changeLog.at(-1).source, "inbox");
+  assert.match(out.changeLog.at(-1).reason, /^受信箱: プロジェクト 1 件・順番 1 件・登録 3 件$/);
+  assert.deepEqual(validate(out).errors, []);
+});
+
+test("summarizeSections(addProject): 「プロジェクト 1 件・」が先頭に付く。プロジェクトのない依頼は今までの表記", () => {
+  const p = planOps(load(), [NEW_PROJ, ...NEW_TASKS], { today: TODAY });
+  assert.equal(summarizeSections(p.sections), "プロジェクト 1 件・期限 0 件・順番 0 件・登録 3 件");
+  const q = planOps(load(), [{ op: "moveDue", taskId: "A3", deltaDays: 45 }], { today: TODAY });
+  assert.equal(summarizeSections(q.sections), "期限 2 件・順番 0 件・登録 0 件");
+});
+
+test("applyProposal(addProject): 提案のあとに別のプロジェクトが追加されて ID がずれたら stale。データは変わらない", () => {
+  const d = load();
+  const proposal = planOps(d, [NEW_PROJ, ...NEW_TASKS], { today: TODAY });
+  const other = { ...d, projects: [...d.projects, { ...d.projects[0], id: "D", name: "別の人が追加" }] };
+  assert.throws(() => applyProposal(other, proposal, { reason: "r", cause: "社内", today: TODAY }), (e) => e.code === "stale");
+  assert.equal(other.projects.length, 4);
+});
+
+test("planOps(addProject): due は『最後に書いたタスク』ではなく最大の期限。前のタスクに合わせて引き上げられたあとの期限を使う", () => {
+  const last = planOps(load(), [NEW_PROJ,
+    { op: "addTask", ref: "t1", projectId: "p1", title: "A", due: "2026-12-20" },
+    { op: "addTask", ref: "t2", projectId: "p1", title: "B", due: "2026-12-01" },
+  ], { today: TODAY });
+  assert.equal(projRows(last)[0].due, "2026-12-20");
+  const raised = planOps(load(), [NEW_PROJ,
+    { op: "addTask", ref: "t1", projectId: "p1", title: "A", due: "2026-12-20" },
+    { op: "addTask", ref: "t2", projectId: "p1", title: "B", due: "2026-12-01", predecessors: ["t1"] },
+  ], { today: TODAY });
+  assert.deepEqual(raised.sections.find((s) => s.kind === "add").rows.map((r) => r.due), ["2026-12-20", "2026-12-20"]);
+  assert.equal(projRows(raised)[0].due, "2026-12-20");
 });
