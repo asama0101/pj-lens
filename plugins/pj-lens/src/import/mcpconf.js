@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { today } from "../core/dates.js";
 
 const FILE = "pj-lens-mcp.json";
-/** 保存形式の版。形式を変える版では上げ、docs/development.md に移行手順を書く。schema_version の無い既存ファイルは 1 として読む */
+/** 保存形式の版。形式を変える版では上げ、移行手順を開発者向けの文書（非公開）に書く。schema_version の無い既存ファイルは 1 として読む */
 export const SCHEMA_VERSION = 1;
 
 /** 役割ごとの必須項目: 予定表は期間の取得 */
