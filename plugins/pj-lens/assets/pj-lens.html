@@ -2212,7 +2212,7 @@ function drawDeps(gbodies) {
   }
 }
 
-/** taskId のバーにマウスを置いたときの強調。null で戻す。前のタスクも次のタスクもないバーでは何もしない(全部を薄くしない) */
+/** taskId のバーにマウスを置いたときの強調。null で戻す。前のタスクも次のタスクもないバーは、自身だけを光らせる(全部を薄くしない) */
 function focusDeps(gbody, taskId) {
   gbody.classList.remove("dep-focus");
   gbody.querySelectorAll(".dep-self,.dep-pre,.dep-next,.dep-on,.dep-out").forEach((el) => el.classList.remove("dep-self", "dep-pre", "dep-next", "dep-on", "dep-out"));
@@ -2221,9 +2221,10 @@ function focusDeps(gbody, taskId) {
   const self = bars.find((el) => el.dataset.gt === taskId);
   const pres = self ? ids(self) : [];
   const nexts = bars.filter((el) => ids(el).includes(taskId));
+  if (!self) return;
+  self.classList.add("dep-self");
   if (!pres.length && !nexts.length) return;
   gbody.classList.add("dep-focus");
-  self.classList.add("dep-self");
   bars.forEach((el) => { if (pres.includes(el.dataset.gt)) el.classList.add("dep-pre"); else if (nexts.includes(el)) el.classList.add("dep-next"); });
   gbody.querySelectorAll(".gdep").forEach((g) => {
     if (g.dataset.to === taskId) g.classList.add("dep-on");
