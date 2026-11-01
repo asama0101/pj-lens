@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { addDays, diffDays } from "../plugins/pj-lens/src/core/dates.js";
 import { renderProjects } from "../plugins/pj-lens/src/ui/views/project.js";
-import { renderGantt } from "../plugins/pj-lens/src/ui/views/gantt.js";
+import { renderGantt, assignLevels, layoutMilestones } from "../plugins/pj-lens/src/ui/views/gantt.js";
 import { renderPrio, renderTodayTasks, todayTaskIds } from "../plugins/pj-lens/src/ui/views/prio.js";
 import { renderSettings } from "../plugins/pj-lens/src/ui/views/settings.js";
 import { renderTaskPop } from "../plugins/pj-lens/src/ui/views/taskpop.js";
@@ -1110,4 +1110,38 @@ test("renderTaskPop: 件名・メモ・ID はエスケープされ、窓には�
   assert.ok(html.includes('data-goto="A4"') && html.includes('data-del="A4"') && html.includes("data-addpre=\"A4\"") || html.includes('data-rmpre="A4|A3"'));
   assert.ok(html.includes("left:10px;top:21px") && html.includes("<select>状態</select>"));
   assert.equal(renderTaskPop(d, { id: "ZZ", x: 0, y: 0 }, ""), "");
+});
+
+test("assignLevels: 前のラベルと重なるなら、重ならない最初の段へ置く。段は必要な数だけ増える", () => {
+  // x = ラベルの左端、w = 幅
+  const lv = assignLevels([{ x: 0, w: 100 }, { x: 10, w: 100 }, { x: 20, w: 100 }, { x: 105, w: 50 }, { x: 300, w: 50 }]);
+  assert.deepEqual(lv, [0, 1, 2, 0, 0]); // 4 つ目は、1 つ目の端(100)を過ぎているので 0 段目へ戻る
+  assert.deepEqual(assignLevels([]), []);
+  assert.deepEqual(assignLevels([{ x: 0, w: 50 }, { x: 50, w: 50 }]), [0, 0], "端が接するだけなら重ならない");
+});
+
+test("renderGantt: 近い日付のマイルストーン 3 件は、1 段ごとに 18px ずらして置き、行の高さを段数に合わせて広げる。離れていれば 1 段で 44px", () => {
+  const d = load();
+  d.projects[0].milestones = [{ name: "あ", date: "2026-08-31" }, { name: "い", date: "2026-09-01" }, { name: "う", date: "2026-09-02" }];
+  const html = gantt(d, ["A"]);
+  assert.deepEqual([...html.matchAll(/class="ms"[^>]*top:(\d+)px/g)].map((m) => +m[1]), [6, 24, 42]);
+  assert.deepEqual([...html.matchAll(/class="ms-l"[^>]*top:(\d+)px/g)].map((m) => +m[1]), [2, 20, 38]);
+  assert.match(html, /g-msrow[^]*?width:var\(--lanew\);height:62px/); // 3 段 × 18 + 8
+  d.projects[0].milestones = [{ name: "あ", date: "2026-08-31" }, { name: "い", date: "2027-02-20" }];
+  assert.match(gantt(d, ["A"]), /g-msrow[^]*?height:44px/);
+});
+
+test("layoutMilestones: 実測のラベル幅で段を決め直し、各要素の top と行の高さを書く。幅 0（隠れている）の行・マイルストーンの無い本体は触らない", () => {
+  const el = (offsetLeft, offsetWidth) => ({ offsetLeft, offsetWidth, style: {} });
+  const lane = (marks, labels, offsetWidth = 500) => ({ offsetWidth, style: {}, querySelectorAll: (s) => (s === ".ms" ? marks : labels) });
+  const body = (l) => ({ querySelector: () => l });
+  const marks = [el(0, 9), el(0, 9), el(0, 9)];
+  const labels = [el(0, 100), el(50, 100), el(300, 100)];
+  const shown = lane(marks, labels);
+  const hidden = lane([el(0, 9), el(0, 9)], [el(0, 0), el(0, 0)], 0);
+  layoutMilestones([body(shown), body(hidden), body(null)]);
+  assert.deepEqual(marks.map((m) => m.style.top), ["6px", "24px", "6px"]);
+  assert.deepEqual(labels.map((l) => l.style.top), ["2px", "20px", "2px"]);
+  assert.equal(shown.style.height, "44px"); // 2 段 × 18 + 8 = 44
+  assert.equal(hidden.style.height, undefined);
 });

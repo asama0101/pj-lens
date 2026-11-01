@@ -3138,7 +3138,7 @@ return { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide, re
 })();
 
 /* src/ui/views/gantt.js */
-const { GANTT_WINDOWS, renderGantt } = (() => {
+const { GANTT_WINDOWS, assignLevels, layoutMilestones, renderGantt } = (() => {
 // ガントチャート（画面とレポートで共用）。位置と幅はすべて範囲全体に対する % で表し、画面幅に追従させる。
 
 
@@ -3154,6 +3154,41 @@ const legend = (showActual) => `<div class="legend"><span><i class="gbar b-todo"
 function tools(win, hideDone) {
   const seg = GANTT_WINDOWS.map(([k, l]) => `<button data-gwin="${k}" aria-pressed="${win === k}">${l}</button>`).join("");
   return `<div class="gtools"><span class="note">表示期間</span><div class="seg" role="group" aria-label="表示期間">${seg}</div><button class="chip-btn" data-hidedone aria-pressed="${hideDone}">完了を隠す</button><button class="chip-btn" data-gotoday>今日へ移動</button></div>`;
+}
+
+/**
+ * マイルストーンのラベルを、重ならない最初の段へ置く。items は日付順の { x: ラベルの左端, w: 幅 }。戻り値は、各ラベルの段（0 から）。
+ */
+function assignLevels(items) {
+  const ends = [];
+  return items.map(({ x, w }) => {
+    let level = ends.findIndex((e) => e <= x);
+    if (level < 0) level = ends.length;
+    ends[level] = x + w;
+    return level;
+  });
+}
+
+const msLaneHeight = (levels) => Math.max(44, (Math.max(-1, ...levels) + 1) * 18 + 8);
+
+/**
+ * 描いたあとに、マイルストーンのラベルの実際の幅を測って、段と行の高さを決め直す（画面幅・表示期間で、重なりが変わるため）。
+ */
+function layoutMilestones(gbodies) {
+  // 測ると書くを混ぜると、そのたびにレイアウトが走る。先に全部を測り、そのあとで全部を書く（deps.js と同じ）
+  const plans = [];
+  for (const gb of gbodies) {
+    const lane = gb.querySelector(".g-msrow .g-lane");
+    if (!lane || !lane.offsetWidth) continue; // 隠れている（幅 0）ときは、測れないので触らない
+    const marks = [...lane.querySelectorAll(".ms")];
+    const labels = [...lane.querySelectorAll(".ms-l")];
+    const levels = assignLevels(labels.map((l) => ({ x: l.offsetLeft, w: l.offsetWidth + 10 + 8 }))); // 10px はラベルの右ずらし、8px はラベルの間の隙間
+    plans.push({ lane, marks, labels, levels });
+  }
+  for (const { lane, marks, labels, levels } of plans) {
+    levels.forEach((lv, i) => { marks[i].style.top = `${6 + lv * 18}px`; labels[i].style.top = `${2 + lv * 18}px`; });
+    lane.style.height = `${msLaneHeight(levels)}px`;
+  }
 }
 
 /**
@@ -3211,21 +3246,17 @@ function renderGantt(data, projectIds, today, opts = {}) {
     const ms = g.milestones;
     const msLines = ms.map((m) => `<i class="msl" style="left:${x(m.date)}"></i>`).join("");
 
-    // 文字が重ならないように、置ける最初の段に置く。画面幅は 1000px と仮定して、文字の幅を見積もる
+    // 段は、画面幅を 1000px と仮定した見積もり。画面では、描いたあとに layoutMilestones が実測で決め直す（レポートは見積もりのまま）
     const pxPerDay = 1000 / visibleDays;
-    const msEnd = [];
-    const msItems = ms.map((m) => {
-      const px = diffDays(m.date, s0) * pxPerDay;
-      const w = [...m.name].reduce((n, c) => n + (c.charCodeAt(0) < 256 ? 6 : 11), 0) + 40 + 18;
-      let level = msEnd.findIndex((e) => e <= px);
-      if (level < 0) level = msEnd.length;
-      msEnd[level] = px + w;
+    const levels = assignLevels(ms.map((m) => ({ x: diffDays(m.date, s0) * pxPerDay, w: [...m.name].reduce((n, c) => n + (c.charCodeAt(0) < 256 ? 6 : 11), 0) + 40 + 18 })));
+    const msItems = ms.map((m, i) => {
+      const level = levels[i];
       const idx = (p.milestones ?? []).findIndex((o) => o.name === m.name && o.date === m.date);
       const attr = readonly ? "" : ` data-gms="${esc(p.id)}|${idx}"`;
       return `<i class="ms"${attr} style="left:${x(m.date)};top:${6 + level * 18}px" title="${esc(m.name)} ${fmtMD(m.date)}${readonly ? "" : "(ドラッグで日付を変更)"}"></i><span class="ms-l" style="left:${x(m.date)};top:${2 + level * 18}px">${esc(m.name)} <b class="mono">${fmtMD(m.date)}</b></span>`;
     }).join("");
     const msRow = ms.length
-      ? `<div class="g-row g-msrow"><div class="g-label"><span class="id"></span><span class="muted">マイルストーン</span></div><div class="g-lane" style="width:var(--lanew);height:${Math.max(44, msEnd.length * 18 + 8)}px">${msItems}</div></div>`
+      ? `<div class="g-row g-msrow"><div class="g-label"><span class="id"></span><span class="muted">マイルストーン</span></div><div class="g-lane" style="width:var(--lanew);height:${msLaneHeight(levels)}px">${msItems}</div></div>`
       : "";
 
     const months = Math.max(1, Math.round(diffDays(p.due, p.start) / 30.4));
@@ -3295,7 +3326,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
   return `${top}<div class="gscroll" data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"><div class="gwide">${sections}</div></div>${readonly ? legend(showActual) : ""}`;
 }
 
-return { GANTT_WINDOWS, renderGantt };
+return { GANTT_WINDOWS, assignLevels, layoutMilestones, renderGantt };
 })();
 
 /* src/ui/views/schedule.js */
@@ -4235,8 +4266,12 @@ function openTaskPop(id, x, y) {
   render();
 }
 
-/** 前のタスクの線を、画面にあるすべてのガント本体に引き直す */
-function drawAllDeps() { drawDeps(view.querySelectorAll(".gbody")); }
+/** マイルストーンの段を決め直してから（行の高さが変わるため）、前のタスクの線を、画面にあるすべてのガント本体に引き直す */
+function drawAllDeps() {
+  const bodies = view.querySelectorAll(".gbody");
+  layoutMilestones(bodies);
+  drawDeps(bodies);
+}
 
 function render() {
   hideTip();
