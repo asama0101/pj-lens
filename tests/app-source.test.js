@@ -213,3 +213,15 @@ test("app.js: 休みの期間登録の通知は、土日祝を営業日に数え
 test("app.js: ガントのドラッグ中のバーの幅は、期限日のマスを含める（描画と同じ。ne - ns + 1 日）", () => {
   assert.match(src, /tg\.style\.left = pct\(ns\); tg\.style\.width = pct\(ne - ns \+ 1\);/);
 });
+
+test("index.html: タブは ガントチャート・リスト・スケジュール・稼働・設定 の順で、「プロジェクト」はない", () => {
+  const html = readFileSync(new URL("../plugins/pj-lens/src/ui/index.html", import.meta.url), "utf8");
+  const tabs = [...html.matchAll(/<button role="tab" id="tab-([a-z]+)"[^>]*>([^<]+)<\/button>/g)].map((m) => `${m[1]}:${m[2]}`);
+  assert.deepEqual(tabs, ["gantt:ガントチャート", "list:リスト", "schedule:スケジュール", "workload:稼働", "settings:設定"]);
+});
+
+test("app.js: S.pview は廃止し、S.screen の初期値は gantt（リストへ移る操作は S.screen = \"list\"）", () => {
+  assert.doesNotMatch(src, /pview/);
+  assert.match(src, /screen: "gantt"/);
+  assert.match(src, /S\.screen = "list"/);
+});

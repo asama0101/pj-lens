@@ -29,6 +29,15 @@ function longData() {
   return d;
 }
 
+test("renderProjects: 画面内の「ガント／リスト」切り替え（data-pview）を出さない。view が gantt でも list でも、同じ絞り込みの状態が同じに出る", () => {
+  const d = load();
+  for (const view of ["gantt", "list"]) {
+    const html = renderProjects(d, TODAY, { filter: "A", view, window: "m6", hideDone: true });
+    assert.doesNotMatch(html, /data-pview/);
+    assert.match(html, /data-filter="A" aria-pressed="true"/, view);
+  }
+});
+
 test("renderProjects(gantt/all): 全プロジェクト名・進捗率・遅延バッジ・マイルストーン、目盛りが共通", () => {
   const d = load();
   const html = renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6", hideDone: false });
