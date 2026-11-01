@@ -57,7 +57,7 @@ const COMMANDS = {
         if (!nationalHolidays) plan.warnings.push("祝日を取得できませんでした（手動登録の休みだけで計算）");
       }
       const to = holidayStatus(d.settings).to;
-      if (to && lastDue(plan) > to) plan.warnings.push(`祝日の一覧は ${to} までです。それ以降は手動登録の休みだけで計算しています`);
+      if (to && d.settings?.countWeekendsAndHolidays !== true && lastDue(plan) > to) plan.warnings.push(`祝日の一覧は ${to} までです。それ以降は手動登録の休みだけで計算しています`);
     }
     const summary = o.summary ?? `提案: ${summarizeSections(plan.sections)}`;
     const proposal = { ...plan, summary, reason: o.reason ?? summary, cause };
