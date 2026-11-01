@@ -11,7 +11,7 @@ const S = {
   filter: "all", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
-  prefs: loadPrefs(), group: "all", pendingReplan: null, addAt: null, last: null, ruleError: "",
+  prefs: loadPrefs(), group: "all", tpop: null, addAt: null, last: null, ruleError: "",
   ib: { open: false, text: loadInboxDraft(), projectId: "", replies: {}, reasons: {}, causes: {} },
   wperiod: "week", wdate: clock().date,
   reportPanel: null,
@@ -43,11 +43,25 @@ function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
   if (S.screen === "gantt" || S.screen === "list") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.screen, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, addAt: S.addAt, pendingReplan: S.pendingReplan, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
+    return renderProjects(S.data, today, { filter: S.filter, view: S.screen, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, addAt: S.addAt, tpop: S.screen === "gantt" ? S.tpop : null, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
   if (S.screen === "settings") return renderSettings(S.data, today, { ruleError: S.ruleError });
   if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
   return renderSchedule(S.data, today, scheduleOpts());
+}
+
+/** ガントの編集の窓を、クリックした位置の近くに置く(画面の端に収める) */
+function placeTaskPop() {
+  const pop = view.querySelector("[data-tpop]");
+  if (!pop || !S.tpop) return;
+  const r = pop.getBoundingClientRect();
+  pop.style.left = `${Math.max(8, Math.min(S.tpop.x + 10, innerWidth - r.width - 8))}px`;
+  pop.style.top = `${Math.max(8, Math.min(S.tpop.y + 10, innerHeight - r.height - 64))}px`; // 下端の「Claude Code に依頼する」の帯に重ならないよう、下を空ける
+}
+function openTaskPop(id, x, y) {
+  S.tpop = { id, x, y };
+  S.focusSel = '[data-tpop] [data-f="title"]';
+  render();
 }
 
 /** 前のタスクの線を、画面にあるすべてのガント本体に引き直す */
@@ -56,6 +70,7 @@ function drawAllDeps() { drawDeps(view.querySelectorAll(".gbody")); }
 function render() {
   hideTip();
   clearTimeout(settingTimer); settingTimer = null; // 描き直しで入力欄を取り除くときに focusout が走り、保存が入れ子の描き直しになるのを防ぐ（待っていた入力は、描き直しで消えるのと同じ）
+  if (S.tpop && !S.data?.tasks.some((t) => t.id === S.tpop.id)) S.tpop = null; // 読み直しで対象のタスクが消えたら、窓も閉じる
   const c = clock();
   $("todaylabel").textContent = `${c.date.replace(/-/g, "/")}(${wdJa(c.date)})`;
   document.querySelectorAll("nav [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.id === "tab-" + S.screen)));
@@ -79,6 +94,7 @@ function render() {
   }
   syncSticky();
   drawAllDeps();
+  placeTaskPop();
   if (S.hlId) {
     let row = null;
     try { row = view.querySelector(`[data-row="${CSS.escape(S.hlId)}"]`); } catch { /* 無視 */ }
@@ -105,7 +121,6 @@ function focusSelector(el) {
   for (const k of ["hnew", "hto", "hnote", "wnew", "wnote"]) if (d[k] !== undefined) return `[data-${k}]`;
   if (d.rnewpj !== undefined) return "[data-rnewpj]";
   if (d.waitparty) return q("data-waitparty", d.waitparty);
-  if (d.rp) return q("data-rp", d.rp);
   if (d.rptmt !== undefined) return "[data-rptmt]";
   if (d.rptp) return q("data-rptp", d.rptp);
   if (d.rptk) return q("data-rptk", d.rptk);
@@ -201,8 +216,8 @@ function loaded(data) {
     if (!Array.isArray(data?.[k])) throw new Error(`データの形が違います（${k} がありません）`);
   }
   S.data = data;
+  S.tpop = null;
   sync.reset();
-  S.pendingReplan = null;
   S.ruleError = "";
   S.openError = "";
   const { errors, warnings } = validate(data, clock());
@@ -323,33 +338,6 @@ function submitGAdd(input) {
   }
 }
 
-/* ---------- 日程変更の確認(期限を変えたとき、次のタスクへの影響を見てから反映する) ---------- */
-/** 期限の変更で次のタスクが動く、プロジェクト期限を超える、または前倒しで詰められる次のタスクがあるときは、確認待ちにして true を返す。そうでなければ false(呼び出し側がそのまま反映する) */
-function dueChange(id, base, orig, edit) {
-  const delta = diffDays(base.tasks.find((t) => t.id === id).due, orig.tasks.find((t) => t.id === id).due);
-  if (!delta) return false;
-  const impact = computeImpact(orig, id, delta);
-  // 前倒しは、詰められる次のタスクがあるときも確認する(既定は詰めない。パネルのチェックで選ぶ)
-  const canCompress = delta < 0 && computeImpact(orig, id, delta, { compress: true }).changes.length > 1;
-  if (!needsReplan(impact) && !canCompress) return false;
-  S.pendingReplan = { taskId: id, delta, impact, compress: false, cause: "その他", reason: "画面で調整", edit, base, orig };
-  S.focusSel = '[data-rp="reason"]';
-  render();
-  return true;
-}
-
-function replanAction(kind) {
-  const p = S.pendingReplan;
-  if (!p) return;
-  if (kind === "cancel") { S.pendingReplan = null; render(); return; }
-  if (kind === "only") { S.pendingReplan = null; apply((d) => p.edit(d), "このタスクだけ変更しました。次のタスクの日程は変えていません"); return; }
-  const reason = view.querySelector('[data-rp="reason"]')?.value ?? p.reason;
-  const cause = view.querySelector('[data-rp="cause"]')?.value ?? p.cause;
-  if (!reason.trim()) { toast("理由を入力してください"); return; }
-  S.pendingReplan = null;
-  apply((d) => commitReplan(d, p.edit, p.taskId, p.delta, { compress: p.compress, reason, cause, at: clock().date }), `${p.impact.changes.length} 件の期限を変更し、日程変更の履歴に残しました`);
-}
-
 /* ---------- 選択と削除 ---------- */
 const clearSel = () => { S.selSess = null; S.selMtg = null; S.mtgDraft = null; };
 
@@ -379,6 +367,7 @@ document.querySelector("nav").addEventListener("click", (e) => {
   const b = e.target.closest("[role=tab]");
   if (!b) return;
   S.screen = b.id.slice(4);
+  S.tpop = null;
   S.pendingDone = null;
   S.ruleError = "";
   clearSel();
@@ -410,6 +399,7 @@ $("banner").addEventListener("click", async (e) => {
 /** 画面の外(ヘッダー・余白)のクリックでも、枠・会議の選択と追加中の下書きを外す。
  *  画面の描き直しで target が DOM から外れる前に判定するため、キャプチャ段階で処理する */
 document.addEventListener("click", (e) => {
+  if (S.tpop && !view.contains(e.target)) { S.tpop = null; render(); return; } // ガントの編集の窓は、画面の外のクリックでも閉じる
   if (view.contains(e.target) || !(S.selSess || S.selMtg || S.mtgDraft)) return;
   if (e.target.closest("[data-delsel]")) return;
   clearSel();
@@ -419,6 +409,11 @@ document.addEventListener("click", (e) => {
 view.addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
   if (q("[data-pref]")) { togglePref("showPrio"); return; } // 右の列の取っ手
+  if (q("[data-tpopclose]")) { S.tpop = null; render(); return; }
+  const ge = q("[data-gedit]");
+  if (ge) { const r = ge.getBoundingClientRect(); openTaskPop(ge.dataset.gedit, e.detail ? e.clientX : r.left, e.detail ? e.clientY : r.bottom); return; } // キーボード(detail 0)は、ボタンの位置に出す
+  // 編集の窓の外(バー・タスク名以外)のクリックで閉じる
+  if (S.tpop && !q(".tpop,[data-gt],[data-gh]")) { S.tpop = null; render(); } // 閉じたあと、押したものの操作もそのまま行う
   if (q("[data-rptclose]")) { S.reportPanel = null; render(); return; }
   if (q("[data-rptgo]")) { makeReport(); return; }
   let cleared = false;
@@ -445,7 +440,6 @@ view.addEventListener("click", (e) => {
   if (q("[data-reopen]")) { openFile("reopen"); return; }
   if (q("[data-openfile]")) { openFile("choose"); return; }
   /* プロジェクト画面 */
-  const rpl = q("[data-replan]"); if (rpl) { replanAction(rpl.dataset.replan); return; }
   const gw = q("[data-gwin]"); if (gw) { S.gwin = gw.dataset.gwin; S.resetScroll = true; render(); return; }
   if (q("[data-hidedone]")) { S.hideDone = !S.hideDone; render(); return; }
   if (q("[data-gotoday]")) { scrollToday(true); return; }
@@ -476,12 +470,12 @@ view.addEventListener("click", (e) => {
   if (gok) { const input = view.querySelector(`[data-gadd="${CSS.escape(gok.dataset.gaddok)}"]`); if (input) submitGAdd(input); return; }
   if (q("[data-gaddno]")) { S.addAt = null; render(); return; }
   const gn = q("[data-goto]");
-  if (gn) { const t = S.data.tasks.find((x) => x.id === gn.dataset.goto); S.filter = t.projectId; S.screen = "list"; S.hlId = t.id; S.focusSel = `#f-${t.id}-t`; S.resetScroll = true; render(); return; }
+  if (gn) { S.tpop = null; const t = S.data.tasks.find((x) => x.id === gn.dataset.goto); S.filter = t.projectId; S.screen = "list"; S.hlId = t.id; S.focusSel = `#f-${t.id}-t`; S.resetScroll = true; render(); return; }
   const ma = q("[data-msadd]");
   if (ma) { const p = S.data.projects.find((x) => x.id === ma.dataset.msadd); apply((d) => addMilestone(d, p.id, { name: "新しいマイルストーン", date: p.due }), "マイルストーンを追加しました"); return; }
   const md = q("[data-msdel]");
   if (md) { const [pid, i] = md.dataset.msdel.split("|"); apply((d) => deleteMilestone(d, pid, +i), "マイルストーンを削除しました"); return; }
-  const dl = q("[data-del]"); if (dl) { S.askDel = dl.dataset.del; render(); return; }
+  const dl = q("[data-del]"); if (dl) { S.askDel = dl.dataset.del; S.tpop = null; render(); return; }
   if (q("[data-delno]")) { S.askDel = null; render(); return; }
   const dy = q("[data-delyes]");
   if (dy) { const id = dy.dataset.delyes; S.askDel = null; apply((d) => deleteTask(d, id, { force: true }).data, `${id} を削除しました`); return; }
@@ -686,19 +680,6 @@ function onChange(el) {
     if (!apply((d) => updateMeeting(d, m.id, { [f]: v }), f === "skip" ? (v ? "参加しない会議にしました。空き時間として扱います" : "参加する会議に戻しました") : "会議を更新しました", { partial: true })) { el.value = old; }
     return;
   }
-  if (el.dataset.rp) {
-    const p = S.pendingReplan;
-    if (!p) return;
-    const k = el.dataset.rp;
-    if (k === "compress") {
-      p.reason = view.querySelector('[data-rp="reason"]')?.value ?? p.reason;
-      p.cause = view.querySelector('[data-rp="cause"]')?.value ?? p.cause;
-      p.compress = el.checked;
-      p.impact = computeImpact(p.orig, p.taskId, p.delta, { compress: p.compress });
-      render();
-    } else p[k] = el.value;
-    return;
-  }
   if (el.dataset.set !== undefined) { el.dataset.set.startsWith("workday-") ? changeSettingSoon(el) : changeSetting(el); return; }
   if (el.dataset.hrowkind !== undefined) {
     const date = el.dataset.hrowkind, kind = el.value;
@@ -719,7 +700,10 @@ function onChange(el) {
     return;
   }
   if (el.dataset.addpre !== undefined) {
-    if (el.value) { const id = el.dataset.addpre; apply((d) => updateTask(d, id, { predecessors: [...d.tasks.find((t) => t.id === id).predecessors, el.value] }, today), "前のタスクを追加しました"); }
+    if (el.value) {
+      const id = el.dataset.addpre, pre = el.value, start = S.data.tasks.find((t) => t.id === id)?.start;
+      apply((d) => addPredecessor(d, id, pre, today), start ? `前のタスクを追加しました。開始日 ${fmtMD(start)} を外し、前のタスクの期限から決まる形にしました` : "前のタスクを追加しました");
+    }
     return;
   }
   if (el.dataset.f) {
@@ -727,14 +711,6 @@ function onChange(el) {
     const t = S.data.tasks.find((x) => x.id === id);
     if (f === "status") { changeStatus(id, el.value); return; }
     if (f === "party") { apply((d) => updateTask(d, id, { waitingOn: { party: el.value, since: t.waitingOn?.since ?? today } }, today), "変更を保存しました"); return; }
-    if (f === "due") {
-      const due = el.value;
-      let base;
-      try { base = updateTask(S.data, id, { due }, today); } catch (e) { toast(e.message); render(); return; }
-      if (dueChange(id, base, S.data, (d) => updateTask(d, id, { due }, today))) return;
-      apply((d) => updateTask(d, id, { due }, today), "変更を保存しました");
-      return;
-    }
     if (f === "group" || f === "subgroup") S.hlId = id; // 該当グループへ移った行を強調して見失わないようにする
     apply((d) => updateTask(d, id, { [f]: f === "importance" ? el.value || null : el.value }, today), "変更を保存しました");
   }
@@ -860,6 +836,7 @@ view.addEventListener("mousedown", (e) => {
   const tg = e.target.closest("[data-gt],[data-gp],[data-gms]");
   if (!tg || !tg.closest(".gscroll")) return;
   const handle = e.target.closest("[data-gh]")?.dataset.gh ?? "m";
+  document.activeElement?.closest?.("[data-tpop]") && document.activeElement.blur(); // 窓で打ちかけの入力を、preventDefault で捨てない（blur で change を起こして保存する）
   const sc = tg.closest(".gscroll"), lane = tg.closest(".g-lane");
   const total = +sc.dataset.span, s0 = sc.dataset.s0, ppd = lane.offsetWidth / total;
   const idx = (d) => diffDays(d, s0);
@@ -868,8 +845,7 @@ view.addEventListener("mousedown", (e) => {
     kind = "t"; t = S.data.tasks.find((x) => x.id === tg.dataset.gt);
     en = idx(t.due); s = idx(taskStart(S.data, t.id));
     const hasPre = (t.predecessors ?? []).length > 0;
-    if (tg.classList.contains("dot") || s === en) mode = hasPre || !t.start || t.start > t.due ? "r" : "both-point";
-    else if (hasPre && mode === "m") return;
+    if (tg.classList.contains("dot") || s === en) mode = !t.start || t.start > t.due ? "r" : "both-point";
   } else if (tg.dataset.gp) {
     kind = "p"; p = S.data.projects.find((x) => x.id === tg.dataset.gp);
     s = idx(p.start); en = idx(p.due);
@@ -888,20 +864,20 @@ view.addEventListener("mousedown", (e) => {
     dd = Math.round((ev.clientX - x0) / ppd);
     let ns = s, ne = en;
     if (mode === "l") ns = Math.min(s + dd, en);
-    else if (mode === "r") ne = kind === "m" ? en + dd : Math.max(en + dd, s);
+    else if (mode === "r") ne = kind === "m" ? en + dd : (s >= en ? en + dd : Math.max(en + dd, s)); // 点（開始 ≥ 期限）は、前のタスクの期限へ跳ばさず、そのまま動かす
     else { ns = s + dd; ne = en + dd; }
     if (kind === "m" || tg.classList.contains("dot")) tg.style.left = pct(ne);
     else { tg.style.left = pct(ns); tg.style.width = pct(ne - ns + 1); } // 期限日のマスを含める（描画と同じ）
     tg.title = `${fmtMD(addDays(s0, ns))}〜${fmtMD(addDays(s0, ne))}`;
   };
-  const up = () => {
+  const up = (ev) => {
     document.removeEventListener("mousemove", move);
     document.removeEventListener("mouseup", up);
     gbody?.classList.remove("dep-hide");
-    if (!dd) return;
+    if (!dd) { if (kind === "t") openTaskPop(t.id, ev.clientX, ev.clientY); return; } // 動かさずに離した = クリック
     let ns = s, ne = en;
     if (mode === "l") ns = Math.min(s + dd, en);
-    else if (mode === "r") ne = kind === "m" ? en + dd : Math.max(en + dd, s);
+    else if (mode === "r") ne = kind === "m" ? en + dd : (s >= en ? en + dd : Math.max(en + dd, s)); // 点（開始 ≥ 期限）は、前のタスクの期限へ跳ばさず、そのまま動かす
     else { ns = s + dd; ne = en + dd; }
     let result, msg, dragEdit;
     if (kind === "t") {
@@ -922,7 +898,6 @@ view.addEventListener("mousedown", (e) => {
       msg = `マイルストーン「${p.milestones[mIdx].name}」を ${fmtMD(addDays(s0, ne))} に変更しました`;
     }
     if (result.error) { toast(result.error); render(); return; }
-    if (kind === "t" && dueChange(t.id, result.data, S.data, dragEdit)) return;
     apply(dragEdit, `${msg}${result.warning ? `。${result.warning}` : ""}`);
   };
   document.addEventListener("mousemove", move);
@@ -933,6 +908,7 @@ view.addEventListener("mousedown", (e) => {
 document.addEventListener("keydown", (e) => {
   const typing = e.target.matches?.("input,select,textarea");
   if ((e.key === "Delete" || e.key === "Backspace") && S.screen === "schedule" && (S.selSess || S.selMtg) && !typing) { e.preventDefault(); deleteSelected(); }
+  if (e.key === "Escape" && S.tpop) { S.tpop = null; render(); return; }
   if (e.key === "Escape" && S.screen === "schedule" && (S.selSess || S.selMtg || S.mtgDraft)) { clearSel(); render(); }
 });
 view.addEventListener("keydown", (e) => {
@@ -948,11 +924,6 @@ view.addEventListener("keydown", (e) => {
 
 /* ---------- Claude Code への依頼（画面下の帯） ---------- */
 const nowIso = () => new Date().toISOString();
-const IB_EXAMPLES = {
-  due: "<タスクの ID> が <N> 日遅れた（原因: ベンダー）。",
-  pred: "<前のタスクの ID> の後に <次のタスクの ID>, <次のタスクの ID> を結んで。",
-  add: "次を登録して: <件名> <期限> <大項目▸中項目> 前のタスク <ID>",
-};
 
 /** 打ちかけの入力（依頼・対象・返信・理由・原因）を S.ib に取り込む。描き直しで消さないため */
 function captureBar() {
@@ -1048,9 +1019,10 @@ $("claudebar").addEventListener("click", (e) => {
   const ex = q("[data-ib-example]");
   if (ex) {
     captureBar();
-    const t = IB_EXAMPLES[ex.dataset.ibExample] ?? "";
+    const t = ibExamples(S.data, S.ib.projectId || (S.filter !== "all" ? S.filter : ""), clock().date)[ex.dataset.ibExample] ?? "";
     S.ib.text = S.ib.text.trim() ? `${S.ib.text.replace(/\s+$/, "")}\n${t}` : t;
     saveInboxDraft(S.ib.text);
+    $("claudebar").querySelector("[data-ib-text]").value = S.ib.text; // 描き直しは画面の入力欄の値を先に取り込むので、画面側にも入れる
     renderBar(true);
     $("claudebar").querySelector("[data-ib-text]")?.focus();
     return;

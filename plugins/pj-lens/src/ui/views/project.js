@@ -1,19 +1,28 @@
 // プロジェクト画面: 絞り込み × ガント／リスト、右に「今日のタスク」「今日の優先」
-import { projectProgress, projectFlags, taskFlags, taskStart } from "../../core/metrics.js";
+import { projectProgress, projectFlags, taskFlags } from "../../core/metrics.js";
 import { taskActual } from "../../core/sessions.js";
 import { projectHours } from "../../core/workload.js";
 import { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE } from "../../core/schema.js";
 import { esc, fmtMD, flagPills } from "../common.js";
-import { predecessorCandidates } from "../edit.js";
 import { groupLabels, groupNames, groupSections } from "../../core/groups.js";
 import { renderGantt } from "./gantt.js";
-import { renderReplanPanel } from "./replan.js";
 import { renderSide, renderSideToggle, todayTaskIds, doneAskHtml } from "./prio.js";
+import { renderTaskPop, predEditHtml, startInputHtml } from "./taskpop.js";
 
 const actText = (data, id) => {
   const a = taskActual(data, id);
   return a.count ? `${a.hours.toFixed(1)}h${a.firstDate ? "・初回 " + fmtMD(a.firstDate) : ""}・${a.count}回` : "—";
 };
+
+/** 状態の欄（選択。待ち先の入力・Done の確認が出ているときは、その表示）。リストとガントの編集の窓で共用 */
+function statusCellHtml(t, opts, late) {
+  const id = esc(t.id);
+  if (opts.pendingWait === t.id) {
+    return `<div class="ask" style="max-width:none">待ち先を入力<input class="in" data-waitparty="${id}" placeholder="ベンダー・部署名" aria-label="${id} の待ち先"><div style="display:flex;gap:6px;margin-top:4px"><button class="btn" data-waitok="${id}">Waiting にする</button><button class="btn" data-waitno>やめる</button></div></div>`;
+  }
+  if (opts.pendingDone?.id === t.id && !opts.todayIds?.has(t.id)) return doneAskHtml(opts.pendingDone);
+  return `<select class="in" data-f="status" data-id="${id}" aria-label="${id} の状態">${TASK_STATUS.map((o) => `<option ${o === t.status ? "selected" : ""}>${o}</option>`).join("")}</select>${late ? ` <span class="pill late">期限超過</span>` : ""}`;
+}
 
 function renderList(data, p, today, opts) {
   const prog = projectProgress(data, p.id);
@@ -21,10 +30,6 @@ function renderList(data, p, today, opts) {
   const labels = groupLabels(data.settings);
   const shown = opts.group && opts.group !== "all" ? tasks.filter((t) => (t.group ?? "") === opts.group) : tasks;
   const rowOf = (t) => {
-    const preds = t.predecessors ?? [];
-    const cand = predecessorCandidates(data, t.id).map((id) => data.tasks.find((u) => u.id === id));
-    const chips = preds.map((id) => `<span class="chip">${esc(id)}<button data-rmpre="${esc(t.id)}|${esc(id)}" aria-label="${esc(id)} を前のタスクから外す">×</button></span>`).join("");
-    const add = cand.length ? `<select class="in sm" data-addpre="${esc(t.id)}" aria-label="前のタスクを追加"><option value="">＋前のタスク</option>${cand.map((u) => `<option value="${esc(u.id)}">${esc(u.id)} ${esc(u.title)}</option>`).join("")}</select>` : "";
     const needParty = t.status === "Waiting" && !t.waitingOn?.party ? `<span class="pill wait">待ち先を入力</span>` : "";
     const dependents = data.tasks.filter((o) => (o.predecessors ?? []).includes(t.id)).map((o) => o.id);
     const delCell = opts.askDel === t.id
@@ -35,14 +40,10 @@ function renderList(data, p, today, opts) {
       <td data-l="${esc(labels.group)}"><input class="in gi" data-f="group" data-id="${esc(t.id)}" value="${esc(t.group ?? "")}" aria-label="${esc(t.id)} の${esc(labels.group)}"></td>
       <td data-l="${esc(labels.subgroup)}"><input class="in gi" data-f="subgroup" data-id="${esc(t.id)}" value="${esc(t.subgroup ?? "")}" aria-label="${esc(t.id)} の${esc(labels.subgroup)}"></td>
       <td data-l="件名"><input class="in" id="f-${esc(t.id)}-t" data-f="title" data-id="${esc(t.id)}" value="${esc(t.title)}" aria-label="${esc(t.id)} の件名"></td>
-      <td data-l="状態">${opts.pendingWait === t.id
-        ? `<div class="ask" style="max-width:none">待ち先を入力<input class="in" data-waitparty="${esc(t.id)}" placeholder="ベンダー・部署名" aria-label="${esc(t.id)} の待ち先"><div style="display:flex;gap:6px;margin-top:4px"><button class="btn" data-waitok="${esc(t.id)}">Waiting にする</button><button class="btn" data-waitno>やめる</button></div></div>`
-        : opts.pendingDone?.id === t.id && !opts.todayIds?.has(t.id)
-        ? doneAskHtml(opts.pendingDone)
-        : `<select class="in" data-f="status" data-id="${esc(t.id)}" aria-label="${esc(t.id)} の状態">${TASK_STATUS.map((o) => `<option ${o === t.status ? "selected" : ""}>${o}</option>`).join("")}</select>${late ? ` <span class="pill late">期限超過</span>` : ""}`}</td>
-      <td data-l="開始">${preds.length ? `<span class="mono muted" title="前のタスクの期限から決まります">${fmtMD(taskStart(data, t.id))} <small>前のタスクから</small></span>` : `<input class="in" type="date" data-f="start" data-id="${esc(t.id)}" value="${esc(t.start ?? "")}" aria-label="${esc(t.id)} の開始日">`}</td>
+      <td data-l="状態">${statusCellHtml(t, opts, late)}</td>
+      <td data-l="開始">${startInputHtml(data, t)}</td>
       <td data-l="期限"><input class="in" type="date" data-f="due" data-id="${esc(t.id)}" value="${esc(t.due)}" aria-label="${esc(t.id)} の期限"></td>
-      <td data-l="前のタスク"><div class="chips">${chips}${add}</div></td>
+      <td data-l="前のタスク">${predEditHtml(data, t)}</td>
       <td data-l="待ち先"><input class="in" data-f="party" data-id="${esc(t.id)}" value="${esc(t.waitingOn?.party ?? "")}" placeholder="${t.status === "Waiting" ? "ベンダー・部署名" : "—"}" ${t.status === "Waiting" ? "" : "disabled"} aria-label="${esc(t.id)} の待ち先">${needParty}</td>
       <td data-l="重要度"><select class="in sm" data-f="importance" data-id="${esc(t.id)}" aria-label="${esc(t.id)} の重要度">${[["", "—"], ["high", "高"], ["mid", "中"], ["low", "低"]].map(([v, l]) => `<option value="${v}" ${(t.importance ?? "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></td>
       <td data-l="メモ"><input class="in" data-f="memo" data-id="${esc(t.id)}" value="${esc(t.memo ?? "")}" placeholder="メモ" aria-label="${esc(t.id)} のメモ"></td>
@@ -79,7 +80,7 @@ function renderList(data, p, today, opts) {
     <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="note">変更はその場でファイルに保存されます。次のタスクの日程をまとめて見直すときは、画面の下端の「Claude Code に依頼する」に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>
     <div class="mslist">${ms}<div><button class="btn" data-msadd="${esc(p.id)}">＋ マイルストーンを追加</button> <span class="note">ガントに◆で表示されます。</span></div></div>
-    <h2 style="margin:18px 0 2px;font-size:13px">日程変更の履歴</h2><p class="note" style="margin:0 0 8px">日程が動いたとき、いつ・何が・なぜ動いたか(原因: ベンダー／社内／自分)の記録です。画面の確認パネルで「次のタスクも反映して履歴に残す」を選んだとき、Claude Code の依頼（受信箱）で反映したときに記録されます。</p><ul class="log">${log}</ul>
+    <h2 style="margin:18px 0 2px;font-size:13px">日程変更の履歴</h2><p class="note" style="margin:0 0 8px">日程が動いたとき、いつ・何が・なぜ動いたか(原因: ベンダー／社内／自分)の記録です。「Claude Code に依頼する」で期限の変更を反映したときに記録されます。画面で期限を直接変えたときは記録されません。</p><ul class="log">${log}</ul>
     <div style="margin-top:18px">${delProj}</div></section>`;
 }
 
@@ -87,8 +88,8 @@ function renderList(data, p, today, opts) {
  * @param opts.filter  "all" か projectId
  * @param opts.view    "gantt" | "list"
  * @param opts.window  ガントの表示期間
- * @param opts.pendingReplan 日程変更の確認待ち(あれば確認パネルを出す)
  * @param opts.group   "all" か大項目の名前(その大項目のタスクだけを出す)
+ * @param opts.tpop    ガントの編集の窓({ id, x, y })。なければ出さない
  * @param opts.showPrio / opts.showActual  今日の優先・ガントの実績を出すか(既定は出す)
  */
 export function renderProjects(data, today, opts = {}) {
@@ -111,8 +112,9 @@ export function renderProjects(data, today, opts = {}) {
   const body = view === "gantt"
     ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual, group, addAt: opts.addAt })}</section>`
     : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, group, todayIds })).join("")}</div>`;
+  const pt = view === "gantt" && opts.tpop ? data.tasks.find((t) => t.id === opts.tpop.id) : null;
+  const pop = pt ? renderTaskPop(data, opts.tpop, statusCellHtml(pt, { ...opts, todayIds }, taskFlags(pt, today, data.settings).includes("overdue"))) : "";
   return `<div class="toolbar ptool"><div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="プロジェクトで絞り込み">${chips}${gsel}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${addBtn}</div></div>
-    ${opts.pendingReplan ? renderReplanPanel(data, opts.pendingReplan) : ""}
-    <div class="cols${showPrio ? "" : " one"}">${body}${renderSideToggle(showPrio)}${showPrio ? renderSide(data, today, { sched: false, pendingDone: opts.pendingDone }) : ""}</div>`;
+    <div class="cols${showPrio ? "" : " one"}">${body}${renderSideToggle(showPrio)}${showPrio ? renderSide(data, today, { sched: false, pendingDone: opts.pendingDone }) : ""}</div>${pop}`;
 }

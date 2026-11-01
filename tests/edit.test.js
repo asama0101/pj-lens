@@ -2,10 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { validate } from "../plugins/pj-lens/src/core/schema.js";
+import { taskStart } from "../plugins/pj-lens/src/core/metrics.js";
+import { addDays } from "../plugins/pj-lens/src/core/dates.js";
 import {
   updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveTaskDates, moveProjectDates, moveMilestone,
   addTaskQuick, predecessorCandidates, addTask, deleteTask, addProject, deleteProject,
-  addHoliday, addHolidayRange, holidayRangeDays, removeHoliday, addWorkday, removeWorkday,
+  addHoliday, addHolidayRange, holidayRangeDays, removeHoliday, addWorkday, removeWorkday, addPredecessor,
 } from "../plugins/pj-lens/src/ui/edit.js";
 
 const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
@@ -80,16 +82,19 @@ test("moveTaskDates: 前のタスクなしの both / start / due", () => {
   assert.ok(moveTaskDates(d, "A5", "due", -999).error);
 });
 
-test("moveTaskDates: 前のタスクありは start/both が error、due は動く。次のタスクの期限より後ろなら warning", () => {
+test("moveTaskDates: 前のタスクがあっても start/both/due を動かせる。前後の期限は見ない（error・warning なし）", () => {
   const d = load();
-  assert.ok(moveTaskDates(d, "A4", "start", 1).error);
-  assert.ok(moveTaskDates(d, "A4", "both", 1).error);
-  const r = moveTaskDates(d, "A4", "due", 10); // A4 の次のタスク A6(2027-02-05) より前なので警告なし
-  assert.equal(task(r.data, "A4").due, "2026-12-07");
-  assert.equal(r.warning, undefined);
-  const w = moveTaskDates(d, "A4", "due", 80); // 2027-02-15 > A6 の期限
+  const base = taskStart(d, "A4"); // 前のタスクの期限から決まる開始
+  const s = moveTaskDates(d, "A4", "start", 1);
+  assert.equal(s.error, undefined);
+  assert.equal(task(s.data, "A4").start, addDays(base, 1));
+  const b = moveTaskDates(d, "A4", "both", 1);
+  assert.equal(task(b.data, "A4").start, addDays(base, 1));
+  assert.equal(task(b.data, "A4").due, addDays(task(d, "A4").due, 1));
+  const w = moveTaskDates(d, "A4", "due", 80); // 次のタスク A6 の期限より後ろでも、警告しない
   assert.equal(task(w.data, "A4").due, "2027-02-15");
-  assert.ok(w.warning.includes("A6"));
+  assert.equal(w.warning, undefined);
+  assert.ok(moveTaskDates(d, "A4", "start", 999).error, "開始が期限より後になるのは error");
 });
 
 test("moveProjectDates / moveMilestone", () => {
@@ -316,4 +321,21 @@ test("holidayRangeDays・addHolidayRange: オンのとき期間の全日を対�
   assert.throws(() => holidayRangeDays(d, "2026-01-01", "2027-01-02"), /366/);
   const added = addHolidayRange(d, { from: "2026-10-31", to: "2026-11-01", kind: "有給" });
   assert.deepEqual(hol(added).map((h) => h.date), ["2026-10-31", "2026-11-01"]);
+});
+
+test("updateTask: 前のタスクがあるタスクでも、開始日が期限より後になる更新は拒む（start は前のタスクがあっても有効なため）", () => {
+  const d = load();
+  assert.throws(() => updateTask(d, "A4", { start: "2027-03-01" }), /開始日は期限以前/);
+  assert.equal(task(updateTask(d, "A4", { start: "2026-11-20" }), "A4").start, "2026-11-20");
+});
+
+test("addPredecessor: 前のタスクを足すと、指定してあった開始日を外し、開始日は前のタスクの期限から決まる", () => {
+  const d = load();
+  assert.equal(task(d, "A5").start, "2026-10-12");
+  const n = addPredecessor(d, "A5", "A3");
+  assert.deepEqual(task(n, "A5").predecessors, ["A3"]);
+  assert.equal(task(n, "A5").start ?? null, null);
+  assert.equal(taskStart(n, "A5"), task(n, "A3").due);
+  const m = addPredecessor(d, "A4", "A5"); // 開始日の指定がないタスクは、前のタスクが増えるだけ
+  assert.deepEqual(task(m, "A4").predecessors, ["A3", "A5"]);
 });

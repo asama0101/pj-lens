@@ -35,7 +35,11 @@ function simulate(data, ops, today) {
   let predCount = 0, addCount = 0;
 
   const setDue = (id, due, reason) => {
-    w = updateTask(w, id, { due }, today);
+    const start = w.tasks.find((x) => x.id === id)?.start;
+    const patch = { due };
+    // 画面で指定した開始日より前へ期限が動くなら、開始日を外す（外すと、前のタスクから決まる開始日に戻る）。そのままだと保存の検査で失敗する
+    if (start && start > due) { patch.start = null; warnings.push(`${id} は期限が開始日 ${start} より前になるので、開始日を外します（前のタスクがあれば、前のタスクから決まります）`); }
+    w = updateTask(w, id, patch, today);
     changed.add(id);
     reasons.set(id, reason);
   };
@@ -103,7 +107,7 @@ function simulate(data, ops, today) {
     if (refs.has(ref)) throw new Error(`ref "${ref}" が重複しています`);
     const due = o.due ?? dueOf.get(ref);
     planned.set(o, o.businessDays === undefined ? o : (({ businessDays, ...rest }) => ({ ...rest, due }))(o));
-    // 開始日: 書かれていればそのとおり。前のタスクがあるタスクは入れない（前のタスクから決まる。入れると validate の注意が出る）。なければ今日（期限が過去なら入れない）
+    // 開始日: 書かれていればそのとおり。前のタスクがあるタスクは入れない（前のタスクから決まる開始日にする）。なければ今日（期限が過去なら入れない）
     const start = o.start ?? ((o.predecessors ?? []).length || due < today ? null : today);
     w = addTask(w, { projectId: pidOf(o), title: o.title, due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
     const id = w.tasks.at(-1).id;
@@ -153,7 +157,7 @@ function simulate(data, ops, today) {
     if (before.has(predId)) touched.add(predId);
     if (o.op === "addPred") {
       if (has) { predRows.push({ taskId, predId, action: "same" }); warnings.push(`${predId} は、すでに ${taskId} の前のタスクです`); continue; }
-      // 前のタスクがあるタスクの開始日は、前のタスクから決まる（残すと validate の注意が出る）。外すので、提案の注意に出す
+      // 前のタスクを足したら、開始日は前のタスクから決まる形に戻す（指定した開始日は外す）。外すので、提案の注意に出す
       const patch = { predecessors: [...(t.predecessors ?? []), predId] };
       if (t.start) { patch.start = null; warnings.push(`${taskId} は前のタスクができるので、開始日 ${t.start} を外します（前のタスクから決まります）`); }
       w = updateTask(w, taskId, patch, today);

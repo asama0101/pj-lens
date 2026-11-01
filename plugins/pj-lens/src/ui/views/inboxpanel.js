@@ -3,6 +3,7 @@
 //       提案 data-ib-reason・data-ib-cause・data-ib-approve・data-ib-reply・data-ib-replysend・data-ib-reject / 再提案 data-ib-retry（値は依頼の ID）
 import { CAUSES } from "../../core/schema.js";
 import { isWatching } from "../../core/inbox.js";
+import { addDays } from "../../core/dates.js";
 import { esc, fmtMD } from "../common.js";
 
 const STATUS = {
@@ -10,6 +11,21 @@ const STATUS = {
   applied: ["反映済み", "done"], rejected: ["却下", "off"], failed: ["失敗", "bad"],
 };
 const EXAMPLES = [["due", "期限が動いた"], ["pred", "作業の順番を決める"], ["add", "タスクを登録"]];
+
+/** 「書き方の例」で入る文。対象のプロジェクト（空なら先頭のタスクのプロジェクト）のタスク ID を、終わっていないものから 3 件使う（足りないときは、終わったもの、それも足りなければ最後の ID を繰り返す。タスクが 0 件のときだけ A1〜A3）。
+ *  別のプロジェクトの ID を混ぜない（依頼が「別のプロジェクトです」で失敗する）。登録の期限の例は、今日の 14 日後 */
+export function ibExamples(data, projectId, today) {
+  const all = data?.tasks ?? [];
+  const pid = projectId || all[0]?.projectId;
+  const pool = all.filter((t) => t.projectId === pid);
+  const ids = [...pool.filter((t) => t.status !== "Done"), ...pool.filter((t) => t.status === "Done")].map((t) => t.id);
+  const [a, b, c] = [0, 1, 2].map((i) => ids[i] ?? ids[ids.length - 1] ?? `A${i + 1}`);
+  return {
+    due: `${a} が 5 日遅れた（原因: ベンダー）。`,
+    pred: `${a} の後に ${b}, ${c} を結んで。`,
+    add: `次を登録して: 結合テスト ${addDays(today, 14)} 大項目▸中項目 前のタスク ${a}`,
+  };
+}
 
 const two = (n) => String(n).padStart(2, "0");
 /** ISO 日時 → 「10/21 14:32」（この端末の時刻） */

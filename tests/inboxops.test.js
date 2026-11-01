@@ -407,3 +407,15 @@ test("planOps(addTask businessDays): 土日祝を営業日に数える設定が�
   const hol = planOps(on({ holidays: [{ date: "2026-10-23", kind: "有給" }] }), [addOp("t1", { businessDays: 10 })], { today: TODAY });
   assert.equal(addRows(hol)[0].due, "2026-11-01", "手動の休みを 1 日飛ばす");
 });
+
+test("planOps(moveDue): 画面で指定した開始日より前へ期限を動かすときは、開始日を外して提案の注意に出す（失敗しない）", () => {
+  const d = load();
+  task(d, "A6").start = "2026-12-26"; // 画面の左端のドラッグで指定した開始日（A6 の期限は 2027-02-05）
+  const p = planOps(d, [{ op: "moveDue", taskId: "A6", deltaDays: -50 }], { today: TODAY });
+  assert.ok(p.warnings.some((m) => m.includes("A6") && m.includes("2026-12-26") && m.includes("外します")), p.warnings.join("/"));
+  const a = apply(d, [{ op: "moveDue", taskId: "A6", deltaDays: -50 }]);
+  assert.equal(task(a, "A6").start ?? null, null);
+  assert.equal(task(a, "A6").due, "2026-12-17");
+  const b = apply(d, [{ op: "moveDue", taskId: "A6", deltaDays: -5 }]); // 開始日より後の期限なら、開始日はそのまま
+  assert.equal(task(b, "A6").start, "2026-12-26");
+});

@@ -55,11 +55,13 @@ test("日付形式の不正・プロジェクト開始>期限・枠の不正は�
   assert.ok(hit(v(e).errors, "重な"));
 });
 
-test("警告: Waiting で待ち先なし／前のタスクありで start／終了済みで未来の予定／start>due", () => {
+test("警告: Waiting で待ち先なし／終了済みで未来の予定／start>due（前のタスクがあっても start は有効で、無視の警告は出ない）", () => {
   const a = load(); task(a, "A3").waitingOn = null;
   assert.ok(hit(v(a).warnings, "A3"));
   const b = load(); task(b, "A6").start = "2026-12-01";
-  assert.ok(hit(v(b).warnings, "A6"));
+  assert.ok(!hit(v(b).warnings, "A6"), "前のタスクがあっても、start は無視されない");
+  const b2 = load(); task(b2, "A6").start = "2027-03-01"; // 前のタスクがあるタスクも、start > due は警告する
+  assert.ok(hit(v(b2).warnings, "A6"));
   const c = load(); task(c, "A5").status = "Done"; task(c, "A5").doneAt = "2026-10-20";
   assert.ok(hit(v(c).warnings, "A5"));
   const d = load(); task(d, "A5").start = "2027-01-10";

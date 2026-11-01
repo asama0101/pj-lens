@@ -9,12 +9,12 @@ const taskOf = (data, id) => data.tasks.find((t) => t.id === id);
 const maxDate = (list) => list.reduce((a, b) => (a > b ? a : b));
 const minDate = (list) => list.reduce((a, b) => (a < b ? a : b));
 
-/** 前のタスクがあれば前のタスクの期限の最大値（start は無視）、なければ start、それもなければ期限 */
+/** start があればそれ（前のタスクは見ない）、なければ前のタスクの期限の最大値、それもなければ期限 */
 export function taskStart(data, taskId) {
   const t = taskOf(data, taskId);
+  if (t.start) return t.start;
   const preds = (t.predecessors ?? []).map((id) => taskOf(data, id)).filter(Boolean);
-  if (preds.length) return maxDate(preds.map((p) => p.due));
-  return t.start ?? t.due;
+  return preds.length ? maxDate(preds.map((p) => p.due)) : t.due;
 }
 
 /** 実績の線: 最初の実績枠の日 → 完了日（未完了なら today） */
