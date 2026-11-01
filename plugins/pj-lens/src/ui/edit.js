@@ -228,7 +228,7 @@ export function deleteTask(data, taskId, { force = false } = {}) {
 }
 
 /**
- * 設定（勤務時間・待ち長期化の日数・見出しの呼び名）の変更。patch に含まれる項目だけ変える。
+ * 設定（勤務時間・待ち長期化の日数・土日祝を営業日に数えるか・見出しの呼び名）の変更。patch に含まれる項目だけ変える。
  * 勤務時間は開始・終了を組で渡す。呼び名は空にするとそのキーを消す（既定の呼び名に戻る）。不正な値は例外
  */
 export function updateSettings(data, patch) {
@@ -241,6 +241,10 @@ export function updateSettings(data, patch) {
   if ("waitingLongDays" in patch) {
     if (!Number.isInteger(patch.waitingLongDays) || patch.waitingLongDays < 1) throw new Error("待ち長期化の日数は 1 以上の整数にしてください");
     s.waitingLongDays = patch.waitingLongDays;
+  }
+  if ("countWeekendsAndHolidays" in patch) {
+    if (typeof patch.countWeekendsAndHolidays !== "boolean") throw new Error("「土日祝を営業日に数える」は true か false にしてください");
+    if (patch.countWeekendsAndHolidays) s.countWeekendsAndHolidays = true; else delete s.countWeekendsAndHolidays;
   }
   if ("labels" in patch) {
     const labels = s.labels && typeof s.labels === "object" && !Array.isArray(s.labels) ? { ...s.labels } : {};
@@ -286,14 +290,15 @@ export function addHoliday(data, { date, kind, note }) {
   return withSetting(data, "holidays", upsertByDate(data.settings?.holidays, entryOf({ date, note }, { kind })));
 }
 
-/** from〜to（両端を含む）の各日から、土日と日本の祝日（取得済みのとき）を除いた日と、除いた日数。to < from と 366 日を超える期間は例外 */
+/** from〜to（両端を含む）の各日から、土日と日本の祝日（取得済みのとき）を除いた日と、除いた日数。土日祝を営業日に数える設定のときは、何も除かない。to < from と 366 日を超える期間は例外 */
 export function holidayRangeDays(data, from, to) {
   if (!isDate(from) || !isDate(to)) throw new Error(`実在する日付（YYYY-MM-DD）にしてください: ${isDate(from) ? to : from}`);
   if (to < from) throw new Error("終了日は開始日以降にしてください");
   if (diffDays(to, from) >= 366) throw new Error("期間は 366 日以内にしてください");
+  const keepAll = data.settings?.countWeekendsAndHolidays === true;
   const national = new Set(calendarOf({ nationalHolidays: data.settings?.nationalHolidays }).off);
   const days = [];
-  for (let d = from; d <= to; d = addDays(d, 1)) if (!isWeekend(d) && !national.has(d)) days.push(d);
+  for (let d = from; d <= to; d = addDays(d, 1)) if (keepAll || (!isWeekend(d) && !national.has(d))) days.push(d);
   return { days, skipped: diffDays(to, from) + 1 - days.length };
 }
 

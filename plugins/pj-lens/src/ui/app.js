@@ -289,7 +289,7 @@ function addHolidayFromInput() {
     edit(S.data);
     if (range) {
       const { days, skipped } = holidayRangeDays(S.data, from, to);
-      const fetched = Array.isArray(S.data.settings?.nationalHolidays?.dates);
+      const fetched = Array.isArray(S.data.settings?.nationalHolidays?.dates) || S.data.settings?.countWeekendsAndHolidays === true; // 土日祝を営業日に数える設定のときは何も除かないので、未取得の注意を付けない
       msg = `${days.length} 日を${kind}として登録しました${skipped ? `（${fetched ? "土日・祝日" : "土日"} ${skipped} 日は除外）` : ""}${fetched ? "" : "。日本の祝日は未取得のため、土日だけを除きました"}`;
     }
   } catch (e) { toast(e.message); return; }
@@ -607,6 +607,7 @@ function onReportChange(el) {
 /** 設定タブの基本の設定を保存する。勤務時間は開始・終了を組で渡す（片方だけだと、両方が不正なファイルを直せない）。不正な値は通知して、入力を元に戻す */
 function changeSetting(el) {
   const k = el.dataset.set;
+  if (k === "countWeekendsAndHolidays") { apply((d) => updateSettings(d, { countWeekendsAndHolidays: el.checked }), "設定を保存しました"); return; } // 描き直して、祝日・休みの節の説明を切り替える
   const val = (name) => view.querySelector(`[data-set="${name}"]`)?.value ?? "";
   let patch;
   if (k === "workday-start" || k === "workday-end") patch = { workday: { start: val("workday-start"), end: val("workday-end") } };

@@ -258,3 +258,13 @@ test("警告: 終了済みのタスクに残る予定枠の警告は、まだ開
   assert.equal(w.length, 1, w.join(" / "));
   assert.ok(w[0].includes("S91") && !w[0].includes("S90"));
 });
+
+test("settings.countWeekendsAndHolidays: 真偽値でないと注意（エラーにしない）。true・false・null・無しは注意なし", () => {
+  for (const value of ["true", 1, [true], {}]) {
+    const d = withSettings({ countWeekendsAndHolidays: value });
+    assert.equal(settingsWarn(d, "countWeekendsAndHolidays").length, 1, JSON.stringify(value));
+    assert.deepEqual(v(d).errors, [], JSON.stringify(value));
+  }
+  for (const value of [true, false, null]) assert.equal(settingsWarn(withSettings({ countWeekendsAndHolidays: value }), "countWeekendsAndHolidays").length, 0, String(value));
+  assert.equal(settingsWarn(load(), "countWeekendsAndHolidays").length, 0);
+});

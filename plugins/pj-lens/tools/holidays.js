@@ -25,9 +25,11 @@ export function holidayStatus(settings) {
 
 /**
  * 祝日の一覧を取り直す必要があるか。propose（営業日を使う提案）と ensure が、同じ判定を使う。
- * neededUntil: 提案が使う最も遅い日。一覧の最終日より後なら「範囲外」。今日取得したものは、取り直しても同じなので false
+ * neededUntil: 提案が使う最も遅い日。一覧の最終日より後なら「範囲外」。今日取得したものは、取り直しても同じなので false。
+ * 土日祝を営業日に数える設定（settings.countWeekendsAndHolidays が true）のときは、祝日を使わないので取らない
  */
 export function needsHolidayUpdate(settings, neededUntil = null) {
+  if (settings?.countWeekendsAndHolidays === true) return { need: false, reason: null };
   const st = holidayStatus(settings);
   if (!st.fetched) return { need: true, reason: "未取得" };
   if (st.ageDays > 30) return { need: true, reason: "30日超" };

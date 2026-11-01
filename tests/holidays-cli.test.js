@@ -160,3 +160,18 @@ test("ensure: 取得に失敗すると終了コード 1 で、data.json は変�
   assert.ok(r.err.length > 0);
   assert.equal(w.text(), before);
 });
+
+test("needsHolidayUpdate・ensure: 土日祝を営業日に数える設定がオンなら、未取得でも取得せず、data.json を変えない。true 以外はオフ", async () => {
+  assert.deepEqual(needsHolidayUpdate({ countWeekendsAndHolidays: true }), { need: false, reason: null });
+  assert.deepEqual(needsHolidayUpdate({ countWeekendsAndHolidays: true }, "2099-01-01"), { need: false, reason: null });
+  assert.equal(needsHolidayUpdate({ countWeekendsAndHolidays: "true" }).need, true);
+  const w = work({ countWeekendsAndHolidays: true });
+  const before = w.text();
+  const s = await serve(200, CSV_SJIS);
+  const r = await runAsync(["ensure", w.data], { PJ_LENS_HOLIDAYS_URL: s.url });
+  await s.close();
+  assert.equal(r.status, 0, r.err);
+  assert.deepEqual(r.out, { fetched: false, reason: null });
+  assert.equal(w.text(), before);
+  assert.equal(w.json().settings.nationalHolidays, undefined);
+});

@@ -35,3 +35,10 @@ test("dueAfter: cal が配列など、off・on が日付の配列でないとき
     assert.throws(() => dueAfter("2026-10-20", 1, bad), /休み|営業日の指定|日付/, JSON.stringify(bad));
   }
 });
+
+test("dueAfter: countWeekends が true なら土日を飛ばさない。休み（off）は飛ばす。false・省略は今まで", () => {
+  assert.equal(dueAfter("2026-10-30", 1, {}), "2026-11-02"); // 金 → 月（今まで）
+  assert.equal(dueAfter("2026-10-30", 1, { countWeekends: true }), "2026-10-31"); // 金 → 土
+  assert.equal(dueAfter("2026-10-30", 2, { countWeekends: true, off: ["2026-10-31"] }), "2026-11-02"); // 土が手動の休みなら飛ばす
+  assert.equal(dueAfter("2026-10-30", 1, { countWeekends: false }), "2026-11-02");
+});

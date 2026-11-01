@@ -399,3 +399,11 @@ test("planOps(addProject): due は『最後に書いたタスク』ではなく�
   assert.deepEqual(raised.sections.find((s) => s.kind === "add").rows.map((r) => r.due), ["2026-12-20", "2026-12-20"]);
   assert.equal(projRows(raised)[0].due, "2026-12-20");
 });
+
+test("planOps(addTask businessDays): 土日祝を営業日に数える設定がオンなら、土日を飛ばさない。手動の休みは飛ばす", () => {
+  const on = (extra = {}) => { const d = load(); d.settings = { ...d.settings, countWeekendsAndHolidays: true, ...extra }; return d; };
+  const alone = planOps(on(), [addOp("t1", { businessDays: 10 })], { today: TODAY });
+  assert.equal(addRows(alone)[0].due, "2026-10-31", "今日 + 10 暦日（オフなら 2026-11-04）");
+  const hol = planOps(on({ holidays: [{ date: "2026-10-23", kind: "有給" }] }), [addOp("t1", { businessDays: 10 })], { today: TODAY });
+  assert.equal(addRows(hol)[0].due, "2026-11-01", "手動の休みを 1 日飛ばす");
+});

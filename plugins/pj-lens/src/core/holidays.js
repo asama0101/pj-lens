@@ -3,17 +3,21 @@ import { isDate, isWeekend } from "./dates.js";
 
 const datesOf = (list) => (Array.isArray(list) ? list.filter((x) => isDate(x?.date)).map((x) => x.date) : []);
 
-/** settings → dueAfter の cal。休み = 手動の休み + 日本の祝日、営業日 = 営業日の指定。形が違う値は無視する（validate が注意を出す） */
+/**
+ * settings → dueAfter の cal。休み = 手動の休み + 日本の祝日、営業日 = 営業日の指定。形が違う値は無視する（validate が注意を出す）。
+ * settings.countWeekendsAndHolidays が true のとき（土日祝を営業日に数える）は、休み = 手動の休みだけにして、countWeekends: true を足す
+ */
 export function calendarOf(settings) {
   const st = settings ?? {};
+  if (st.countWeekendsAndHolidays === true) return { off: datesOf(st.holidays), on: datesOf(st.workdays), countWeekends: true };
   return { off: [...datesOf(st.holidays), ...datesOf(st.nationalHolidays?.dates)], on: datesOf(st.workdays) };
 }
 
-/** 休みの日か（土日・休み・日本の祝日）。営業日の指定の日は、それらでも休みでない。スケジュールで枠を置けない日の判定に使う */
+/** 休みの日か（土日・休み・日本の祝日。土日祝を営業日に数える設定のときは、手動の休みだけ）。営業日の指定の日は、それらでも休みでない。スケジュールで枠を置けない日の判定に使う */
 export function offDayChecker(settings) {
-  const { off, on } = calendarOf(settings);
+  const { off, on, countWeekends } = calendarOf(settings);
   const offSet = new Set(off), onSet = new Set(on);
-  return (date) => !onSet.has(date) && (isWeekend(date) || offSet.has(date));
+  return (date) => !onSet.has(date) && ((!countWeekends && isWeekend(date)) || offSet.has(date));
 }
 
 /** 内閣府の祝日一覧（Shift_JIS）を文字列にする */
