@@ -11,7 +11,7 @@ const S = {
   filter: "all", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
-  prefs: loadPrefs(), group: "all", tpop: null, addAt: null, last: null, ruleError: "",
+  prefs: loadPrefs(), settingsClosed: loadSettingsClosed(), group: "all", tpop: null, addAt: null, last: null, ruleError: "",
   ib: { open: false, text: loadInboxDraft(), projectId: "", replies: {}, reasons: {}, causes: {} },
   wperiod: "week", wdate: clock().date,
   reportPanel: null,
@@ -45,7 +45,7 @@ function renderBody() {
   if (S.screen === "gantt" || S.screen === "list") {
     return renderProjects(S.data, today, { filter: S.filter, view: S.screen, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, addAt: S.addAt, tpop: S.screen === "gantt" ? S.tpop : null, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
-  if (S.screen === "settings") return renderSettings(S.data, today, { ruleError: S.ruleError });
+  if (S.screen === "settings") return renderSettings(S.data, today, { ruleError: S.ruleError, closed: S.settingsClosed });
   if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
   return renderSchedule(S.data, today, scheduleOpts());
 }
@@ -615,6 +615,16 @@ function onReportChange(el) {
     if (go) go.disabled = !!reportTarget(S.data, S.reportPanel, today).problem;
   }
 }
+
+// 設定タブの節の開閉は、描き直さずに記録して保存する（toggle はバブリングしないので、キャプチャで受ける）。描き直しでは S.settingsClosed から開閉を復元する
+view.addEventListener("toggle", (e) => {
+  const el = e.target;
+  if (!el.matches?.("details[data-fold]")) return;
+  const id = el.dataset.fold;
+  if (S.settingsClosed.includes(id) === !el.open) return; // 記録と同じ（描画時に open の節で発火する toggle など）
+  S.settingsClosed = el.open ? S.settingsClosed.filter((x) => x !== id) : [...S.settingsClosed, id];
+  saveSettingsClosed(S.settingsClosed);
+}, true);
 
 /** 設定タブの基本の設定を保存する。勤務時間は開始・終了を組で渡す（片方だけだと、両方が不正なファイルを直せない）。不正な値は通知して、入力を元に戻す */
 function changeSetting(el) {

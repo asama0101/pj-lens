@@ -54,3 +54,19 @@ export function loadInboxDraft(storage = browserStorage()) {
 export function saveInboxDraft(text, storage = browserStorage()) {
   try { storage?.setItem(DRAFT_KEY, String(text ?? "")); } catch { /* 保存できない環境 */ }
 }
+
+// 設定タブで閉じている節。次に開いたとき同じ開閉から始められるように覚える。保存が無いときはすべて開いている。
+const FOLD_KEY = "pj-lens.settingsClosed";
+export const SETTINGS_FOLDS = ["basic", "days", "nat", "hol", "wrk", "rules", "wbs"];
+
+/** 閉じている節の ID の配列。節の ID 以外・形が違う値は捨てる */
+export function loadSettingsClosed(storage = browserStorage()) {
+  try {
+    const v = JSON.parse(storage?.getItem(FOLD_KEY) ?? "null");
+    return Array.isArray(v) ? SETTINGS_FOLDS.filter((id) => v.includes(id)) : [];
+  } catch { return []; }
+}
+
+export function saveSettingsClosed(ids, storage = browserStorage()) {
+  try { storage?.setItem(FOLD_KEY, JSON.stringify(ids)); } catch { /* 保存できない環境 */ }
+}
