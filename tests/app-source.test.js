@@ -195,3 +195,11 @@ test("app.js: 設定タブの保存の編集は updateSettings(d, patch)。不�
   assert.ok(rs.includes('set("workday-start"') && rs.includes('set("waitingLongDays"'));
   assert.ok(!rs.includes("label-"));
 });
+
+test("app.js: 「土日祝を営業日に数える」のスイッチは、チェックの状態で保存し、描き直す（祝日・休みの節の説明を切り替えるため。quiet にしない）", () => {
+  const fn = src.slice(src.indexOf("function changeSetting(el)"), src.indexOf("function changeSetting(el)") + 700);
+  assert.match(fn, /k === "countWeekendsAndHolidays"/);
+  assert.match(fn, /updateSettings\(d, \{ countWeekendsAndHolidays: el\.checked \}\)/);
+  const line = fn.split("\n").find((l) => l.includes("countWeekendsAndHolidays: el.checked"));
+  assert.doesNotMatch(line, /quiet/);
+});
