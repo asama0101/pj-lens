@@ -248,3 +248,8 @@ test("画面の文言: 「プロジェクト」タブはないので、稼働・
   assert.doesNotMatch(wl, /プロジェクト画面から/);
   assert.doesNotMatch(gt, /リスト表示で追加/);
 });
+
+test("app.js: 右の列を開け閉めすると、ガントの幅が変わるので、横スクロールを今日の位置へ戻す（resetScroll）", () => {
+  const f = src.slice(src.indexOf("function togglePref"), src.indexOf("function togglePref") + 500);
+  assert.match(f, /key === "showPrio"[^\n]*S\.resetScroll = true/);
+});

@@ -368,6 +368,7 @@ function deleteSelected() {
 /** 表示の好み（今日の優先・ガント実績）を反転して保存する。今日の優先を閉じると、パネル内にしか出ない確認待ちは出す場所がなくなるので捨てる */
 function togglePref(key) {
   S.pendingDone = null;
+  if (key === "showPrio") S.resetScroll = true; // 右の列の開け閉めでガントの幅が変わるので、横スクロールを今日の位置へ戻す
   S.prefs = { ...S.prefs, [key]: !S.prefs[key] };
   savePrefs(S.prefs);
   render();
