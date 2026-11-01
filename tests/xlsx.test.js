@@ -62,6 +62,12 @@ test("ensureEnv: venv と固定した版の openpyxl があれば、承認なし
   assert.ok(calls[0][2].includes(PIN), "固定した版を照合する");
 });
 
+test("ensureEnv: openpyxl が固定した版でも、defusedxml が入っていない venv は、使えるとは見なさない（既に作った venv にも入れさせる）", () => {
+  const calls = [];
+  ensureEnv("/d", { run: (c, a) => { calls.push(a); return ok(); }, python: ["python"], exists: () => true, platform: "linux", pin: PIN });
+  assert.match(calls[0][1], /defusedxml/);
+});
+
 test("ensureEnv: 版がずれた openpyxl は、承認なしでは needsApproval で止まる", () => {
   const r = ensureEnv("/d", { run: (c, a) => (a[0] === "-c" ? ng : ok()), python: ["python"], exists: () => true, platform: "linux", pin: PIN });
   assert.equal(r.needsApproval, true);
@@ -94,7 +100,7 @@ test("ensureEnv: 既にある venv で pip install が失敗したら、venv を
   assert.equal(r.ok, true);
   assert.deepEqual(removed, [join("/d", "venv")]);
   assert.equal(calls.filter((c) => c.includes("venv")).length, 1, "venv は 1 回だけ作り直す");
-  assert.equal(calls.filter((c) => c.includes("pip")).length, 2, "pip install は、失敗した 1 回と作り直したあとの 1 回");
+  assert.equal(calls.filter((c) => c.includes("install")).length, 2, "pip install は、失敗した 1 回と作り直したあとの 1 回");
 });
 
 test("ensureEnv: 作り直しても pip install が失敗したら ok:false。作り直しは 1 回だけ", () => {
@@ -105,7 +111,16 @@ test("ensureEnv: 作り直しても pip install が失敗したら ok:false。�
   assert.equal(r.ok, false);
   assert.equal(removed.length, 1);
   assert.equal(calls.filter((c) => c.includes("venv")).length, 1, "venv の作り直しも 1 回だけ");
-  assert.equal(calls.filter((c) => c.includes("pip")).length, 2);
+  assert.equal(calls.filter((c) => c.includes("install")).length, 2);
+});
+
+test("ensureEnv: pip は動くのに pip install が失敗したとき（オフライン・defusedxml が足りないだけの venv など）は、動いていた venv を消さない", () => {
+  const removed = [];
+  const run = (c, a) => (a.includes("install") || a[0] === "-c" ? ng : ok()); // pip --version は成功する
+  const r = ensureEnv("/d", { run, python: ["python"], exists: () => true, platform: "linux", approve: true, pin: PIN, remove: (p) => removed.push(p) });
+  assert.equal(r.ok, false);
+  assert.match(r.message, /CSV/);
+  assert.deepEqual(removed, []);
 });
 
 test("ensureEnv: 壊れた venv を消せなかったら、例外にせず、消せなかったと案内して ok:false", () => {
@@ -138,6 +153,7 @@ test("requirements.txt: openpyxl と et_xmlfile を == で固定し、すべて�
   const text = readFileSync(join(REPO, "requirements.txt"), "utf8");
   assert.match(text, /^openpyxl==\d+\.\d+\.\d+ \\\r?\n\s+--hash=sha256:[0-9a-f]{64}/m);
   assert.match(text, /^et_xmlfile==\d+\.\d+\.\d+ \\\r?\n\s+--hash=sha256:[0-9a-f]{64}/m);
+  assert.match(text, /^defusedxml==\d+\.\d+\.\d+ \\\r?\n\s+--hash=sha256:[0-9a-f]{64}/m, "細工した xlsx の XML 爆弾を防ぐ（openpyxl は、入っているときだけ使う）");
   assert.equal(readPin(), /^openpyxl==(\S+)/m.exec(text)[1]);
 });
 
