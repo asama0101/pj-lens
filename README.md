@@ -240,4 +240,4 @@ Claude Code がデータを直したあと、画面は自動で読み直しま�
 
 ## ライセンス・連絡先
 
-MIT（[LICENSE](LICENSE)）。不具合や要望は、[GitHub の Issues](https://github.com/asama0101/pj-lens/issues) へどうぞ。
+MIT（[LICENSE](LICENSE)）
