@@ -988,3 +988,22 @@ test("renderSchedule: 土日祝を営業日に数える設定がオンなら、�
   assert.ok(day("2026-10-25").includes('data-free='), "日曜にも空き枠が出る");
   assert.ok(!day("2026-10-22").includes('data-free='), "手動の休みの日には出ない");
 });
+
+test("設定: 「営業日の数え方」の説明は、営業日後の期限とスケジュールの作業枠について書き、日程の移動（暦日で計算）には触れない", () => {
+  const html = setv(load());
+  const sec = html.slice(html.indexOf('id="h-count"'), html.indexOf('id="h-basic"'));
+  assert.ok(sec.includes("営業日後の期限") && sec.includes("スケジュールの作業枠"));
+  assert.ok(!sec.includes("日程の移動"));
+});
+
+test("renderSchedule(day): 土日祝を営業日に数える設定がオンなら、休みの日の注意は「休み」だけを挙げる（土日・日本の祝日は休みにならない）。オフは今までの文", () => {
+  const d = load();
+  d.settings = { ...d.settings, holidays: [{ date: "2026-10-22", kind: "有給" }] };
+  const day = (data, date) => renderSchedule(data, TODAY, { view: "day", date, now: NOW, showPrio: false });
+  assert.ok(day(d, "2026-10-22").includes("この日は休みです（土日・日本の祝日・休み）"), "オフ");
+  const on = { ...d, settings: { ...d.settings, countWeekendsAndHolidays: true } };
+  const h = day(on, "2026-10-22");
+  assert.ok(h.includes("この日は休みです（休み）") && h.includes("営業日として扱う日"));
+  assert.ok(!h.includes("土日・日本の祝日"));
+  assert.ok(!day(on, "2026-10-25").includes("この日は休みです"), "日曜は休みでない");
+});

@@ -119,7 +119,8 @@ export function renderCalendar(data, today, opts) {
     const free = freeOf(data, date, g, isOff).filter((x) => toMin(x.end) - toMin(x.start) >= 20);
     const fb = free.map((x) => `<button class="free" data-free="${toMin(x.start)}" style="top:calc(${g.pc(toMin(x.start)).toFixed(3)}% + 1px);height:calc(${(g.pc(toMin(x.end)) - g.pc(toMin(x.start))).toFixed(3)}% - 3px)" aria-label="空き ${x.start}から${x.end}">${x.start}-${x.end} 空き</button>`).join("");
     const nowLine = date === ctx.now.date && toMin(ctx.now.time) >= g.h0 && toMin(ctx.now.time) <= g.h0 + g.span ? `<span class="nowline" style="top:${g.tp(toMin(ctx.now.time))}" title="現在 ${ctx.now.time}"></span>` : "";
-    const offNote = isOff(date) ? `<p class="note" style="margin:0 0 8px">この日は休みです（土日・日本の祝日・休み）。作業枠は置けません。設定タブの「営業日として扱う日」に指定すると置けます。</p>` : "";
+    const offKinds = data.settings?.countWeekendsAndHolidays === true ? "休み" : "土日・日本の祝日・休み"; // 土日祝を営業日に数える設定のときは、手動の休みだけが休みの日
+    const offNote = isOff(date) ? `<p class="note" style="margin:0 0 8px">この日は休みです（${offKinds}）。作業枠は置けません。設定タブの「営業日として扱う日」に指定すると置けます。</p>` : "";
     cal = `${offNote}<div class="cal"><div class="cal-grid">${hoursHtml(g)}<div class="cal-body dz" id="calbody" data-date="${date}">${meetingBlocks(data, date, true, g, ctx)}${sessionBlocks(data, date, true, g, ctx)}${fb}${nowLine}</div></div></div>`;
   }
   const day = view === "day";

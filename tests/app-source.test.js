@@ -203,3 +203,9 @@ test("app.js: 「土日祝を営業日に数える」のスイッチは、チェ
   const line = fn.split("\n").find((l) => l.includes("countWeekendsAndHolidays: el.checked"));
   assert.doesNotMatch(line, /quiet/);
 });
+
+test("app.js: 休みの期間登録の通知は、土日祝を営業日に数える設定のとき、「日本の祝日は未取得のため、土日だけを除きました」を付けない（何も除いていない）", () => {
+  const i = src.indexOf("holidayRangeDays(S.data, from, to)");
+  assert.ok(i > 0);
+  assert.match(src.slice(i, i + 700), /countWeekendsAndHolidays/);
+});

@@ -310,19 +310,22 @@ test("propose: businessDays の無い提案は祝日を取得しない。今日�
 });
 
 test("propose(businessDays): 土日祝を営業日に数える設定がオンなら、祝日を取得せず（取得先が壊れていても注意なし）、土日を飛ばさず、手動の休みは飛ばす", async () => {
+  // 前のタスク A4 の期限は 2026-11-27（金）。実行する日に左右されないよう、この日から数える
+  const FRI_OPS = [{ op: "addTask", ref: "t1", projectId: "A", title: "営業日の登録", businessDays: 1, predecessors: ["A4"] }];
   const s = await holidayServer(500);
   const w = ready(work());
+  assert.equal(w.json().tasks.find((t) => t.id === "A4").due, "2026-11-27");
   w.write({ ...w.json(), settings: { ...w.json().settings, countWeekendsAndHolidays: true } });
-  const r = await runWith(s.url, "propose", w.data, "R1", w.put("bd.json", BD_OPS));
+  const r = await runWith(s.url, "propose", w.data, "R1", w.put("bd.json", FRI_OPS));
   assert.equal(r.status, 0, r.err);
   assert.equal(s.hits, 0, "取得しない");
   assert.deepEqual(r.out.warnings, []);
   assert.equal(w.json().settings.nationalHolidays, undefined);
-  assert.equal(addDue(r), addDays(today(), 1), "暦日のとおり（金曜でも土日を飛ばさない）");
+  assert.equal(addDue(r), "2026-11-28", "金曜の次の 1 営業日は土曜（オフなら 2026-11-30）");
   const w2 = ready(work());
-  w2.write({ ...w2.json(), settings: { ...w2.json().settings, countWeekendsAndHolidays: true, holidays: [{ date: addDays(today(), 1), kind: "有給" }] } });
-  const r2 = await runWith(s.url, "propose", w2.data, "R1", w2.put("bd.json", BD_OPS));
+  w2.write({ ...w2.json(), settings: { ...w2.json().settings, countWeekendsAndHolidays: true, holidays: [{ date: "2026-11-28", kind: "有給" }] } });
+  const r2 = await runWith(s.url, "propose", w2.data, "R1", w2.put("bd.json", FRI_OPS));
   await s.close();
   assert.equal(r2.status, 0, r2.err);
-  assert.equal(addDue(r2), addDays(today(), 2), "手動の休みは飛ばす");
+  assert.equal(addDue(r2), "2026-11-29", "手動の休みは飛ばす");
 });

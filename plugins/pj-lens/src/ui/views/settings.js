@@ -28,7 +28,7 @@ export function renderSettings(data, today, opts = {}) {
   const countOn = st.countWeekendsAndHolidays === true; // 土日祝を営業日に数える。true 以外（"true" など）はオフ
   const iv = settingsInputValues(data);
   const countSec = `<section class="panel" aria-labelledby="h-count"><h2 id="h-count" style="margin-top:0">営業日の数え方</h2>
-      <p class="note" style="margin:0 0 10px">日数の計算（営業日後の期限、日程の移動）とスケジュールの作業枠で、土日と日本の祝日を飛ばすかどうかを選びます。オンにしても、手動の休みは飛ばします。変更はその場でファイルに保存されます。</p>
+      <p class="note" style="margin:0 0 10px">日数の計算（営業日後の期限）とスケジュールの作業枠で、土日と日本の祝日を飛ばすかどうかを選びます。オンにしても、手動の休みは飛ばします。変更はその場でファイルに保存されます。</p>
       <label><input type="checkbox" data-set="countWeekendsAndHolidays" aria-label="土日祝を営業日に数える"${countOn ? " checked" : ""}> 土日祝を営業日に数える</label>
       ${warnOf("countWeekendsAndHolidays")}
     </section>`;

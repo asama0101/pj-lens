@@ -289,7 +289,7 @@ function addHolidayFromInput() {
     edit(S.data);
     if (range) {
       const { days, skipped } = holidayRangeDays(S.data, from, to);
-      const fetched = Array.isArray(S.data.settings?.nationalHolidays?.dates);
+      const fetched = Array.isArray(S.data.settings?.nationalHolidays?.dates) || S.data.settings?.countWeekendsAndHolidays === true; // 土日祝を営業日に数える設定のときは何も除かないので、未取得の注意を付けない
       msg = `${days.length} 日を${kind}として登録しました${skipped ? `（${fetched ? "土日・祝日" : "土日"} ${skipped} 日は除外）` : ""}${fetched ? "" : "。日本の祝日は未取得のため、土日だけを除きました"}`;
     }
   } catch (e) { toast(e.message); return; }
