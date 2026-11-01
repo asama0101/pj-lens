@@ -70,18 +70,21 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     const ms = g.milestones;
     const msLines = ms.map((m) => `<i class="msl" style="left:${x(m.date)}"></i>`).join("");
 
-    let prevPct = -99;
-    let level = 0;
+    // 文字が重ならないように、置ける最初の段に置く。画面幅は 1000px と仮定して、文字の幅を見積もる
+    const pxPerDay = 1000 / visibleDays;
+    const msEnd = [];
     const msItems = ms.map((m) => {
-      const at = (diffDays(m.date, s0) / total) * 100;
-      level = at - prevPct < 14 ? 1 - level : 0;
-      prevPct = at;
+      const px = diffDays(m.date, s0) * pxPerDay;
+      const w = [...m.name].reduce((n, c) => n + (c.charCodeAt(0) < 256 ? 6 : 11), 0) + 40 + 18;
+      let level = msEnd.findIndex((e) => e <= px);
+      if (level < 0) level = msEnd.length;
+      msEnd[level] = px + w;
       const idx = (p.milestones ?? []).findIndex((o) => o.name === m.name && o.date === m.date);
       const attr = readonly ? "" : ` data-gms="${esc(p.id)}|${idx}"`;
-      return `<i class="ms"${attr} style="left:${x(m.date)};top:${level ? 24 : 6}px" title="${esc(m.name)} ${fmtMD(m.date)}${readonly ? "" : "(ドラッグで日付を変更)"}"></i><span class="ms-l" style="left:${x(m.date)};top:${level ? 20 : 2}px">${esc(m.name)} <b class="mono">${fmtMD(m.date)}</b></span>`;
+      return `<i class="ms"${attr} style="left:${x(m.date)};top:${6 + level * 18}px" title="${esc(m.name)} ${fmtMD(m.date)}${readonly ? "" : "(ドラッグで日付を変更)"}"></i><span class="ms-l" style="left:${x(m.date)};top:${2 + level * 18}px">${esc(m.name)} <b class="mono">${fmtMD(m.date)}</b></span>`;
     }).join("");
     const msRow = ms.length
-      ? `<div class="g-row g-msrow"><div class="g-label"><span class="id"></span><span class="muted">マイルストーン</span></div><div class="g-lane" ${laneStyle}>${msItems}</div></div>`
+      ? `<div class="g-row g-msrow"><div class="g-label"><span class="id"></span><span class="muted">マイルストーン</span></div><div class="g-lane" style="width:var(--lanew);height:${Math.max(44, msEnd.length * 18 + 8)}px">${msItems}</div></div>`
       : "";
 
     const months = Math.max(1, Math.round(diffDays(p.due, p.start) / 30.4));
