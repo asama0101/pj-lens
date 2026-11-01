@@ -77,3 +77,27 @@ test("saveReportPrefs: 会議の件名のチェック（showMeetingTitles）は�
   assert.ok(!raw.includes("showMeetingTitles"));
   assert.ok(!("showMeetingTitles" in loadReportPrefs(s)));
 });
+
+// ---- 設定タブの節の開閉の保存 ----
+import { SETTINGS_FOLDS, loadSettingsClosed, saveSettingsClosed } from "../plugins/pj-lens/src/ui/prefs.js";
+
+test("loadSettingsClosed: 保存が無い・壊れている・形が違う・storage が使えないときは、閉じている節なし（すべて開く）", () => {
+  assert.deepEqual(loadSettingsClosed(fake()), []);
+  assert.deepEqual(loadSettingsClosed(fake({ "pj-lens.settingsClosed": "{oops" })), []);
+  assert.deepEqual(loadSettingsClosed(fake({ "pj-lens.settingsClosed": JSON.stringify({ basic: true }) })), []);
+  assert.deepEqual(loadSettingsClosed(boom), []);
+  assert.deepEqual(loadSettingsClosed(null), []);
+});
+
+test("loadSettingsClosed: 節の ID だけを採用し、順序は SETTINGS_FOLDS に揃える", () => {
+  const s = fake({ "pj-lens.settingsClosed": JSON.stringify(["wbs", "x", 5, "basic", "wbs"]) });
+  assert.deepEqual(loadSettingsClosed(s), ["basic", "wbs"]);
+  assert.deepEqual(SETTINGS_FOLDS, ["basic", "days", "nat", "hol", "wrk", "rules", "wbs"]);
+});
+
+test("saveSettingsClosed→loadSettingsClosed で往復でき、保存できなくても落ちない", () => {
+  const s = fake();
+  saveSettingsClosed(["hol", "rules"], s);
+  assert.deepEqual(loadSettingsClosed(s), ["hol", "rules"]);
+  assert.doesNotThrow(() => saveSettingsClosed(["hol"], boom));
+});

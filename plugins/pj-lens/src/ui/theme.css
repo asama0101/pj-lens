@@ -37,6 +37,18 @@ nav button[aria-selected=true]{background:var(--surface);color:var(--ink);font-w
 button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
 h2{font-size:14px;margin:0 0 10px;font-weight:700}
+details.fold>summary,details.subfold>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;border-radius:6px}
+details.fold>summary::-webkit-details-marker,details.subfold>summary::-webkit-details-marker{display:none}
+details.fold>summary::before,details.subfold>summary::before{content:"▸";color:var(--muted);width:1em;flex:none}
+details.fold[open]>summary::before,details.subfold[open]>summary::before{content:"▾"}
+details.fold>summary:focus-visible,details.subfold>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+details.fold>summary h2,details.subfold>summary h3{margin:0}
+details.fold>summary .note,details.subfold>summary .note{margin-left:4px}
+details.fold[open]>summary{margin-bottom:10px}
+details.subfold>summary h3{font-size:13px;font-weight:700}
+details.subfold[open]>summary{margin-bottom:8px}
+.subfolds{display:flex;flex-direction:column;gap:14px}
+details.subfold{border-top:1px solid var(--line-soft);padding-top:10px}
 .muted{color:var(--muted)}
 .cols{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px}
 @media(max-width:860px){.cols{grid-template-columns:minmax(0,1fr)}}

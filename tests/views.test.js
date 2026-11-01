@@ -963,13 +963,15 @@ test("renderSchedule(day): 日本の祝日の日表示にも注意が出る。�
 });
 
 // ---- 営業日の数え方（settings.countWeekendsAndHolidays） ----
-test("設定: 先頭に「営業日の数え方」の節があり、土日祝を営業日に数えるスイッチはオフが既定", () => {
+test("設定: 「営業日の数え方」は基本の設定の表の先頭の行にあり、土日祝を営業日に数えるスイッチはオフが既定", () => {
   const html = setv(load());
-  assert.ok(html.includes('id="h-count"') && html.includes("営業日の数え方"));
+  assert.ok(!html.includes('id="h-count"'), "独立した節は無い");
+  assert.ok(html.includes("営業日の数え方"));
   assert.match(html, /<input type="checkbox" data-set="countWeekendsAndHolidays"[^>]*>/);
   assert.doesNotMatch(html.match(/<input type="checkbox" data-set="countWeekendsAndHolidays"[^>]*>/)[0], /checked/);
   assert.ok(html.includes("土日祝を営業日に数える"));
-  assert.ok(html.indexOf("営業日の数え方") < html.indexOf("基本の設定"), "基本の設定より前");
+  const basic = html.slice(html.indexOf('id="h-basic"'), html.indexOf('id="h-days"'));
+  assert.ok(basic.includes("営業日の数え方") && basic.indexOf("営業日の数え方") < basic.indexOf("勤務時間"), "基本の設定の中で、先頭の行");
   assert.ok(!html.includes("この一覧は日数計算に使いません"));
   assert.ok(!html.includes("期間内の土日と日本の祝日も除きません"));
 });
@@ -990,8 +992,8 @@ test("設定: スイッチの値が真偽値でない（\"true\"）ときはオ�
   d.settings = { ...d.settings, countWeekendsAndHolidays: "true" };
   const html = setv(d);
   assert.doesNotMatch(html.match(/<input type="checkbox" data-set="countWeekendsAndHolidays"[^>]*>/)[0], /checked/);
-  const sec = html.slice(html.indexOf('id="h-count"'), html.indexOf('id="h-basic"'));
-  assert.ok(sec.includes("settings.countWeekendsAndHolidays"), "注意が営業日の数え方の節に出る");
+  const sec = html.slice(html.indexOf('id="h-basic"'), html.indexOf('id="h-days"'));
+  assert.ok(sec.includes("settings.countWeekendsAndHolidays"), "注意が基本の設定の営業日の数え方の行に出る");
   assert.ok(!html.includes("この一覧は日数計算に使いません"));
 });
 
@@ -1010,7 +1012,7 @@ test("renderSchedule: 土日祝を営業日に数える設定がオンなら、�
 
 test("設定: 「営業日の数え方」の説明は、営業日後の期限とスケジュールの作業枠について書き、日程の移動（暦日で計算）には触れない", () => {
   const html = setv(load());
-  const sec = html.slice(html.indexOf('id="h-count"'), html.indexOf('id="h-basic"'));
+  const sec = html.slice(html.indexOf("営業日の数え方"), html.indexOf("勤務時間"));
   assert.ok(sec.includes("営業日後の期限") && sec.includes("スケジュールの作業枠"));
   assert.ok(!sec.includes("日程の移動"));
 });
@@ -1144,4 +1146,66 @@ test("layoutMilestones: 実測のラベル幅で段を決め直し、各要素�
   assert.deepEqual(labels.map((l) => l.style.top), ["2px", "20px", "2px"]);
   assert.equal(shown.style.height, "44px"); // 2 段 × 18 + 8 = 44
   assert.equal(hidden.style.height, undefined);
+});
+
+// ---- 設定タブ: 節の折りたたみ ----
+const FOLD_IDS = ["basic", "days", "nat", "hol", "wrk", "rules", "wbs"];
+const foldTag = (html, id) => (html.match(new RegExp(`<details[^>]*data-fold="${id}"[^>]*>`)) ?? [""])[0];
+
+test("設定: 7 つの節（基本の設定・休みと営業日・日本の祝日・休み（手動）・営業日として扱う日・キーワード規則・WBS の取り込み記録）が details で、既定はすべて開く", () => {
+  const html = setv(load());
+  for (const id of FOLD_IDS) assert.match(foldTag(html, id), /<details[^>]* open[ >]/, id);
+  assert.equal([...html.matchAll(/<details /g)].length, 7);
+  assert.equal([...html.matchAll(/<summary/g)].length, 7);
+});
+
+test("設定: 日本の祝日・休み（手動）・営業日として扱う日は、「休みと営業日」の節の中にある。ほかの節の中には入れ子にならない", () => {
+  const html = setv(load());
+  const days = html.slice(html.indexOf('data-fold="days"'), html.indexOf('data-fold="rules"'));
+  for (const id of ["nat", "hol", "wrk"]) assert.ok(days.includes(`data-fold="${id}"`), id);
+  assert.ok(html.indexOf('data-fold="basic"') < html.indexOf('data-fold="days"'));
+  assert.ok(!html.slice(html.indexOf('data-fold="basic"'), html.indexOf('data-fold="days"')).includes('data-fold="nat"'));
+});
+
+test("設定: opts.closed の節だけ open が付かない。親を閉じても、子の開閉は変えない", () => {
+  const html = setv(load(), { closed: ["hol", "rules"] });
+  for (const id of ["hol", "rules"]) assert.doesNotMatch(foldTag(html, id), / open/, id);
+  for (const id of ["basic", "days", "nat", "wrk", "wbs"]) assert.match(foldTag(html, id), / open[ >]/, id);
+  assert.match(foldTag(setv(load(), { closed: ["days"] }), "hol"), / open[ >]/);
+});
+
+test("設定: 節を閉じても、中の入力と注意は描く（閉じるのは表示だけ）", () => {
+  const d = load();
+  d.settings = { ...d.settings, waitingLongDays: "7" };
+  const html = setv(d, { closed: FOLD_IDS });
+  assert.ok(setTag(html, "waitingLongDays") && html.includes("settings.waitingLongDays:"));
+  assert.match(html, /<input type="checkbox" data-set="countWeekendsAndHolidays"/);
+});
+
+test("設定: 折りたたむ節は、見出しで名前を付ける（aria-labelledby が見出しの id を指す）", () => {
+  const html = setv(load());
+  for (const id of FOLD_IDS) {
+    assert.match(foldTag(html, id), new RegExp(`aria-labelledby="h-${id}"`), id);
+    assert.ok(html.includes(`id="h-${id}"`), id);
+  }
+});
+
+test("設定: 閉じている節の見出しに、中の注意の件数を出す。開いている節・注意のない節には出さない", () => {
+  const d = load();
+  d.settings = { ...d.settings, waitingLongDays: "7", countWeekendsAndHolidays: "true", holidays: "x" };
+  const head = (html, id) => html.match(new RegExp(`data-fold="${id}"[^>]*><summary>([^]*?)</summary>`))?.[1] ?? "";
+  const closed = setv(d, { closed: FOLD_IDS });
+  assert.match(head(closed, "basic"), /注意 2 件/, "営業日の数え方と待ち長期化の日数");
+  assert.match(head(closed, "hol"), /注意 1 件/);
+  assert.match(head(closed, "days"), /注意 1 件/, "閉じた親の見出しには、子の注意を数える");
+  for (const id of ["nat", "wrk", "rules", "wbs"]) assert.doesNotMatch(head(closed, id), /注意/, id);
+  const open = setv(d);
+  for (const id of FOLD_IDS) assert.doesNotMatch(head(open, id), /注意/, id);
+  assert.doesNotMatch(head(setv(load(), { closed: FOLD_IDS }), "basic"), /注意/, "注意が無ければ出さない");
+});
+
+test("設定: 規則のエラー（ruleError）も、閉じた「キーワード規則」の見出しに 1 件として出す", () => {
+  const head = (html) => html.match(/data-fold="rules"[^>]*><summary>([^]*?)<\/summary>/)[1];
+  assert.match(head(setv(load(), { closed: ["rules"], ruleError: "同じキーワードがあります" })), /注意 1 件/);
+  assert.doesNotMatch(head(setv(load(), { closed: ["rules"] })), /注意/);
 });

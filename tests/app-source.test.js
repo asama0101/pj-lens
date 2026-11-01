@@ -253,3 +253,15 @@ test("app.js: 右の列を開け閉めすると、ガントの幅が変わるの
   const f = src.slice(src.indexOf("function togglePref"), src.indexOf("function togglePref") + 500);
   assert.match(f, /key === "showPrio"[^\n]*S\.resetScroll = true/);
 });
+
+test("app.js: 設定タブの節の開閉は、toggle イベント（バブリングしないのでキャプチャ）で S.settingsClosed に記録して保存する。開閉では描き直さない", () => {
+  assert.match(src, /settingsClosed: loadSettingsClosed\(\)/);
+  assert.match(src, /renderSettings\(S\.data, today, \{ ruleError: S\.ruleError, closed: S\.settingsClosed \}\)/);
+  const i = src.indexOf('view.addEventListener("toggle"');
+  assert.ok(i > 0);
+  const fn = src.slice(i, i + 450);
+  assert.match(fn, /matches\?\.\("details\[data-fold\]"\)/);
+  assert.match(fn, /saveSettingsClosed\(/);
+  assert.doesNotMatch(fn, /render\(\)/);
+  assert.match(fn, /\}, true\);/, "キャプチャ");
+});
