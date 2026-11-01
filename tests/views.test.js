@@ -1075,3 +1075,12 @@ test("renderProjects・renderSchedule: showPrio が true でも false でも dat
     assert.ok(!shut.includes(">今日の優先</h2>"), `${name}: 閉じると見出しが出ない`);
   }
 });
+
+test("renderGantt: 先行タスクのあるバーに data-pre（空白区切り）が付く。先行のないバーと、レポート用（readonly）には付かない", () => {
+  const d = load();
+  const html = gantt(d, ["A"]);
+  assert.match(html, /data-gt="A6"[^>]*data-pre="A4 A5"/);
+  assert.match(html, /data-gt="A2"[^>]*data-pre="A1"/);
+  assert.doesNotMatch(html, /data-gt="A1"[^>]*data-pre=/);
+  assert.equal(count(gantt(d, ["A"], { readonly: true }), /data-pre=/g), 0);
+});

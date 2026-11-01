@@ -227,3 +227,11 @@ test("app.js: S.pview は廃止し、S.screen の初期値は gantt（リスト�
   assert.match(src, /screen: "gantt"/);
   assert.match(src, /S\.screen = "list"/);
 });
+
+test("app.js: 描き直しのあとに drawDeps を呼び、バーへの mouseover・mouseout で focusDeps を呼ぶ。ドラッグの開始で線を隠す", () => {
+  assert.match(src, /syncSticky\(\);[\s\S]{0,200}drawAllDeps\(\)/);
+  assert.match(src, /view\.addEventListener\("mouseover"[\s\S]{0,300}focusDeps\(/);
+  assert.match(src, /view\.addEventListener\("mouseout"[\s\S]{0,300}focusDeps\(/);
+  assert.match(src, /classList\.add\("dep-hide"\)/);
+  assert.match(src, /window\.addEventListener\("resize"[\s\S]{0,120}drawAllDeps/);
+});

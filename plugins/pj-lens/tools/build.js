@@ -24,6 +24,7 @@ export const MODULES = [
   "src/ui/store.js",
   "src/ui/sync.js",
   "src/ui/prefs.js",
+  "src/ui/deps.js",
   "src/ui/savefile.js",
   "src/ui/common.js",
   "src/ui/edit.js",

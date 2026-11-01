@@ -10,19 +10,19 @@ body{margin:0}
 /* Layout: 上部に画面切替、俯瞰はプロジェクト別のタイムライン（機器ラックのように1案件=1段）＋右に今日の優先 */
 :root{
   --bg:#F0F3F7; --surface:#FFFFFF; --ink:#16202E; --muted:#5A6678; --line:#D6DDE8; --line-soft:#E8ECF3;
-  --accent:#0B6E8A; --accent-soft:#DCEEF4;
+  --accent:#0B6E8A; --accent-soft:#DCEEF4; --pre:#C2670A;
   --ok:#2E7D5B; --warn:#B26B00; --warn-soft:#FBEBD0; --bad:#C23A3A; --bad-soft:#F9DEDE;
   --todo:#8794A8; --meeting:#EBE4F7; --meeting-ink:#43346F; --meeting-edge:#7B5CC4; --free:#E9F4EC;
   --f-body:"BIZ UDPGothic","Yu Gothic UI","Meiryo",sans-serif; --f-mono:ui-monospace,Consolas,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0E1520; --surface:#162030; --ink:#E5EBF3; --muted:#9AA7B9; --line:#2A3850; --line-soft:#1F2C40;
-  --accent:#55B8D4; --accent-soft:#17323D;
+  --accent:#55B8D4; --accent-soft:#17323D; --pre:#E8963F;
   --ok:#5CC08F; --warn:#E3A94B; --warn-soft:#3A2D14; --bad:#EE7B7B; --bad-soft:#3B1D1F;
   --todo:#7B889C; --meeting:#2D2548; --meeting-ink:#D3C9F0; --meeting-edge:#9C84E0; --free:#14301F; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0E1520; --surface:#162030; --ink:#E5EBF3; --muted:#9AA7B9; --line:#2A3850; --line-soft:#1F2C40;
-  --accent:#55B8D4; --accent-soft:#17323D;
+  --accent:#55B8D4; --accent-soft:#17323D; --pre:#E8963F;
   --ok:#5CC08F; --warn:#E3A94B; --warn-soft:#3A2D14; --bad:#EE7B7B; --bad-soft:#3B1D1F;
   --todo:#7B889C; --meeting:#2D2548; --meeting-ink:#D3C9F0; --meeting-edge:#9C84E0; --free:#14301F; color-scheme:dark}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.6;
@@ -437,6 +437,19 @@ body{padding-block:16px 76px}
 .pill.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
 .pill.done{background:var(--free);color:var(--ok);border-color:transparent}
 .pill.off{color:var(--muted)}
+
+/* 前のタスクの線と強調(deps.js)。線は gbody に重ねる。強調は、バーにマウスを置いたとき */
+.gdeps{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;overflow:visible}
+.gdep path{fill:none;stroke:var(--muted);stroke-width:.8;opacity:.5}
+.gdep polygon{fill:var(--muted);opacity:.5}
+.gbody.dep-hide .gdeps{display:none}
+.gbody.dep-focus .gdep{opacity:.25}
+.gbody.dep-focus .gdep.dep-on{opacity:1}
+.gbody.dep-focus .gdep.dep-on path{stroke:var(--pre);stroke-width:1.8;opacity:1}
+.gbody.dep-focus .gdep.dep-on polygon{fill:var(--pre);opacity:1}
+.gbody.dep-focus [data-gt]:not(.dep-self):not(.dep-pre){opacity:.35}
+.gbody [data-gt].dep-self{background:var(--accent)!important}
+.gbody [data-gt].dep-pre{background:var(--pre)!important}
 </style>
 </head>
 <body>
@@ -2063,6 +2076,59 @@ function saveInboxDraft(text, storage = browserStorage()) {
 return { DEFAULT_PREFS, loadPrefs, savePrefs, DEFAULT_REPORT_PREFS, loadReportPrefs, saveReportPrefs, loadInboxDraft, saveInboxDraft };
 })();
 
+/* src/ui/deps.js */
+const { depPath, drawDeps, focusDeps } = (() => {
+// ガントチャートの「前のタスク」の線(編集画面だけ)。描画のあとに、バーの位置を測って SVG を重ねる。
+// ふだんは薄い線、バーにマウスを置くと、そのタスクと前のタスクを色分けし、つなぐ線を濃くして、ほかを薄くする。
+
+/** 前のタスクの右端から、次のタスクの左端への折れ線の path。次のタスクが前のタスクの右端に近いときは、左端の手前で折れる */
+function depPath(from, to) {
+  const x = Math.min(to.left - 8, from.right + 12);
+  return `M${from.right},${from.y} H${x} V${to.y} H${to.left - 1}`;
+}
+
+const ids = (el) => (el.dataset.pre ?? "").split(" ").filter(Boolean);
+const num = (n) => Math.round(n * 10) / 10;
+
+/** gbody(1 つのプロジェクトのガント本体)に、線を引き直す。両端のバーが gbody に出ているものだけ引く。
+ *  SVG は HTML の文字列から作る(名前空間の URL を持たずに済む) */
+function drawDeps(gbody) {
+  gbody.querySelector(":scope > svg.gdeps")?.remove();
+  const box = gbody.getBoundingClientRect();
+  const byId = new Map([...gbody.querySelectorAll("[data-gt]")].map((el) => [el.dataset.gt, el]));
+  const mid = (r) => num(r.top + r.height / 2 - box.top);
+  let lines = "";
+  for (const el of gbody.querySelectorAll("[data-pre]")) {
+    const b = el.getBoundingClientRect();
+    for (const pid of ids(el)) {
+      const p = byId.get(pid);
+      if (!p) continue;
+      const a = p.getBoundingClientRect();
+      const left = num(b.left - box.left), y = mid(b);
+      const d = depPath({ right: num(a.right - box.left), y: mid(a) }, { left, y });
+      lines += `<g class="gdep" data-from="${pid}" data-to="${el.dataset.gt}"><path d="${d}"/><polygon points="${left - 1},${y} ${left - 6},${y - 3.5} ${left - 6},${y + 3.5}"/></g>`;
+    }
+  }
+  gbody.insertAdjacentHTML("beforeend", `<svg class="gdeps" aria-hidden="true">${lines}</svg>`);
+}
+
+/** taskId のバーにマウスを置いたときの強調。null で戻す。前のタスクがないバーでは何もしない(全部を薄くしない) */
+function focusDeps(gbody, taskId) {
+  gbody.classList.remove("dep-focus");
+  gbody.querySelectorAll(".dep-self,.dep-pre,.dep-on").forEach((el) => el.classList.remove("dep-self", "dep-pre", "dep-on"));
+  if (!taskId) return;
+  const self = [...gbody.querySelectorAll("[data-gt]")].find((el) => el.dataset.gt === taskId);
+  const pres = self ? ids(self) : [];
+  if (!pres.length) return;
+  gbody.classList.add("dep-focus");
+  self.classList.add("dep-self");
+  gbody.querySelectorAll("[data-gt]").forEach((el) => { if (pres.includes(el.dataset.gt)) el.classList.add("dep-pre"); });
+  gbody.querySelectorAll(".gdep").forEach((g) => { if (g.dataset.to === taskId) g.classList.add("dep-on"); });
+}
+
+return { depPath, drawDeps, focusDeps };
+})();
+
 /* src/ui/savefile.js */
 const { saveHtmlFile } = (() => {
 // HTML ファイルの保存。保存ダイアログが使えるブラウザ（File System Access API）では、保存先を選ばせる（初期の場所はダウンロードフォルダ。前回の場所は覚えない）。
@@ -3157,7 +3223,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
       const late = taskFlags(t, today, data.settings).includes("overdue");
       const ui = STATUS_UI[t.status] ?? STATUS_UI["To Do"];
       const hasPre = (t.predecessors ?? []).length > 0;
-      const gt = readonly ? "" : ` data-gt="${esc(t.id)}"`;
+      const gt = readonly ? "" : ` data-gt="${esc(t.id)}"${hasPre ? ` data-pre="${esc(t.predecessors.join(" "))}"` : ""}`;
       const drag = readonly ? "" : " gdrag";
       const label = `${esc(t.id)} ${esc(t.title)} ${fmtMD(r.start)}〜${fmtMD(r.end)}`;
       const bar = r.point
@@ -4108,6 +4174,9 @@ function renderBody() {
   return renderSchedule(S.data, today, scheduleOpts());
 }
 
+/** 前のタスクの線を、画面にあるすべてのガント本体に引き直す */
+function drawAllDeps() { view.querySelectorAll(".gbody").forEach(drawDeps); }
+
 function render() {
   hideTip();
   clearTimeout(settingTimer); settingTimer = null; // 描き直しで入力欄を取り除くときに focusout が走り、保存が入れ子の描き直しになるのを防ぐ（待っていた入力は、描き直しで消えるのと同じ）
@@ -4133,6 +4202,7 @@ function render() {
     if (el) { el.focus(); el.select?.(); }
   }
   syncSticky();
+  drawAllDeps();
   if (S.hlId) {
     let row = null;
     try { row = view.querySelector(`[data-row="${CSS.escape(S.hlId)}"]`); } catch { /* 無視 */ }
@@ -4896,6 +4966,17 @@ view.addEventListener("mousedown", (e) => {
   document.addEventListener("mouseup", up);
 });
 
+/* ---------- 前のタスクの強調(バーにマウスを置いたとき) ---------- */
+view.addEventListener("mouseover", (e) => {
+  const bar = e.target.closest?.("[data-gt]");
+  const gb = bar?.closest(".gbody");
+  if (gb) focusDeps(gb, bar.dataset.gt);
+});
+view.addEventListener("mouseout", (e) => {
+  const gb = e.target.closest?.("[data-gt]")?.closest(".gbody");
+  if (gb) focusDeps(gb, null);
+});
+
 /* ---------- ガント上のドラッグで日付を変更(1日単位) ---------- */
 view.addEventListener("mousedown", (e) => {
   const tg = e.target.closest("[data-gt],[data-gp],[data-gms]");
@@ -4920,6 +5001,8 @@ view.addEventListener("mousedown", (e) => {
     p = S.data.projects.find((x) => x.id === pid); mIdx = +i; s = en = idx(p.milestones[mIdx].date); mode = "r";
   }
   e.preventDefault();
+  const gbody = tg.closest(".gbody");
+  gbody?.classList.add("dep-hide"); // ドラッグ中は線がずれるので隠す(離したら戻す)
   const x0 = e.clientX;
   let dd = 0;
   const pct = (n) => `${((n / total) * 100).toFixed(3)}%`;
@@ -4936,6 +5019,7 @@ view.addEventListener("mousedown", (e) => {
   const up = () => {
     document.removeEventListener("mousemove", move);
     document.removeEventListener("mouseup", up);
+    gbody?.classList.remove("dep-hide");
     if (!dd) return;
     let ns = s, ne = en;
     if (mode === "l") ns = Math.min(s + dd, en);
@@ -5139,7 +5223,7 @@ function pinTableHeads() {
 let pinQueued = false;
 window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); }); } }, { passive: true });
 if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(syncSticky).observe(topbar);
-window.addEventListener("resize", syncSticky);
+window.addEventListener("resize", () => { syncSticky(); drawAllDeps(); });
 
 render();
 startup();

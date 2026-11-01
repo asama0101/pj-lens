@@ -101,7 +101,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
       const late = taskFlags(t, today, data.settings).includes("overdue");
       const ui = STATUS_UI[t.status] ?? STATUS_UI["To Do"];
       const hasPre = (t.predecessors ?? []).length > 0;
-      const gt = readonly ? "" : ` data-gt="${esc(t.id)}"`;
+      const gt = readonly ? "" : ` data-gt="${esc(t.id)}"${hasPre ? ` data-pre="${esc(t.predecessors.join(" "))}"` : ""}`;
       const drag = readonly ? "" : " gdrag";
       const label = `${esc(t.id)} ${esc(t.title)} ${fmtMD(r.start)}〜${fmtMD(r.end)}`;
       const bar = r.point

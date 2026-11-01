@@ -50,6 +50,9 @@ function renderBody() {
   return renderSchedule(S.data, today, scheduleOpts());
 }
 
+/** 前のタスクの線を、画面にあるすべてのガント本体に引き直す */
+function drawAllDeps() { view.querySelectorAll(".gbody").forEach(drawDeps); }
+
 function render() {
   hideTip();
   clearTimeout(settingTimer); settingTimer = null; // 描き直しで入力欄を取り除くときに focusout が走り、保存が入れ子の描き直しになるのを防ぐ（待っていた入力は、描き直しで消えるのと同じ）
@@ -75,6 +78,7 @@ function render() {
     if (el) { el.focus(); el.select?.(); }
   }
   syncSticky();
+  drawAllDeps();
   if (S.hlId) {
     let row = null;
     try { row = view.querySelector(`[data-row="${CSS.escape(S.hlId)}"]`); } catch { /* 無視 */ }
@@ -838,6 +842,17 @@ view.addEventListener("mousedown", (e) => {
   document.addEventListener("mouseup", up);
 });
 
+/* ---------- 前のタスクの強調(バーにマウスを置いたとき) ---------- */
+view.addEventListener("mouseover", (e) => {
+  const bar = e.target.closest?.("[data-gt]");
+  const gb = bar?.closest(".gbody");
+  if (gb) focusDeps(gb, bar.dataset.gt);
+});
+view.addEventListener("mouseout", (e) => {
+  const gb = e.target.closest?.("[data-gt]")?.closest(".gbody");
+  if (gb) focusDeps(gb, null);
+});
+
 /* ---------- ガント上のドラッグで日付を変更(1日単位) ---------- */
 view.addEventListener("mousedown", (e) => {
   const tg = e.target.closest("[data-gt],[data-gp],[data-gms]");
@@ -862,6 +877,8 @@ view.addEventListener("mousedown", (e) => {
     p = S.data.projects.find((x) => x.id === pid); mIdx = +i; s = en = idx(p.milestones[mIdx].date); mode = "r";
   }
   e.preventDefault();
+  const gbody = tg.closest(".gbody");
+  gbody?.classList.add("dep-hide"); // ドラッグ中は線がずれるので隠す(離したら戻す)
   const x0 = e.clientX;
   let dd = 0;
   const pct = (n) => `${((n / total) * 100).toFixed(3)}%`;
@@ -878,6 +895,7 @@ view.addEventListener("mousedown", (e) => {
   const up = () => {
     document.removeEventListener("mousemove", move);
     document.removeEventListener("mouseup", up);
+    gbody?.classList.remove("dep-hide");
     if (!dd) return;
     let ns = s, ne = en;
     if (mode === "l") ns = Math.min(s + dd, en);
@@ -1081,7 +1099,7 @@ function pinTableHeads() {
 let pinQueued = false;
 window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); }); } }, { passive: true });
 if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(syncSticky).observe(topbar);
-window.addEventListener("resize", syncSticky);
+window.addEventListener("resize", () => { syncSticky(); drawAllDeps(); });
 
 render();
 startup();
