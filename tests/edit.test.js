@@ -41,9 +41,9 @@ test("updateTask: 不正な値は例外（状態・件名・日付・開始>期�
   assert.throws(() => updateTask(d, "A4", { status: "Not Started" }, TODAY));
   assert.throws(() => updateTask(d, "A4", { title: "  " }, TODAY));
   assert.throws(() => updateTask(d, "A4", { due: "2026/11/27" }, TODAY));
-  assert.throws(() => updateTask(d, "A5", { start: "2027-01-10" }, TODAY), "先行なしで開始>期限");
+  assert.throws(() => updateTask(d, "A5", { start: "2027-01-10" }, TODAY), "前のタスクなしで開始>期限");
   assert.throws(() => updateTask(d, "A4", { importance: "urgent" }, TODAY));
-  assert.throws(() => updateTask(d, "A4", { predecessors: ["A7"] }, TODAY), "後続を先行にすると循環");
+  assert.throws(() => updateTask(d, "A4", { predecessors: ["A7"] }, TODAY), "次のタスクを前のタスクにすると循環");
   assert.throws(() => updateTask(d, "ZZ", { memo: "x" }, TODAY));
   assert.equal(task(updateTask(d, "A4", { importance: "low", memo: "m", title: " 新件名 " }, TODAY), "A4").title, "新件名");
 });
@@ -70,7 +70,7 @@ test("マイルストーン: 追加・更新・削除は日付昇順を保ち、
   assert.throws(() => addMilestone(d, "A", { name: "x", date: "bad" }));
 });
 
-test("moveTaskDates: 先行なしの both / start / due", () => {
+test("moveTaskDates: 前のタスクなしの both / start / due", () => {
   const d = load();
   const b = moveTaskDates(d, "A5", "both", 3);
   assert.deepEqual([task(b.data, "A5").start, task(b.data, "A5").due], ["2026-10-15", "2026-12-28"]);
@@ -80,11 +80,11 @@ test("moveTaskDates: 先行なしの both / start / due", () => {
   assert.ok(moveTaskDates(d, "A5", "due", -999).error);
 });
 
-test("moveTaskDates: 先行ありは start/both が error、due は動く。後続の期限より後ろなら warning", () => {
+test("moveTaskDates: 前のタスクありは start/both が error、due は動く。次のタスクの期限より後ろなら warning", () => {
   const d = load();
   assert.ok(moveTaskDates(d, "A4", "start", 1).error);
   assert.ok(moveTaskDates(d, "A4", "both", 1).error);
-  const r = moveTaskDates(d, "A4", "due", 10); // A4 の後続 A6(2027-02-05) より前なので警告なし
+  const r = moveTaskDates(d, "A4", "due", 10); // A4 の次のタスク A6(2027-02-05) より前なので警告なし
   assert.equal(task(r.data, "A4").due, "2026-12-07");
   assert.equal(r.warning, undefined);
   const w = moveTaskDates(d, "A4", "due", 80); // 2027-02-15 > A6 の期限
@@ -100,7 +100,7 @@ test("moveProjectDates / moveMilestone", () => {
   assert.deepEqual(proj(m, "A").milestones.map((x) => x.name), ["本番切替", "機器発注"]);
 });
 
-test("addTaskQuick: 開始は今日・期限は 7 日後・To Do・先行なし。空白の件名は例外。ID は重複しない", () => {
+test("addTaskQuick: 開始は今日・期限は 7 日後・To Do・前のタスクなし。空白の件名は例外。ID は重複しない", () => {
   const d = load();
   const a = addTaskQuick(d, "C", "  追加タスク ", TODAY);
   const t = a.tasks.find((x) => x.title === "追加タスク");
@@ -120,7 +120,7 @@ test("addTaskQuick: place で大項目・中項目を指定でき、空白は nu
   ok(a);
 });
 
-test("predecessorCandidates: 自分・既存の先行・後続（孫を含む）を含まない。他プロジェクトも含まない", () => {
+test("predecessorCandidates: 自分・既存の前のタスク・次のタスク（孫を含む）を含まない。他プロジェクトも含まない", () => {
   const d = load();
   assert.deepEqual(predecessorCandidates(d, "A4").sort(), ["A1", "A2", "A5"].sort());
   assert.ok(!predecessorCandidates(d, "A5").some((id) => ["A5", "A6", "A7"].includes(id)));
@@ -137,7 +137,7 @@ test("addTask: ID を採番し、追加後も validate が通る", () => {
   assert.throws(() => addTask(d, { projectId: "ZZ", title: "x", due: "2026-11-30" }));
 });
 
-test("deleteTask: 先行になっていれば dependents を返し、force なしでは変えない。force で参照を外す", () => {
+test("deleteTask: 前のタスクになっていれば dependents を返し、force なしでは変えない。force で参照を外す", () => {
   const d = load();
   const r = deleteTask(d, "A4");
   assert.deepEqual(r.dependents, ["A6"]);

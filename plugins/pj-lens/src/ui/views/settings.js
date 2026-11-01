@@ -41,12 +41,12 @@ export function renderSettings(data, today, opts = {}) {
   const nh = st.nationalHolidays, nhDates = entries(nh?.dates);
   const nhRows = nhDates.filter((x) => x.date >= today).slice(0, 12).map((x) => `<tr><td class="mono" data-l="日付">${esc(x.date)}</td><td data-l="名称">${esc(x.name ?? "")}</td></tr>`).join("");
   const nationalSec = `<section class="panel" aria-labelledby="h-nat"><h2 id="h-nat" style="margin-top:0">日本の祝日</h2>
-      <p class="note" style="margin:0 0 10px">営業日の計算で飛ばす日です。内閣府の祝日一覧から、Claude Code が取得して保存します（更新は <span class="mono">/pj-lens:holidays</span>。この画面からは取得しません）。</p>
+      <p class="note" style="margin:0 0 10px">営業日の計算で飛ばす日です。内閣府の祝日一覧から、Claude Code が取得して保存します（営業日を使う提案を作るときと、見張りを始めるときに、自動で更新します。この画面からは取得しません）。</p>
       ${warnOf("nationalHolidays")}
       ${nh && typeof nh === "object" && isDate(nh.fetchedAt) && nhDates.length
         ? `<p style="margin:0 0 8px">取得日 <span class="mono">${esc(nh.fetchedAt)}</span>・<span class="mono">${nhDates.length} 件</span>（<span class="mono">${esc(nhDates[0].date)}〜${esc(nhDates.at(-1).date)}</span>）。今日以降の祝日:</p>
-         ${nhRows ? `<div class="tscroll"><table class="tbl"><tbody>${nhRows}</tbody></table></div>` : `<p class="muted" style="margin:0">今日以降の祝日は、取得した範囲にありません。<span class="mono">/pj-lens:holidays</span> で取り直してください。</p>`}`
-        : `<p class="muted" style="margin:0">まだ取得していません。Claude Code で <span class="mono">/pj-lens:holidays</span> を実行すると取得します。</p>`}
+         ${nhRows ? `<div class="tscroll"><table class="tbl"><tbody>${nhRows}</tbody></table></div>` : `<p class="muted" style="margin:0">今日以降の祝日は、取得した範囲にありません。次に自動で更新されます。</p>`}`
+        : `<p class="muted" style="margin:0">まだ取得していません。営業日を使う提案を作るときと、見張りを始めるときに、自動で取得します。</p>`}
     </section>`;
 
   const kindOptions = (cur) => HOLIDAY_KINDS.concat(HOLIDAY_KINDS.includes(cur) || cur === undefined ? [] : [cur]).map((k) => `<option${k === (cur ?? HOLIDAY_KINDS[0]) ? " selected" : ""}>${esc(k)}</option>`).join("");

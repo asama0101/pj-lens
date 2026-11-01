@@ -16,10 +16,10 @@ test("renderReplanPanel: 変更表に旧→新、理由、プロジェクト期�
   const d = mk("2026-10-18");
   const html = renderReplanPanel(d, pend(d, 12));
   assert.ok(html.includes("T1 の期限を") && html.includes("10/10") && html.includes("10/22") && html.includes("+12日"));
-  for (const w of ["現地工事", "開通試験", "本番切替", "先行 T1 の遅れ", "保存はまだされていません"]) assert.ok(html.includes(w), w);
+  for (const w of ["現地工事", "開通試験", "本番切替", "前のタスク T1 の遅れ", "保存はまだされていません"]) assert.ok(html.includes(w), w);
   assert.ok(html.includes("プロジェクト期限を超えます") && html.includes("拠点B 回線増設") && html.includes("10/18"));
   for (const a of ["apply", "only", "cancel"]) assert.ok(html.includes(`data-replan="${a}"`), a);
-  assert.ok(html.includes("後続も反映して履歴に残す") && html.includes("このタスクだけ変える"));
+  assert.ok(html.includes("次のタスクも反映して履歴に残す") && html.includes("このタスクだけ変える"));
   assert.ok(/data-rp="reason"[^>]*value="工事日程の変更"/.test(html));
   assert.ok(/<option[^>]*selected[^>]*>ベンダー<\/option>|<option selected>ベンダー<\/option>/.test(html));
   assert.ok(!renderReplanPanel(mk(), pend(mk(), 5)).includes("プロジェクト期限を超えます"));
@@ -29,10 +29,10 @@ test("renderReplanPanel: 前倒しのときだけ compress のチェックが出
   const d = mk();
   assert.ok(!renderReplanPanel(d, pend(d, 5)).includes('data-rp="compress"'));
   const early = renderReplanPanel(d, pend(d, -3));
-  assert.ok(early.includes('data-rp="compress"') && early.includes("後続も詰める") && !/data-rp="compress"[^>]*checked/.test(early));
+  assert.ok(early.includes('data-rp="compress"') && early.includes("次のタスクも詰める") && !/data-rp="compress"[^>]*checked/.test(early));
   const on = renderReplanPanel(d, pend(d, -3, { compress: true }));
   assert.ok(/data-rp="compress"[^>]*checked/.test(on));
-  assert.ok(on.includes("T3") && !early.includes("本番切替"), "詰めると後続の行が増える");
+  assert.ok(on.includes("T3") && !early.includes("本番切替"), "詰めると次のタスクの行が増える");
 });
 
 test("renderReplanPanel: 件名・理由の入力はエスケープされる", () => {

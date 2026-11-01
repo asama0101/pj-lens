@@ -8,7 +8,7 @@ import {
   submitRequest, claimRequest, askQuestion, setProposal, rejectRequest, markApplied, markFailed, touchWatching, getRequest,
 } from "../src/core/inbox.js";
 import { planOps, applyProposal, summarizeSections } from "../src/ui/inboxops.js";
-import { fetchHolidays, holidayStatus } from "./holidays.js";
+import { fetchHolidays, holidayStatus, needsHolidayUpdate } from "./holidays.js";
 
 const USAGE = `使い方: node tools/inbox.js <コマンド> <data.json> ...
   submit  <data.json> <projectId|-> <text> [--working]   依頼を足す（--working は処理中として作る。文章の取り込み用）
@@ -48,8 +48,7 @@ const COMMANDS = {
     // 営業日で期限を置く提案は、日本の祝日が未取得・古い・範囲外なら、提案の前に取得する（取れなくても提案は止めず、注意に書く）
     if (ops.some((x) => x.op === "addTask" && x.businessDays !== undefined)) {
       const lastDue = (s) => s.sections.flatMap((x) => x.rows).filter((r) => r.businessDays != null).map((r) => r.due).sort().at(-1);
-      const st = holidayStatus(d.settings);
-      if (!st.fetched || st.ageDays > 30 || ((!st.to || lastDue(plan) > st.to) && st.ageDays > 0)) {
+      if (needsHolidayUpdate(d.settings, lastDue(plan)).need) {
         let nationalHolidays = null;
         try { nationalHolidays = await fetchHolidays(); } catch { /* 下で注意に書く */ }
         d = readJson(path); // 取得の間（最長 15 秒）に他が更新していても消さないよう、書く直前に読み直す

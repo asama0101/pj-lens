@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from "node:fs";
 const root = new URL("../plugins/pj-lens/", import.meta.url);
 const read = (p) => readFileSync(new URL(p, root), "utf8");
 
-for (const name of ["replan", "intake"]) {
+for (const name of ["intake"]) {
   test(`サブエージェント ${name}: frontmatter と共通ルール`, () => {
     const text = read(`agents/${name}.md`);
     const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
@@ -23,14 +23,6 @@ for (const name of ["replan", "intake"]) {
   });
 }
 
-test("replan は受信箱の経路（submit --working → propose → approve）で書き、Edit と impact.js を使わない", () => {
-  const text = read("agents/replan.md");
-  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
-  assert.match(fm, /^tools: Read, Bash$/m);
-  for (const w of ["${CLAUDE_PLUGIN_ROOT}/tools/inbox.js", "submit", "--working", "propose", "approve", "reject", "fail", "moveDue", "直接書き換えない"]) assert.ok(text.includes(w), w);
-  assert.doesNotMatch(text, /impact\.js|Edit/);
-});
-
 test("inbox: 受信箱を処理するエージェント。tools は Read, Bash で絞り、聞き返し・重要度・CLI を持ち、承認・却下の節は持たない", () => {
   const text = read("agents/inbox.md");
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
@@ -38,7 +30,7 @@ test("inbox: 受信箱を処理するエージェント。tools は Read, Bash �
   assert.match(fm, /^description: .+/m);
   assert.match(fm, /^tools: Read, Bash$/m);
   for (const word of ["${CLAUDE_PLUGIN_ROOT}/tools/inbox.js", "claim", "propose", "ask", "fail", "承認", "重要度", ".pj-lens/data.json", "moveDue", "addPred", "addTask", "compress"]) assert.ok(text.includes(word), word);
-  assert.doesNotMatch(text, /## 承認・却下/, "承認・却下はスキル（/pj-lens:inbox）の手順。エージェントは承認を待たない");
+  assert.doesNotMatch(text, /## 承認・却下/, "承認・却下は /pj-lens:watch の手順。エージェントは承認を待たない");
   assert.match(text, /推測/);
   assert.match(text, /止まらない/);
   assert.doesNotMatch(text, /node "?tools\//);
@@ -47,11 +39,6 @@ test("inbox: 受信箱を処理するエージェント。tools は Read, Bash �
 
 test("MCP を同梱しない（.mcp.json がない）", () => {
   assert.equal(existsSync(new URL(".mcp.json", root)), false);
-});
-
-test("replan: 前倒しのとき後続を詰めるか聞き、moveDue の compress を使う", () => {
-  const t = read("agents/replan.md");
-  assert.ok(t.includes('"compress":true') && t.includes("詰め"));
 });
 
 test("intake: WBS・予定表・規則の3つの手順と、承認・MCP の指定がある", () => {
@@ -64,12 +51,11 @@ test("intake: WBS・予定表・規則の3つの手順と、承認・MCP の指�
   assert.doesNotMatch(t, /\.mcp\.json/);
 });
 
-test("intake(文章): 書き込みは受信箱の submit --working → propose → approve。仮日程・行番号で直す手順があり、直接の追記と重要度の推定は無い", () => {
+test("intake: 文章の手順が無い。wbs・calendar・rules だけで、文章を貼られたときは HTML の帯からの依頼を案内する", () => {
   const t = read("agents/intake.md");
-  for (const w of ["tools/inbox.js", "submit", "--working", "propose", "approve", "行番号", "仮", "businessDays", "もう一度"]) assert.ok(t.includes(w), w);
-  assert.doesNotMatch(t, /承認後に追記/);
-  assert.match(t, /重要度.*入れない/);
-  assert.match(t, /待ち先.*報告/);
+  assert.doesNotMatch(t, /## 文章/);
+  assert.doesNotMatch(t, /submit/);
+  for (const w of ["## wbs", "## calendar", "## rules", "Claude Code に依頼する"]) assert.ok(t.includes(w), w);
 });
 
 test("intake(wbs): 列の対応と変更案を一緒に見せて承認 1 回", () => {
@@ -83,25 +69,35 @@ test("inbox: addTask は businessDays（due と排他）で営業日を書き、
   assert.doesNotMatch(t, /期限が書かれていない/);
 });
 
-test("inbox: addProject の書き方（ref・name・type）、addTask.projectId に ref を書けること、タスク 3〜5 件の目安が書かれ、プロジェクトの追加は対象外に書かれていない", () => {
+test("inbox: 操作 13 種類の名前と書き方が書かれ、addProject・addTask の ref を他の操作から指せることが書かれている", () => {
   const t = read("agents/inbox.md");
-  for (const w of ["addProject", "3〜5 件", "操作は 5 種類"]) assert.ok(t.includes(w), w);
-  assert.match(t, /projectId.*ref|ref.*projectId/);
-  const outOfScope = /\*\*対象外の依頼\*\*[^\n]*/.exec(t)?.[0] ?? "";
-  assert.ok(outOfScope, "対象外の依頼の行がある");
-  assert.doesNotMatch(outOfScope, /プロジェクト・会議の追加/);
+  assert.ok(t.includes("操作は 13 種類"));
+  for (const op of ["moveDue", "addPred", "removePred", "addTask", "addProject", "setStatus", "setImportance", "removeTask", "updateProject", "removeProject", "addMilestone", "moveMilestone", "removeMilestone"]) assert.ok(t.includes(`"op":"${op}"`), op);
+  assert.ok(t.includes("3〜5 件"));
+  assert.match(t, /ref.*他の操作|他の操作.*ref/);
 });
 
-test("replan: 原因が読み取れないときは『その他』にして聞き返さない", () => {
-  const t = read("agents/replan.md");
-  assert.match(t, /その他.*聞き返さ|聞き返さ.*その他/);
+test("inbox: 削除は依頼に明記されたときだけ、重要度は依頼に明記されたときだけ設定（推定しない）。原因が複数なら「その他」", () => {
+  const t = read("agents/inbox.md");
+  assert.match(t, /削除は.*明記/);
+  assert.match(t, /重要度.*明記.*推定しない|推定しない.*重要度/);
+  assert.match(t, /原因が複数.*その他/);
 });
 
-test("intake(文章): 承認前に許す書き込み（受信箱）の例外と、断ったときの reject が書かれ、共通ルールの『期限が文章にない』は聞き返しの例から外れている", () => {
-  const t = read("agents/intake.md");
-  assert.match(t, /submit --working.*承認の前に実行してよい/);
-  assert.match(t, /reject "\.pj-lens\/data\.json"/);
-  assert.doesNotMatch(t, /どのプロジェクトか、期限が文章にない/);
+test("inbox: 文章（メール・議事録・メモ）の取り込み手順があり、待ち先は setStatus の Waiting で提案に入れる。日程の遅れは原因を読み取る", () => {
+  const t = read("agents/inbox.md");
+  assert.match(t, /メール・議事録・メモ/);
+  assert.match(t, /待ち先.*setStatus.*Waiting|Waiting.*待ち先/);
+  assert.match(t, /--cause/);
+});
+
+test("inbox: 対象外の依頼は、会議の追加・削除と、intake で扱うもの（Excel・予定表・会議の規則）だけ", () => {
+  const t = read("agents/inbox.md");
+  const line = t.split("\n").find((l) => l.includes("**対象外の依頼**")) ?? "";
+  assert.ok(line, "対象外の依頼の行がある");
+  assert.match(line, /会議/);
+  assert.match(line, /intake/);
+  assert.doesNotMatch(line, /プロジェクト・会議の追加|タスクの削除|状態の変更|既存のプロジェクトの変更/);
 });
 
 test("intake・inbox: 祝日の取得は propose が行うので、エージェントは holidays.js を呼ばない", () => {

@@ -91,12 +91,12 @@ test("rankTasks: Waiting は chase で待ち先名を含み、理由は日本語
   assert.equal(r1.action, "chase");
   assert.ok(r1.reasons.some((x) => x.includes("ベンダーA") && x.includes("9日")));
   assert.ok(r1.reasons.includes("期限超過 4日"));
-  assert.ok(r1.reasons.includes("後続 4 件を止めている"));
+  assert.ok(r1.reasons.includes("次のタスク 4 件を止めている"));
   assert.equal(rankTasks(rankData(), "2026-10-20")[1].action, "work");
   assert.ok(rankTasks(rankData(), "2026-10-20")[1].reasons.includes("重要度: 高"));
 });
 
-test("rankTasks: Done／Cancelled と、先行が未完了のタスクは含まれない。先行が完了なら含まれる", () => {
+test("rankTasks: Done／Cancelled と、前のタスクが未完了のタスクは含まれない。前のタスクが完了なら含まれる", () => {
   const d = { ...base(), tasks: [T("A", "2026-10-25", { status: "Done" }), T("B", "2026-10-25", { predecessors: ["A"] }), T("C", "2026-10-25", { predecessors: ["B"] }), T("D", "2026-10-25", { status: "Cancelled" })] };
   assert.deepEqual(rankTasks(d, "2026-10-20").map((x) => x.taskId), ["B"]);
 });

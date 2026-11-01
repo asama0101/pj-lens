@@ -11,6 +11,7 @@ import { readJson, out, save } from "./cli.js";
 const DEFAULT_URL = "https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv";
 const USAGE = `使い方: node tools/holidays.js <コマンド> <data.json>
   update  <data.json>   内閣府の祝日一覧を取得して、settings.nationalHolidays に書く
+  ensure  <data.json>   未取得・取得から 30 日超・一覧の最終日が今日以前のときだけ、update と同じ取得をする
   status  <data.json>   取得の状況（取得日・件数・範囲・経過日数）`;
 
 const range = (dates) => ({ count: dates.length, from: dates[0]?.date ?? null, to: dates.at(-1)?.date ?? null });
@@ -20,6 +21,21 @@ export function holidayStatus(settings) {
   const nh = settings?.nationalHolidays;
   if (!isDate(nh?.fetchedAt) || !Array.isArray(nh.dates)) return { fetched: false };
   return { fetched: true, fetchedAt: nh.fetchedAt, ...range(nh.dates), ageDays: diffDays(today(), nh.fetchedAt) };
+}
+
+/**
+ * 祝日の一覧を取り直す必要があるか。propose（営業日を使う提案）と ensure が、同じ判定を使う。
+ * neededUntil: 提案が使う最も遅い日。一覧の最終日より後なら「範囲外」。今日取得したものは、取り直しても同じなので false
+ */
+export function needsHolidayUpdate(settings, neededUntil = null) {
+  const st = holidayStatus(settings);
+  if (!st.fetched) return { need: true, reason: "未取得" };
+  if (st.ageDays > 30) return { need: true, reason: "30日超" };
+  if (st.ageDays > 0) {
+    if (!st.to || st.to <= today()) return { need: true, reason: "一覧の最終日が今日以前" };
+    if (neededUntil && neededUntil > st.to) return { need: true, reason: "範囲外" };
+  }
+  return { need: false, reason: null };
 }
 
 /** 内閣府の一覧を取得して、settings.nationalHolidays に入れる値を返す。失敗は例外 */
@@ -33,19 +49,29 @@ export async function fetchHolidays() {
   return { fetchedAt: today(), source: url, dates };
 }
 
-async function update(path) {
+async function fetchAndSave(path) {
   const nationalHolidays = await fetchHolidays();
   const data = readJson(path); // 取得の間に他が更新していても消さないよう、書く直前に読み直す
   data.settings = { ...data.settings, nationalHolidays };
   save(path, data);
-  out({ ok: true, ...range(nationalHolidays.dates) });
+  return range(nationalHolidays.dates);
+}
+
+async function update(path) {
+  out({ ok: true, ...(await fetchAndSave(path)) });
+}
+
+async function ensure(path) {
+  const { need, reason } = needsHolidayUpdate(readJson(path).settings);
+  if (!need) return out({ fetched: false, reason: null });
+  out({ fetched: true, reason, ...(await fetchAndSave(path)) });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [cmd, path] = process.argv.slice(2);
-  if (!["update", "status"].includes(cmd) || !path) { console.error(USAGE); process.exit(2); }
+  if (!["update", "ensure", "status"].includes(cmd) || !path) { console.error(USAGE); process.exit(2); }
   try {
-    if (cmd === "update") await update(path); else out(holidayStatus(readJson(path).settings));
+    if (cmd === "update") await update(path); else if (cmd === "ensure") await ensure(path); else out(holidayStatus(readJson(path).settings));
   } catch (e) {
     console.error(e.message);
     process.exit(1);

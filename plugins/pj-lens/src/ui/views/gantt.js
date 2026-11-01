@@ -7,7 +7,7 @@ import { esc, fmtMD, wdJa, STATUS_UI, flagPills } from "../common.js";
 
 export const GANTT_WINDOWS = [["m1", "1か月"], ["m3", "3か月"], ["m6", "6か月"], ["y1", "1年"], ["all", "全期間"]];
 
-const legend = (showActual) => `<div class="legend"><span><i class="gbar b-todo" style="position:static;display:inline-block;width:22px;height:10px"></i>To Do</span><span><i class="gbar b-prog" style="position:static;display:inline-block;width:22px;height:10px"></i>In Progress</span><span><i class="gbar b-wait" style="position:static;display:inline-block;width:22px;height:10px"></i>Waiting</span><span><i class="gbar b-done" style="position:static;display:inline-block;width:22px;height:10px"></i>Done</span><span><i class="gbar gsum" style="position:static;display:inline-block;width:22px;height:8px"></i>プロジェクト全体</span><span><i class="ms" style="position:static;display:inline-block;transform:rotate(45deg);width:9px;height:9px"></i>マイルストーン</span>${showActual ? `<span><i class="gact" style="position:static;display:inline-block;width:22px;height:5px"></i>実績(最初の作業日〜完了日・今日)</span>` : ""}<span>開始日は、未入力なら先行タスクの期限から</span></div>`;
+const legend = (showActual) => `<div class="legend"><span><i class="gbar b-todo" style="position:static;display:inline-block;width:22px;height:10px"></i>To Do</span><span><i class="gbar b-prog" style="position:static;display:inline-block;width:22px;height:10px"></i>In Progress</span><span><i class="gbar b-wait" style="position:static;display:inline-block;width:22px;height:10px"></i>Waiting</span><span><i class="gbar b-done" style="position:static;display:inline-block;width:22px;height:10px"></i>Done</span><span><i class="gbar gsum" style="position:static;display:inline-block;width:22px;height:8px"></i>プロジェクト全体</span><span><i class="ms" style="position:static;display:inline-block;transform:rotate(45deg);width:9px;height:9px"></i>マイルストーン</span>${showActual ? `<span><i class="gact" style="position:static;display:inline-block;width:22px;height:5px"></i>実績(最初の作業日〜完了日・今日)</span>` : ""}<span>開始日は、未入力なら前のタスクの期限から</span></div>`;
 
 function tools(win, hideDone) {
   const seg = GANTT_WINDOWS.map(([k, l]) => `<button data-gwin="${k}" aria-pressed="${win === k}">${l}</button>`).join("");
@@ -103,14 +103,14 @@ export function renderGantt(data, projectIds, today, opts = {}) {
       const label = `${esc(t.id)} ${esc(t.title)} ${fmtMD(r.start)}〜${fmtMD(r.end)}`;
       const bar = r.point
         ? `<i class="dot mk${drag} ${ui.dot}${late ? " is-late" : ""}"${gt} style="left:${x(r.end)};top:13px" title="${label}${readonly ? "" : "(ドラッグで期限を変更)"}"></i>`
-        : `<i class="gbar${drag}${hasPre ? " fixl" : ""} ${ui.bar}${late ? " is-late" : ""}"${gt} style="left:${x(r.start)};width:${((diffDays(r.end, r.start) / total) * 100).toFixed(3)}%;min-width:5px" title="${label}${readonly ? "" : hasPre ? "(開始は先行から決まります。右端のドラッグで期限を変更)" : "(ドラッグで移動、両端で開始・期限を変更)"}">${readonly ? "" : `${hasPre ? "" : '<b class="gh l" data-gh="l"></b>'}<b class="gh r" data-gh="r"></b>`}</i>`;
+        : `<i class="gbar${drag}${hasPre ? " fixl" : ""} ${ui.bar}${late ? " is-late" : ""}"${gt} style="left:${x(r.start)};width:${((diffDays(r.end, r.start) / total) * 100).toFixed(3)}%;min-width:5px" title="${label}${readonly ? "" : hasPre ? "(開始は前のタスクから決まります。右端のドラッグで期限を変更)" : "(ドラッグで移動、両端で開始・期限を変更)"}">${readonly ? "" : `${hasPre ? "" : '<b class="gh l" data-gh="l"></b>'}<b class="gh r" data-gh="r"></b>`}</i>`;
       const act = r.actual && showActual
         ? `<i class="gact" style="left:${x(r.actual.start)};width:${(Math.max(diffDays(r.actual.end, r.actual.start), 0) / total * 100).toFixed(3)}%;min-width:4px" title="実績 ${fmtMD(r.actual.start)}〜${fmtMD(r.actual.end)}"></i>`
         : "";
       const dependents = data.tasks.filter((o) => (o.predecessors ?? []).includes(t.id)).map((o) => o.id);
       let lab;
       if (!readonly && askDel === t.id) {
-        lab = `<div class="g-label"><span class="id">${esc(t.id)}</span><div class="ask" style="grid-column:2/-1">${dependents.length ? `後続 ${esc(dependents.join(", "))} の先行から外れます。` : "このタスクを削除します。"}<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-delyes="${esc(t.id)}">削除する</button><button class="btn" data-delno>やめる</button></div></div></div>`;
+        lab = `<div class="g-label"><span class="id">${esc(t.id)}</span><div class="ask" style="grid-column:2/-1">${dependents.length ? `次のタスク ${esc(dependents.join(", "))} の前のタスクから外れます。` : "このタスクを削除します。"}<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-delyes="${esc(t.id)}">削除する</button><button class="btn" data-delno>やめる</button></div></div></div>`;
       } else {
         const name = readonly ? `<span class="g-name">${esc(t.title)}</span>` : `<button class="g-name" data-goto="${esc(t.id)}" title="リストで編集する">${esc(t.title)}</button>`;
         const del = readonly ? "" : `<button class="gx" data-del="${esc(t.id)}" aria-label="${esc(t.id)} を削除">×</button>`;

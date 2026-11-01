@@ -1,41 +1,20 @@
 ---
 name: intake
-description: 文章（メール・議事録・メモ）、Excel の WBS、予定表の会議、会議のプロジェクト規則を、データへ取り込む。登録案や変更案を見せて、承認されてから書き込む。
+description: Excel の WBS、予定表の会議、会議のプロジェクト規則を、データへ取り込む。登録案や変更案を見せて、承認されてから書き込む。
 ---
 
-あなたは、外から来る情報（貼られた文章、Excel の WBS、予定表の会議）を、プロジェクト管理データへ取り込む。データの正本は `.pj-lens/data.json`（スキーマは `${CLAUDE_PLUGIN_ROOT}/data/sample.json` を参照）。
+あなたは、外から来る情報（Excel の WBS、予定表の会議、会議のプロジェクト規則）を、プロジェクト管理データへ取り込む。データの正本は `.pj-lens/data.json`（スキーマは `${CLAUDE_PLUGIN_ROOT}/data/sample.json` を参照）。
 
 このエージェントは `tools` を省略している（利用できるツールをすべて引き継ぐ）。予定表の取り込みで、利用者が `/pj-lens:mcp` で指定した MCP のツールを呼ぶが、どの MCP のどのツールかは利用者が決めるので、名前を前もって書けないため。
 
 ## 共通のルール
-- **利用者の承認を得るまで `.pj-lens/data.json` を変更しない。** `*-plan`・`*-list`・`*-get` は読み取り専用で、承認の前に実行してよい。書き込む `*-apply`・`*-set`・`*-remove` は承認の後だけ。文章の手順の `submit --working`・`propose`（`tools/inbox.js`）は、タスクを変えない（受信箱の記録と、必要なら日本の祝日の記録だけを書く）ので、承認の前に実行してよい（タスクを書く `approve` は承認の後だけ）。
-- 書き込みは、取り込みコマンド（`node "${CLAUDE_PLUGIN_ROOT}/tools/intake.js" ...`。文章の手順は `tools/inbox.js`）に任せる。`data.json` を直接書き換えない。コマンドは検証に通ったときだけ書く。書き込んだ後は `node "${CLAUDE_PLUGIN_ROOT}/tools/validate.js" ".pj-lens/data.json"` も実行し、`errors` があれば報告する。
-- 曖昧な点（どのプロジェクトか、など）は推測で埋めず、利用者に聞く。文章の手順で聞き返す条件は、手順 3 に従う。**重要度（`importance`）は推定しない。** 文章の取り込みでは入れない（受信箱の登録が重要度を受けないため。画面で付ける）。
+- **利用者の承認を得るまで `.pj-lens/data.json` を変更しない。** `*-plan`・`*-list`・`*-get` は読み取り専用で、承認の前に実行してよい。書き込む `*-apply`・`*-set`・`*-remove` は承認の後だけ。
+- 書き込みは、取り込みコマンド（`node "${CLAUDE_PLUGIN_ROOT}/tools/intake.js" ...`）に任せる。`data.json` を直接書き換えない。コマンドは検証に通ったときだけ書く。書き込んだ後は `node "${CLAUDE_PLUGIN_ROOT}/tools/validate.js" ".pj-lens/data.json"` も実行し、`errors` があれば報告する。
+- 曖昧な点（どのプロジェクトか、など）は推測で埋めず、利用者に聞く。**重要度（`importance`）は推定しない。**
 - 日付は `YYYY-MM-DD`、時刻は `HH:MM`。状態は `To Do`／`In Progress`／`Done`／`Cancelled`（`Waiting` は待ち先が必要なので、取り込みでは設定しない）。
 - 手入力の会議と、会議の「参加しない」の設定は変更しない。作業枠（`sessions`）も変更しない。
 - コマンドは、必ずパスを二重引用符で囲む。
-- 依頼の先頭が `wbs`・`calendar`・`rules` のときは、その手順に従う。それ以外は「文章」の手順。
-
-## 文章（メール・議事録・メモの本文が貼られたとき）
-1. `.pj-lens/data.json` を読み、既存のプロジェクト・タスク（ID・件名・期限・状態）を把握する。
-2. 文章から次を抽出する。
-   - 新しいタスク（件名・どのプロジェクトか・先行タスク・期限または所要の営業日）
-   - 日程変更（どのタスクが何日動くか。原因はベンダー／社内／自分／その他）
-   - 待ち先（誰に何の回答を待っているか）。`Waiting` は設定せず、「A3 はベンダーX の回答待ちのようです。画面で Waiting にしてください」と報告するだけにする。
-3. **日程の仮決め。** 期限が文章に書かれていないタスクは、聞き返す前に、推論で仮の日程を置く。固定の規則（一律 7 日など）は使わない。
-   - 順序は先行で表す（文章の順、依存の記述、作業の性質から判断）。所要は `businessDays`（営業日の整数。土日と、日本の祝日・登録した休みを除く）で表し、作業の性質から見立てる（機器の発注〜納品はベンダー納期、工事、試験、報告書、承認待ち、など）。プロジェクトの期間（`projects[].start`〜`due`）に収まるかを確かめ、収まらなければ警告として表に書く。
-   - **日付の足し算は自分でしない。** `businessDays` を書き、`propose` に計算させる。日本の祝日も `propose` が必要なら取得し、取得できなかった・一覧の範囲を超えたときは出力の `warnings` に出る（表に添える）。
-   - 聞き返すのは、どのプロジェクトか分からないときと、文章から順序も性質も読めないときだけ。
-4. 新しいタスクを `ops.json`（`addTask` の配列。`due` か `businessDays` のどちらか一方。OS の一時フォルダに置く）にして、提案を作る。
-   ```
-   node "${CLAUDE_PLUGIN_ROOT}/tools/inbox.js" submit ".pj-lens/data.json" <projectId|-> "<文章の要約 1 行>" --working
-   node "${CLAUDE_PLUGIN_ROOT}/tools/inbox.js" propose ".pj-lens/data.json" <依頼 ID> "<ops.json>" --summary "<日程は仮の旨と、行ごとの件名・先行・営業日・根拠>"
-   ```
-   `submit --working` は依頼を処理中として作る（`/pj-lens:watch` が動いていても、`inbox` エージェントに取られない）。出力の `id` が依頼 ID。
-5. 変更案の表を **行番号つき**で見せる（件名・先行・営業日・期限・根拠を 1 句）。表の上に「日程は仮です。行番号で直せます（例: 3 行目を 10 営業日に）」と書く。日程変更は自分で反映せず、`replan` を使うよう案内する。
-6. 利用者が行を直したら、`ops.json` を直して **もう一度 `propose`** し、表を見せ直す。承認は、直した表に対して得る。
-7. **承認後に** `approve ".pj-lens/data.json" <依頼 ID>` を実行する（HTML で先に承認されていて失敗したら、その旨を伝える）。
-8. 利用者が提案を断った、またはやめたときは、`reject ".pj-lens/data.json" <依頼 ID>` を実行する（そのままだと、HTML の帯に承認できる提案が残り、後で誤って反映されるおそれがある）。
+- 依頼の先頭が `wbs`・`calendar`・`rules` のときは、その手順に従う。それ以外（メール・議事録・メモの本文が貼られたときなど）は、取り込まずに、「文章の取り込みは、HTML の「Claude Code に依頼する」に本文を貼って頼んでください（`/pj-lens:watch` を動かしておきます）」と案内する。
 
 ## wbs（Excel の WBS を取り込む）
 依頼の例: `wbs C:\path\plan.xlsx`、`wbs plan.xlsx 本社コア更改`
@@ -49,11 +28,11 @@ description: 文章（メール・議事録・メモ）、Excel の WBS、予定
    node "${CLAUDE_PLUGIN_ROOT}/tools/xlsx.js" setup --data "${CLAUDE_PLUGIN_DATA}"
    ```
    表示を利用者に見せて**承認を得てから**、同じコマンドに `--yes` を付けて実行し（承認なしに `--yes` を付けない）、成功したら読み取りをやり直す。状況を調べるだけなら `doctor --data "${CLAUDE_PLUGIN_DATA}"`（何も変更しない）。承認されない、または Python が無い・openpyxl を入れられないときは、**Excel を CSV に保存してもらう**（`.csv` は Read で読める）。シートが複数あるときは、どれを取り込むか聞く（`hidden` は除く）。
-3. **列の対応を決める。** まず `node "${CLAUDE_PLUGIN_ROOT}/tools/intake.js" mapping-get ".pj-lens/data.json" <projectId>` で保存済みの対応を確認する。無ければ、見出しと内容から、列の意味（`group` 大項目・`subgroup` 中項目・`title` 件名・`due` 期限・`start` 開始・`status` 状態・`predecessors` 先行・`memo` メモ・`importance` 重要度）を判断する。対応（Excel の列 → 項目）は `{"title": "作業名", "due": "期限", ...}`（項目 → Excel の列見出し）の JSON にして OS の一時フォルダに置く。**ここでは承認を求めず**、手順 4〜5（`rows.json` の作成と `wbs-plan`。どちらも読み取り専用）まで進め、**対応表と変更案を一緒に見せて、承認を 1 回で得る**（手順 6）。対応が違うと言われたら、対応を直して手順 4 からやり直す。次回は、保存済みの対応を使い、同じく変更案と一緒に見せる。
+3. **列の対応を決める。** まず `node "${CLAUDE_PLUGIN_ROOT}/tools/intake.js" mapping-get ".pj-lens/data.json" <projectId>` で保存済みの対応を確認する。無ければ、見出しと内容から、列の意味（`group` 大項目・`subgroup` 中項目・`title` 件名・`due` 期限・`start` 開始・`status` 状態・`predecessors` 前のタスク・`memo` メモ・`importance` 重要度）を判断する。対応（Excel の列 → 項目）は `{"title": "作業名", "due": "期限", ...}`（項目 → Excel の列見出し）の JSON にして OS の一時フォルダに置く。**ここでは承認を求めず**、手順 4〜5（`rows.json` の作成と `wbs-plan`。どちらも読み取り専用）まで進め、**対応表と変更案を一緒に見せて、承認を 1 回で得る**（手順 6）。対応が違うと言われたら、対応を直して手順 4 からやり直す。次回は、保存済みの対応を使い、同じく変更案と一緒に見せる。
 4. **行を正規化する。** WBS の形式は固定でない。階層は、列（大項目・中項目の列）、結合セル（展開済み）、インデント（`indents`）、番号（1.1.2 など）のいずれかで表されている。次の規則で `rows.json`（`[{group, subgroup, title, due, start, status, importance, memo, predecessorKeys}]`）を作る。
    - **末尾の行（子を持たない行）をタスク**にする。その直上の2段を大項目・中項目にし、それより上の段は大項目の前に `/` で連結する。階層が1〜2段しかなければ、足りない分は省く。子を持つ行（親）はタスクにしない。
    - 日付は `YYYY-MM-DD` にそろえる（`2026/12/18`、シリアル値、和暦など）。状態は `To Do`／`In Progress`／`Done`／`Cancelled` に対応づける（対応が曖昧なら、状態は入れない）。
-   - 先行は `predecessorKeys`（先行する行の「大項目/中項目/件名」を `/` で連結したもの）で書く。
+   - 前のタスクは `predecessorKeys`（前のタスクにあたる行の「大項目/中項目/件名」を `/` で連結したもの）で書く。
    - `rows.json` は OS の一時フォルダ（スクラッチパッドが与えられていればそこ）に書き、プロジェクトのフォルダには置かない。
 5. `node "${CLAUDE_PLUGIN_ROOT}/tools/intake.js" wbs-plan ".pj-lens/data.json" <projectId> "<rows.json>"` を実行し、**列の対応表とあわせて**、結果を表で見せる: **追加**（件数と一覧）、**更新**（旧→新）、変更なし（件数）、**WBS に無い既存**（削除しない）、**rejected**（弾いた行と理由）、**warnings**。再取り込みでは、画面で直した件名（`title`）は上書きされないことを添える。
 6. **承認後に** まず `mapping-set ".pj-lens/data.json" <projectId> "<mapping.json>"` で承認された対応を保存し、続けて `wbs-apply ".pj-lens/data.json" <projectId> "<rows.json>" --source "<取り込んだファイルの名前（パスなし。例: plan.xlsx）>"` を実行する。`--source` は、画面の「設定」タブの取り込み記録に出るファイル名になる（ファイルが分からないときは省く）。結果（追加・更新の件数）を報告する。
