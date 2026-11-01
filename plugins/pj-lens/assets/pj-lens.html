@@ -234,7 +234,6 @@ label{font-size:13px}
 /* 幅は画面サイズに追従(全画面で統一) */
 .wrap{max-width:none}
 .cols{grid-template-columns:minmax(0,1fr) 14px clamp(260px,22vw,340px)}
-@media(max-width:900px){.cols{grid-template-columns:minmax(0,1fr)}}
 .toolbar{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px}
 .cols>.panel>.toolbar{margin-bottom:10px}
 .gscroll{container-type:inline-size;--lw:230px;overflow-x:auto;padding-bottom:6px}
@@ -611,12 +610,7 @@ function offDayChecker(settings) {
 }
 
 /** ガントの着色用: 土日・手動の休み・日本の祝日か。「土日祝を営業日に数える」設定に関わらず同じ。営業日の指定の日は false */
-function restDayChecker(settings) {
-  const st = settings ?? {};
-  const rest = new Set([...datesOf(st.holidays), ...datesOf(st.nationalHolidays?.dates)]);
-  const onSet = new Set(datesOf(st.workdays));
-  return (date) => !onSet.has(date) && (isWeekend(date) || rest.has(date));
-}
+const restDayChecker = (settings) => offDayChecker({ ...settings, countWeekendsAndHolidays: false });
 
 /** 内閣府の祝日一覧（Shift_JIS）を文字列にする */
 const decodeHolidayCsv = (bytes) => new TextDecoder("shift_jis").decode(bytes);
@@ -2076,59 +2070,6 @@ function saveInboxDraft(text, storage = browserStorage()) {
 return { DEFAULT_PREFS, loadPrefs, savePrefs, DEFAULT_REPORT_PREFS, loadReportPrefs, saveReportPrefs, loadInboxDraft, saveInboxDraft };
 })();
 
-/* src/ui/deps.js */
-const { depPath, drawDeps, focusDeps } = (() => {
-// ガントチャートの「前のタスク」の線(編集画面だけ)。描画のあとに、バーの位置を測って SVG を重ねる。
-// ふだんは薄い線、バーにマウスを置くと、そのタスクと前のタスクを色分けし、つなぐ線を濃くして、ほかを薄くする。
-
-/** 前のタスクの右端から、次のタスクの左端への折れ線の path。次のタスクが前のタスクの右端に近いときは、左端の手前で折れる */
-function depPath(from, to) {
-  const x = Math.min(to.left - 8, from.right + 12);
-  return `M${from.right},${from.y} H${x} V${to.y} H${to.left - 1}`;
-}
-
-const ids = (el) => (el.dataset.pre ?? "").split(" ").filter(Boolean);
-const num = (n) => Math.round(n * 10) / 10;
-
-/** gbody(1 つのプロジェクトのガント本体)に、線を引き直す。両端のバーが gbody に出ているものだけ引く。
- *  SVG は HTML の文字列から作る(名前空間の URL を持たずに済む) */
-function drawDeps(gbody) {
-  gbody.querySelector(":scope > svg.gdeps")?.remove();
-  const box = gbody.getBoundingClientRect();
-  const byId = new Map([...gbody.querySelectorAll("[data-gt]")].map((el) => [el.dataset.gt, el]));
-  const mid = (r) => num(r.top + r.height / 2 - box.top);
-  let lines = "";
-  for (const el of gbody.querySelectorAll("[data-pre]")) {
-    const b = el.getBoundingClientRect();
-    for (const pid of ids(el)) {
-      const p = byId.get(pid);
-      if (!p) continue;
-      const a = p.getBoundingClientRect();
-      const left = num(b.left - box.left), y = mid(b);
-      const d = depPath({ right: num(a.right - box.left), y: mid(a) }, { left, y });
-      lines += `<g class="gdep" data-from="${pid}" data-to="${el.dataset.gt}"><path d="${d}"/><polygon points="${left - 1},${y} ${left - 6},${y - 3.5} ${left - 6},${y + 3.5}"/></g>`;
-    }
-  }
-  gbody.insertAdjacentHTML("beforeend", `<svg class="gdeps" aria-hidden="true">${lines}</svg>`);
-}
-
-/** taskId のバーにマウスを置いたときの強調。null で戻す。前のタスクがないバーでは何もしない(全部を薄くしない) */
-function focusDeps(gbody, taskId) {
-  gbody.classList.remove("dep-focus");
-  gbody.querySelectorAll(".dep-self,.dep-pre,.dep-on").forEach((el) => el.classList.remove("dep-self", "dep-pre", "dep-on"));
-  if (!taskId) return;
-  const self = [...gbody.querySelectorAll("[data-gt]")].find((el) => el.dataset.gt === taskId);
-  const pres = self ? ids(self) : [];
-  if (!pres.length) return;
-  gbody.classList.add("dep-focus");
-  self.classList.add("dep-self");
-  gbody.querySelectorAll("[data-gt]").forEach((el) => { if (pres.includes(el.dataset.gt)) el.classList.add("dep-pre"); });
-  gbody.querySelectorAll(".gdep").forEach((g) => { if (g.dataset.to === taskId) g.classList.add("dep-on"); });
-}
-
-return { depPath, drawDeps, focusDeps };
-})();
-
 /* src/ui/savefile.js */
 const { saveHtmlFile } = (() => {
 // HTML ファイルの保存。保存ダイアログが使えるブラウザ（File System Access API）では、保存先を選ばせる（初期の場所はダウンロードフォルダ。前回の場所は覚えない）。
@@ -2218,6 +2159,71 @@ function flagPills(data, projectId, today, flags) {
 }
 
 return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills };
+})();
+
+/* src/ui/deps.js */
+const { depPath, depMarkup, drawDeps, focusDeps } = (() => {
+// ガントチャートの「前のタスク」の線(編集画面だけ)。描画のあとに、バーの位置を測って SVG を重ねる。
+// ふだんは薄い線、バーにマウスを置くと、そのタスクと前のタスクを色分けし、つなぐ線を濃くして、ほかを薄くする。
+
+
+
+/** 前のタスクの右端から、次のタスクの左端への折れ線の path。次のタスクが前のタスクの右端に近いときは、左端の手前で折れる */
+function depPath(from, to) {
+  const x = Math.min(to.left - 8, from.right + 12);
+  return `M${from.right},${from.y} H${x} V${to.y} H${to.left - 1}`;
+}
+
+const ids = (el) => (el.dataset.pre ?? "").split(" ").filter(Boolean);
+const num = (n) => Math.round(n * 10) / 10;
+
+/** 線 1 本の SVG の文字列。タスク ID は、属性に入れるのでエスケープする */
+const depMarkup = ({ to, d, left, y }) =>
+  `<g class="gdep" data-to="${esc(to)}"><path d="${d}"/><polygon points="${left - 1},${y} ${left - 6},${y - 3.5} ${left - 6},${y + 3.5}"/></g>`;
+
+/** 1 つのガント本体(gbody)の線の SVG の文字列。バーの位置を測るだけで、DOM は書き換えない。両端のバーが gbody に出ているものだけ引く */
+function measureDeps(gbody) {
+  const box = gbody.getBoundingClientRect();
+  const byId = new Map([...gbody.querySelectorAll("[data-gt]")].map((el) => [el.dataset.gt, { el, r: el.getBoundingClientRect() }]));
+  const mid = (r) => num(r.top + r.height / 2 - box.top);
+  let lines = "";
+  for (const { el, r: b } of byId.values()) {
+    for (const pid of ids(el)) {
+      const p = byId.get(pid);
+      if (!p) continue;
+      const left = num(b.left - box.left), y = mid(b);
+      const d = depPath({ right: num(p.r.right - box.left), y: mid(p.r) }, { left, y });
+      lines += depMarkup({ to: el.dataset.gt, d, left, y });
+    }
+  }
+  return `<svg class="gdeps" aria-hidden="true">${lines}</svg>`;
+}
+
+/** 画面にあるすべてのガント本体(gbody)の線を引き直す。先に全部を測り、そのあとで全部を書く(測ると書くを混ぜると、そのたびにレイアウトが走る)。
+ *  SVG は HTML の文字列から作る(名前空間の URL を持たずに済む) */
+function drawDeps(gbodies) {
+  const parts = [...gbodies].map((gb) => [gb, measureDeps(gb)]);
+  for (const [gb, svg] of parts) {
+    gb.querySelector(":scope > svg.gdeps")?.remove();
+    gb.insertAdjacentHTML("beforeend", svg);
+  }
+}
+
+/** taskId のバーにマウスを置いたときの強調。null で戻す。前のタスクがないバーでは何もしない(全部を薄くしない) */
+function focusDeps(gbody, taskId) {
+  gbody.classList.remove("dep-focus");
+  gbody.querySelectorAll(".dep-self,.dep-pre,.dep-on").forEach((el) => el.classList.remove("dep-self", "dep-pre", "dep-on"));
+  if (!taskId) return;
+  const self = [...gbody.querySelectorAll("[data-gt]")].find((el) => el.dataset.gt === taskId);
+  const pres = self ? ids(self) : [];
+  if (!pres.length) return;
+  gbody.classList.add("dep-focus");
+  self.classList.add("dep-self");
+  gbody.querySelectorAll("[data-gt]").forEach((el) => { if (pres.includes(el.dataset.gt)) el.classList.add("dep-pre"); });
+  gbody.querySelectorAll(".gdep").forEach((g) => { if (g.dataset.to === taskId) g.classList.add("dep-on"); });
+}
+
+return { depPath, depMarkup, drawDeps, focusDeps };
 })();
 
 /* src/ui/edit.js */
@@ -3151,7 +3157,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
   const all = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
   // 編集画面は、タスクが 0 件でも見出しの「＋」から追加できるように描く
   if (!all.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
-    return `<p class="muted">タスクがありません。${readonly ? "" : "リスト表示で追加してください。"}</p>`;
+    return `<p class="muted">タスクがありません。${readonly ? "" : "リストで追加してください。"}</p>`;
   }
   // 完了を隠すは、複数のプロジェクトを出しているとき、完了したプロジェクト（状態が「完了」、またはタスクが 1 件以上あって全部 Done）も隠す。1 つを選んでいるときは隠さない
   const closed = (p) => { const ts = data.tasks.filter((t) => t.projectId === p.id); return p.status === "完了" || (ts.length > 0 && ts.every((t) => t.status === "Done")); };
@@ -3580,7 +3586,7 @@ function renderWorkload(data, today, opts = {}) {
   const note = w.unconfirmed > 0
     ? `<div class="banner">未確認 ${w.unconfirmed}件（作業枠 ${w.unconfirmedTasks}・会議 ${w.unconfirmedMeetings}）は、まだ含まれていません。スケジュール画面で「実績にする」と確認すると加わります。</div>`
     : "";
-  const none = data.projects.length ? "" : `<p class="muted">プロジェクトがありません。プロジェクト画面から追加してください。</p>`;
+  const none = data.projects.length ? "" : `<p class="muted">プロジェクトがありません。ガントチャートかリストの「＋ プロジェクトを追加」から追加してください。</p>`;
   return `<section class="panel wl" aria-label="稼働">
     <div class="toolbar"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn" data-wnav="-1" aria-label="前へ">←</button><button class="btn" data-wnav="1" aria-label="次へ">→</button><button class="btn" data-wtoday>${todayLabel}</button><strong style="margin-left:6px">${title}</strong></div>
       <div class="seg" role="group" aria-label="期間"><button data-wperiod="week" aria-pressed="${period === "week"}">週</button><button data-wperiod="month" aria-pressed="${period === "month"}">月</button></div></div>
@@ -4175,7 +4181,7 @@ function renderBody() {
 }
 
 /** 前のタスクの線を、画面にあるすべてのガント本体に引き直す */
-function drawAllDeps() { view.querySelectorAll(".gbody").forEach(drawDeps); }
+function drawAllDeps() { drawDeps(view.querySelectorAll(".gbody")); }
 
 function render() {
   hideTip();
@@ -4220,6 +4226,7 @@ function focusSelector(el) {
   if (d.pf && d.pid) return q("data-pf", d.pf) + q("data-pid", d.pid);
   if (d.mf && d.pid) return q("data-mf", d.mf) + q("data-pid", d.pid) + q("data-i", d.i);
   if (d.gadd) return q("data-gadd", d.gadd);
+  if (d.pref) return `[data-pref="${CSS.escape(d.pref)}"]`; // 右の列の取っ手
   if (d.set) return q("data-set", d.set);
   // 規則の欄は、書き換えるとキーワードが変わるので、行の位置（data-ri。書き換えても並びは変わらない）で探す
   if (d.rkw !== undefined) return `[data-rkw][data-ri="${CSS.escape(d.ri)}"]`;
@@ -4509,7 +4516,7 @@ document.querySelector("nav").addEventListener("click", (e) => {
 });
 $("filebar").addEventListener("click", async (e) => {
   const pf = e.target.closest("[data-pref]");
-  if (pf) { togglePref(pf.dataset.pref === "prio" ? "showPrio" : "showActual"); return; }
+  if (pf) { togglePref("showActual"); return; }
   if (e.target.closest("[data-refresh]")) {
     await sync.whenIdle();
     if (sync.failed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }
@@ -5223,7 +5230,11 @@ function pinTableHeads() {
 let pinQueued = false;
 window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); }); } }, { passive: true });
 if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(syncSticky).observe(topbar);
-window.addEventListener("resize", () => { syncSticky(); drawAllDeps(); });
+let depsQueued = false;
+window.addEventListener("resize", () => {
+  syncSticky();
+  if (!depsQueued) { depsQueued = true; requestAnimationFrame(() => { depsQueued = false; drawAllDeps(); }); } // ウィンドウを引っ張る間、線は 1 フレームに 1 回だけ引き直す
+});
 
 render();
 startup();

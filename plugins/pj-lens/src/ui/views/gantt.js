@@ -29,7 +29,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
   const all = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
   // 編集画面は、タスクが 0 件でも見出しの「＋」から追加できるように描く
   if (!all.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
-    return `<p class="muted">タスクがありません。${readonly ? "" : "リスト表示で追加してください。"}</p>`;
+    return `<p class="muted">タスクがありません。${readonly ? "" : "リストで追加してください。"}</p>`;
   }
   // 完了を隠すは、複数のプロジェクトを出しているとき、完了したプロジェクト（状態が「完了」、またはタスクが 1 件以上あって全部 Done）も隠す。1 つを選んでいるときは隠さない
   const closed = (p) => { const ts = data.tasks.filter((t) => t.projectId === p.id); return p.status === "完了" || (ts.length > 0 && ts.every((t) => t.status === "Done")); };

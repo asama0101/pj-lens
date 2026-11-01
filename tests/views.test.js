@@ -49,7 +49,7 @@ test("renderProjects(gantt/all): 全プロジェクト名・進捗率・遅延�
   const ticks = (html.match(/data-tick="[^"]+"/g) ?? []);
   const perSection = ticks.length / 3;
   assert.equal(perSection, Math.floor(perSection), "各ガントの目盛りは同数");
-  assert.ok(html.includes("今日の優先"));
+  assert.ok(html.includes('id="h-rk"'), "既定で右の列（今日の優先）が開いている");
 });
 
 test("renderProjects: 進捗率の値（Cancelled を除く Done の割合）", () => {
@@ -229,7 +229,7 @@ test("renderSchedule(day): 空き時間・優先タスクと理由・枠の種�
   d.tasks.find((t) => t.id === "A5").sessions.push({ id: "S9", date: "2026-10-20", start: "09:00", end: "09:30", kind: "planned" }); // 過ぎた予定 = 未確認
   const html = sched(d);
   assert.ok(html.includes("10:30-13:00 空き"), "会議と枠を除いた空き");
-  assert.ok(html.includes("今日の優先") && html.includes("催促") && html.includes("期限超過 4日"));
+  assert.ok(html.includes('id="h-rk"') && html.includes("催促") && html.includes("期限超過 4日"));
   assert.ok(html.includes('class="blk task unconf'), "未確認");
   const w = renderSchedule(load(), TODAY, { view: "week", date: "2026-10-19", now: NOW });
   assert.ok(w.includes("class=\"blk task act"), "実績");
@@ -318,8 +318,8 @@ test("renderProjects/renderSchedule: showPrio:false で『今日の優先』が�
   assert.ok(!p.includes('id="h-rk"') && p.includes('class="cols one"'), "パネル（見出し h-rk）が出ない。取っ手の名前には「今日の優先」が入る");
   const s = sched(d, { showPrio: false });
   assert.ok(!s.includes('id="h-rk"') && s.includes('class="cols one"'));
-  assert.ok(renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6" }).includes("今日の優先"));
-  assert.ok(sched(d).includes("今日の優先"));
+  assert.ok(renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6" }).includes('id="h-rk"'), "既定で開いている");
+  assert.ok(sched(d).includes('id="h-rk"'), "既定で開いている");
 });
 
 // ---- 大項目・中項目（Task 13） ----

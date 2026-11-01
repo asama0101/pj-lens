@@ -227,7 +227,6 @@ label{font-size:13px}
 /* 幅は画面サイズに追従(全画面で統一) */
 .wrap{max-width:none}
 .cols{grid-template-columns:minmax(0,1fr) 14px clamp(260px,22vw,340px)}
-@media(max-width:900px){.cols{grid-template-columns:minmax(0,1fr)}}
 .toolbar{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px}
 .cols>.panel>.toolbar{margin-bottom:10px}
 .gscroll{container-type:inline-size;--lw:230px;overflow-x:auto;padding-bottom:6px}

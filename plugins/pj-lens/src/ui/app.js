@@ -51,7 +51,7 @@ function renderBody() {
 }
 
 /** 前のタスクの線を、画面にあるすべてのガント本体に引き直す */
-function drawAllDeps() { view.querySelectorAll(".gbody").forEach(drawDeps); }
+function drawAllDeps() { drawDeps(view.querySelectorAll(".gbody")); }
 
 function render() {
   hideTip();
@@ -96,6 +96,7 @@ function focusSelector(el) {
   if (d.pf && d.pid) return q("data-pf", d.pf) + q("data-pid", d.pid);
   if (d.mf && d.pid) return q("data-mf", d.mf) + q("data-pid", d.pid) + q("data-i", d.i);
   if (d.gadd) return q("data-gadd", d.gadd);
+  if (d.pref) return `[data-pref="${CSS.escape(d.pref)}"]`; // 右の列の取っ手
   if (d.set) return q("data-set", d.set);
   // 規則の欄は、書き換えるとキーワードが変わるので、行の位置（data-ri。書き換えても並びは変わらない）で探す
   if (d.rkw !== undefined) return `[data-rkw][data-ri="${CSS.escape(d.ri)}"]`;
@@ -385,7 +386,7 @@ document.querySelector("nav").addEventListener("click", (e) => {
 });
 $("filebar").addEventListener("click", async (e) => {
   const pf = e.target.closest("[data-pref]");
-  if (pf) { togglePref(pf.dataset.pref === "prio" ? "showPrio" : "showActual"); return; }
+  if (pf) { togglePref("showActual"); return; }
   if (e.target.closest("[data-refresh]")) {
     await sync.whenIdle();
     if (sync.failed && !S.confirmRefresh) { S.confirmRefresh = true; toast("保存できていない変更があります。もう一度「更新」を押すと破棄して読み直します"); return; }
@@ -1099,7 +1100,11 @@ function pinTableHeads() {
 let pinQueued = false;
 window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); }); } }, { passive: true });
 if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(syncSticky).observe(topbar);
-window.addEventListener("resize", () => { syncSticky(); drawAllDeps(); });
+let depsQueued = false;
+window.addEventListener("resize", () => {
+  syncSticky();
+  if (!depsQueued) { depsQueued = true; requestAnimationFrame(() => { depsQueued = false; drawAllDeps(); }); } // ウィンドウを引っ張る間、線は 1 フレームに 1 回だけ引き直す
+});
 
 render();
 startup();

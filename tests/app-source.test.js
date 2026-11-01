@@ -235,3 +235,16 @@ test("app.js: 描き直しのあとに drawDeps を呼び、バーへの mouseov
   assert.match(src, /classList\.add\("dep-hide"\)/);
   assert.match(src, /window\.addEventListener\("resize"[\s\S]{0,120}drawAllDeps/);
 });
+
+test("app.js: resize は requestAnimationFrame で間引いて線を引き直す。取っ手は focusSelector で描き直しのあとも戻る。filebar は actual だけを扱う", () => {
+  assert.match(src, /window\.addEventListener\("resize"[\s\S]{0,260}requestAnimationFrame/);
+  assert.match(src, /function focusSelector[\s\S]*d\.pref[\s\S]*return `\[data-pref=/);
+  assert.match(src, /if \(pf\) \{ togglePref\("showActual"\); return; \}/);
+});
+
+test("画面の文言: 「プロジェクト」タブはないので、稼働・ガントチャートの案内に「プロジェクト画面」「リスト表示で」を使わない", () => {
+  const wl = readFileSync(new URL("../plugins/pj-lens/src/ui/views/workload.js", import.meta.url), "utf8");
+  const gt = readFileSync(new URL("../plugins/pj-lens/src/ui/views/gantt.js", import.meta.url), "utf8");
+  assert.doesNotMatch(wl, /プロジェクト画面から/);
+  assert.doesNotMatch(gt, /リスト表示で追加/);
+});

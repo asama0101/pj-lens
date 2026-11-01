@@ -1,6 +1,8 @@
 // ガントチャートの「前のタスク」の線(編集画面だけ)。描画のあとに、バーの位置を測って SVG を重ねる。
 // ふだんは薄い線、バーにマウスを置くと、そのタスクと前のタスクを色分けし、つなぐ線を濃くして、ほかを薄くする。
 
+import { esc } from "./common.js";
+
 /** 前のタスクの右端から、次のタスクの左端への折れ線の path。次のタスクが前のタスクの右端に近いときは、左端の手前で折れる */
 export function depPath(from, to) {
   const x = Math.min(to.left - 8, from.right + 12);
@@ -10,26 +12,36 @@ export function depPath(from, to) {
 const ids = (el) => (el.dataset.pre ?? "").split(" ").filter(Boolean);
 const num = (n) => Math.round(n * 10) / 10;
 
-/** gbody(1 つのプロジェクトのガント本体)に、線を引き直す。両端のバーが gbody に出ているものだけ引く。
- *  SVG は HTML の文字列から作る(名前空間の URL を持たずに済む) */
-export function drawDeps(gbody) {
-  gbody.querySelector(":scope > svg.gdeps")?.remove();
+/** 線 1 本の SVG の文字列。タスク ID は、属性に入れるのでエスケープする */
+export const depMarkup = ({ to, d, left, y }) =>
+  `<g class="gdep" data-to="${esc(to)}"><path d="${d}"/><polygon points="${left - 1},${y} ${left - 6},${y - 3.5} ${left - 6},${y + 3.5}"/></g>`;
+
+/** 1 つのガント本体(gbody)の線の SVG の文字列。バーの位置を測るだけで、DOM は書き換えない。両端のバーが gbody に出ているものだけ引く */
+function measureDeps(gbody) {
   const box = gbody.getBoundingClientRect();
-  const byId = new Map([...gbody.querySelectorAll("[data-gt]")].map((el) => [el.dataset.gt, el]));
+  const byId = new Map([...gbody.querySelectorAll("[data-gt]")].map((el) => [el.dataset.gt, { el, r: el.getBoundingClientRect() }]));
   const mid = (r) => num(r.top + r.height / 2 - box.top);
   let lines = "";
-  for (const el of gbody.querySelectorAll("[data-pre]")) {
-    const b = el.getBoundingClientRect();
+  for (const { el, r: b } of byId.values()) {
     for (const pid of ids(el)) {
       const p = byId.get(pid);
       if (!p) continue;
-      const a = p.getBoundingClientRect();
       const left = num(b.left - box.left), y = mid(b);
-      const d = depPath({ right: num(a.right - box.left), y: mid(a) }, { left, y });
-      lines += `<g class="gdep" data-from="${pid}" data-to="${el.dataset.gt}"><path d="${d}"/><polygon points="${left - 1},${y} ${left - 6},${y - 3.5} ${left - 6},${y + 3.5}"/></g>`;
+      const d = depPath({ right: num(p.r.right - box.left), y: mid(p.r) }, { left, y });
+      lines += depMarkup({ to: el.dataset.gt, d, left, y });
     }
   }
-  gbody.insertAdjacentHTML("beforeend", `<svg class="gdeps" aria-hidden="true">${lines}</svg>`);
+  return `<svg class="gdeps" aria-hidden="true">${lines}</svg>`;
+}
+
+/** 画面にあるすべてのガント本体(gbody)の線を引き直す。先に全部を測り、そのあとで全部を書く(測ると書くを混ぜると、そのたびにレイアウトが走る)。
+ *  SVG は HTML の文字列から作る(名前空間の URL を持たずに済む) */
+export function drawDeps(gbodies) {
+  const parts = [...gbodies].map((gb) => [gb, measureDeps(gb)]);
+  for (const [gb, svg] of parts) {
+    gb.querySelector(":scope > svg.gdeps")?.remove();
+    gb.insertAdjacentHTML("beforeend", svg);
+  }
 }
 
 /** taskId のバーにマウスを置いたときの強調。null で戻す。前のタスクがないバーでは何もしない(全部を薄くしない) */
