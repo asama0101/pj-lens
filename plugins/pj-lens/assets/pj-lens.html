@@ -654,7 +654,7 @@ return { calendarOf, offDayChecker, restDayChecker, decodeHolidayCsv, parseHolid
 })();
 
 /* src/core/schema.js */
-const { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, HOLIDAY_KINDS, REQUEST_STATUS, OP_KINDS, DEFAULT_WORKDAY, isClosed, validate } = (() => {
+const { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, HOLIDAY_KINDS, OP_KINDS, DEFAULT_WORKDAY, isClosed, validate } = (() => {
 // data.json の検証。errors は保存してはいけない不整合、warnings は保存を止めない注意。
 
 
@@ -874,7 +874,7 @@ function validate(data, now = nowLocal()) {
   return { errors, warnings };
 }
 
-return { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, HOLIDAY_KINDS, REQUEST_STATUS, OP_KINDS, DEFAULT_WORKDAY, isClosed, validate };
+return { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, HOLIDAY_KINDS, OP_KINDS, DEFAULT_WORKDAY, isClosed, validate };
 })();
 
 /* src/core/metrics.js */
@@ -999,7 +999,7 @@ return { taskStart, ganttRows, ganttLayout, timeTicks, projectProgress, taskFlag
 })();
 
 /* src/core/sessions.js */
-const { allSessions, sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, runningPlanned, futurePlanned } = (() => {
+const { allSessions, sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, runningPlanned, futurePlanned } = (() => {
 // 作業枠（予定／実績）の規則。枠は「作業した時間の記録」で、タスクの状態は変えない。すべて不変更新。
 
 
@@ -1097,10 +1097,6 @@ function taskActual(data, taskId) {
   return { hours: minutes / 60, firstDate: actual.length ? actual.map((s) => s.date).sort()[0] : null, count: ss.length };
 }
 
-function projectActualHours(data, projectId) {
-  return data.tasks.filter((t) => t.projectId === projectId).reduce((h, t) => h + taskActual(data, t.id).hours, 0);
-}
-
 /** 進行中（開始済みで未終了）の予定枠の ID。タスクを完了にしても残す枠（futurePlanned に含めない） */
 function runningPlanned(data, taskId, now) {
   const t = data.tasks.find((x) => x.id === taskId);
@@ -1115,11 +1111,11 @@ function futurePlanned(data, taskId, now) {
   return (t?.sessions ?? []).filter((s) => s.kind === "planned" && notStarted(s)).map((s) => s.id);
 }
 
-return { allSessions, sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, runningPlanned, futurePlanned };
+return { allSessions, sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, runningPlanned, futurePlanned };
 })();
 
 /* src/core/impact.js */
-const { computeImpact, needsReplan, applyReplan, commitReplan } = (() => {
+const { computeImpact, applyReplan } = (() => {
 // タスクの期限が動いたときの影響範囲。次のタスクは「最小限だけ」動かす（前のタスクの新しい期限を超えないようにする）。
 
 
@@ -1197,11 +1193,6 @@ function computeImpact(data, taskId, deltaDays, { compress = false } = {}) {
   return { changes, projectDueExceeded };
 }
 
-/** 次のタスクが動く、またはプロジェクト期限を超えるなら、利用者に確認してから反映する */
-function needsReplan(impact) {
-  return impact.changes.length > 1 || impact.projectDueExceeded.length > 0;
-}
-
 /**
  * impact の変更を due に反映し、changeLog に日程変更の記録を足す
  */
@@ -1216,17 +1207,7 @@ function applyReplan(data, impact, { reason, cause, deltaDays, at }) {
   };
 }
 
-/**
- * 確認のあとの反映。利用者の編集(edit: data → data)を、いまの最新のデータに対してやり直し、次のタスクの影響もいまのデータで計算し直す。
- * 確認パネルを出している間に入った別の編集を消さないため、パネルを出した時点のスナップショットは使わない
- */
-function commitReplan(data, edit, taskId, deltaDays, { compress = false, reason, cause, at }) {
-  const base = edit(data);
-  const impact = computeImpact(data, taskId, deltaDays, { compress });
-  return applyReplan(base, impact, { reason, cause, deltaDays, at });
-}
-
-return { computeImpact, needsReplan, applyReplan, commitReplan };
+return { computeImpact, applyReplan };
 })();
 
 /* src/core/rules.js */
@@ -3169,7 +3150,7 @@ return { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide, re
 })();
 
 /* src/ui/views/gantt.js */
-const { GANTT_WINDOWS, assignLevels, layoutMilestones, renderGantt } = (() => {
+const { assignLevels, layoutMilestones, renderGantt } = (() => {
 // ガントチャート（画面とレポートで共用）。位置と幅はすべて範囲全体に対する % で表し、画面幅に追従させる。
 
 
@@ -3357,7 +3338,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
   return `${top}<div class="gscroll" data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"><div class="gwide">${sections}</div></div>${readonly ? legend(showActual) : ""}`;
 }
 
-return { GANTT_WINDOWS, assignLevels, layoutMilestones, renderGantt };
+return { assignLevels, layoutMilestones, renderGantt };
 })();
 
 /* src/ui/views/schedule.js */

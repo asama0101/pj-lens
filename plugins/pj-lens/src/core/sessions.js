@@ -95,10 +95,6 @@ export function taskActual(data, taskId) {
   return { hours: minutes / 60, firstDate: actual.length ? actual.map((s) => s.date).sort()[0] : null, count: ss.length };
 }
 
-export function projectActualHours(data, projectId) {
-  return data.tasks.filter((t) => t.projectId === projectId).reduce((h, t) => h + taskActual(data, t.id).hours, 0);
-}
-
 /** 進行中（開始済みで未終了）の予定枠の ID。タスクを完了にしても残す枠（futurePlanned に含めない） */
 export function runningPlanned(data, taskId, now) {
   const t = data.tasks.find((x) => x.id === taskId);

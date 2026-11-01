@@ -2,5 +2,6 @@
   "name": "pj-lens",
   "version": "1.2.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "engines": { "node": ">=24" }
 }

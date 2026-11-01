@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, projectActualHours, futurePlanned, runningPlanned } from "../plugins/pj-lens/src/core/sessions.js";
+import { sessionKind, addSession, moveSession, resizeSession, confirmSession, removeSession, taskActual, futurePlanned, runningPlanned } from "../plugins/pj-lens/src/core/sessions.js";
 
 const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
 const NOW = { date: "2026-10-20", time: "12:00" }; // 火曜
@@ -88,13 +88,11 @@ test("removeSession と、枠の操作でタスクの状態は変わらない", 
   assert.equal(JSON.stringify(x.tasks.map((t) => [t.id, t.status, t.doneAt])), before);
 });
 
-test("taskActual / projectActualHours / futurePlanned", () => {
+test("taskActual / futurePlanned", () => {
   const d = load();
   const t = task(d, "A5");
   assert.deepEqual(taskActual(d, "A5"), { hours: 3.5, firstDate: "2026-10-14", count: 3 });
   assert.deepEqual(taskActual(d, "A4"), { hours: 0, firstDate: null, count: 0 });
-  assert.equal(projectActualHours(d, "A"), 3.5);
-  assert.equal(projectActualHours(d, "B"), 1);
   assert.deepEqual(futurePlanned(d, "A5", NOW), ["S3"]);
   assert.deepEqual(futurePlanned(d, "A1", NOW), []);
   assert.equal(t.sessions.length, 3);
