@@ -10,7 +10,7 @@ xlsx の全シートを JSON（UTF-8）で標準出力へ出す。
 - indents は行ごとのインデント量（各行の最初の値のあるセルの、先頭の空白の数と Excel のインデント設定の大きい方）。
   インデントで階層を表す WBS を読むために出す（文字列からは先頭の空白を除くため）
 - 非表示の行・列は読み取らず（列は詰める）、除いた数を hiddenRows・hiddenColumns に出す
-- 1 シート最大 2000 行（超えたら truncated: true）
+- 1 シート最大 2000 行（超えたら truncated: true）。読む範囲は 5000 行 × 200 列まで（シートの範囲がそれより広いときも truncated: true）
 """
 import datetime
 import json
@@ -20,6 +20,9 @@ from openpyxl import load_workbook
 from openpyxl.utils import column_index_from_string
 
 MAX_ROWS = 2000
+# 読む範囲の上限。遠い隅にセルが 1 つあるだけで、範囲が A1:XFD1048576 まで広がり、読み込みが終わらなくなるのを防ぐ（非表示の行・空行を飛ばす余裕を見て、MAX_ROWS より大きくする）
+SCAN_ROWS = 5000
+SCAN_COLS = 200
 
 
 def cell_value(v):
@@ -54,7 +57,7 @@ def hidden_columns(ws):
 
 
 def sheet_rows(ws):
-    grid = [list(r) for r in ws.iter_rows(values_only=True)]
+    grid = [list(r) for r in ws.iter_rows(max_row=min(ws.max_row, SCAN_ROWS), max_col=min(ws.max_column, SCAN_COLS), values_only=True)]
     for rng in ws.merged_cells.ranges:
         top = grid[rng.min_row - 1][rng.min_col - 1] if rng.min_row <= len(grid) and rng.min_col <= len(grid[rng.min_row - 1]) else None
         for r in range(rng.min_row - 1, min(rng.max_row, len(grid))):
@@ -81,7 +84,7 @@ def sheet_rows(ws):
         col, _, raw = cells[first]
         excel = int(getattr(ws.cell(row=r, column=col).alignment, "indent", 0) or 0)
         indents.append(max(leading_ws(raw), excel))
-    truncated = len(rows) > MAX_ROWS
+    truncated = len(rows) > MAX_ROWS or ws.max_row > SCAN_ROWS or ws.max_column > SCAN_COLS
     return rows[:MAX_ROWS], indents[:MAX_ROWS], truncated, len([r for r in hidden_rows if r <= len(grid)]), len([c for c in hidden_cols if c <= max((len(r) for r in grid), default=0)])
 
 

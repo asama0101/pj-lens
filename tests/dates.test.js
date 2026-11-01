@@ -42,3 +42,10 @@ test("dueAfter: countWeekends が true なら土日を飛ばさない。休み�
   assert.equal(dueAfter("2026-10-30", 2, { countWeekends: true, off: ["2026-10-31"] }), "2026-11-02"); // 土が手動の休みなら飛ばす
   assert.equal(dueAfter("2026-10-30", 1, { countWeekends: false }), "2026-11-02");
 });
+
+test("dueAfter: 営業日が 3650 日（約 10 年）を超えるなら、数え始めずに例外にする（打ち間違いで止まらない）", () => {
+  assert.equal(dueAfter("2026-10-23", 3650).length, 10);
+  assert.throws(() => dueAfter("2026-10-23", 3651), /3650/);
+  assert.throws(() => dueAfter("2026-10-23", 1000000000), /3650/);
+  assert.equal(dueAfter("2026-10-23", 0), "2026-10-23");
+});

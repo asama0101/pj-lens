@@ -530,12 +530,15 @@ function addDays(date, n) {
   return `${pad(y, 4)}-${pad(m)}-${pad(d)}`;
 }
 
+const MAX_BUSINESS_DAYS = 3650;
+
 /**
  * baseDate の businessDays 営業日後。businessDays は 0 以上の整数で、0 なら baseDate のまま。
  * cal.on（営業日の指定）の日は営業日。それ以外は、cal.off（休み）と土日を飛ばす。cal.countWeekends が true なら、土日は飛ばさない。
  */
 function dueAfter(baseDate, businessDays, cal = {}) {
   if (!Number.isInteger(businessDays) || businessDays < 0) throw new Error(`営業日は 0 以上の整数にしてください: ${businessDays}`);
+  if (businessDays > MAX_BUSINESS_DAYS) throw new Error(`営業日は ${MAX_BUSINESS_DAYS} 日（約 10 年）以下にしてください: ${businessDays}`); // 1 日ずつ数えるので、打ち間違いで止まらないようにする
   const set = (key, label) => {
     const list = cal?.[key] ?? [];
     if (!Array.isArray(list) || !list.every(isDate)) throw new Error(`${label}は日付（YYYY-MM-DD）の配列にしてください`);

@@ -270,3 +270,17 @@ test("統合: 空白と日本語を含む置き場で doctor が動き、setup �
   assert.equal(r.status, 0, r.stderr);
   assert.equal(JSON.parse(r.stdout).sheets.length, 3);
 });
+
+test("統合: fixtures/wbs-stray-cell.xlsx（範囲が A1:XFD1048576 まで広がる、遠い隅のセル）でも、止まらずに 2 行を読む（Python 3 が無い環境だけ skip）", (t) => {
+  const real = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8" });
+  if (!pickPython(real)) return t.skip("Python 3 が見つかりません");
+  const fixture = fileURLToPath(new URL("fixtures/wbs-stray-cell.xlsx", import.meta.url));
+  const dataDir = join(tmpdir(), "pjlens-test-xlsx");
+  const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), "--data", dataDir, fixture, "--yes"], { encoding: "utf8", timeout: 300000 });
+  assert.equal(r.status, 0, `${r.error ?? ""}${r.stderr}`);
+  const sheet = JSON.parse(r.stdout).sheets[0];
+  assert.deepEqual(sheet.rows[0].slice(0, 2), ["件名", "期限"]);
+  assert.deepEqual(sheet.rows[1].slice(0, 2), ["A", "2026-11-01"]);
+  assert.equal(sheet.rows.length, 2, "遠い隅の空のセルだけの行は、末尾の空行として除く");
+  assert.equal(sheet.truncated, true, "読む範囲（5000 行 × 200 列）を超えて切ったことを知らせる");
+});
