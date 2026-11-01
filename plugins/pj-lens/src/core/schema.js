@@ -7,7 +7,7 @@ export const PROJECT_TYPE = ["増設", "更改", "改善", "不具合対処", "�
 export const IMPORTANCE = ["high", "mid", "low"];
 export const CAUSES = ["ベンダー", "社内", "自分", "その他"];
 export const HOLIDAY_KINDS = ["祝日", "有給", "その他"];
-export const REQUEST_STATUS = ["pending", "working", "question", "proposed", "applied", "rejected", "failed"];
+const REQUEST_STATUS = ["pending", "working", "question", "proposed", "applied", "rejected", "failed"];
 export const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask", "addProject", "setStatus", "setImportance", "updateProject", "removeTask", "removeProject", "addMilestone", "moveMilestone", "removeMilestone"];
 export const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 

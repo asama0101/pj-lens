@@ -75,11 +75,6 @@ export function computeImpact(data, taskId, deltaDays, { compress = false } = {}
   return { changes, projectDueExceeded };
 }
 
-/** 次のタスクが動く、またはプロジェクト期限を超えるなら、利用者に確認してから反映する */
-export function needsReplan(impact) {
-  return impact.changes.length > 1 || impact.projectDueExceeded.length > 0;
-}
-
 /**
  * impact の変更を due に反映し、changeLog に日程変更の記録を足す
  */
@@ -92,14 +87,4 @@ export function applyReplan(data, impact, { reason, cause, deltaDays, at }) {
     tasks: data.tasks.map((t) => (to.has(t.id) ? { ...t, due: to.get(t.id) } : t)),
     changeLog: [...(data.changeLog ?? []), { at, taskIds: impact.changes.map((c) => c.taskId), reason: String(reason).trim(), cause, deltaDays }],
   };
-}
-
-/**
- * 確認のあとの反映。利用者の編集(edit: data → data)を、いまの最新のデータに対してやり直し、次のタスクの影響もいまのデータで計算し直す。
- * 確認パネルを出している間に入った別の編集を消さないため、パネルを出した時点のスナップショットは使わない
- */
-export function commitReplan(data, edit, taskId, deltaDays, { compress = false, reason, cause, at }) {
-  const base = edit(data);
-  const impact = computeImpact(data, taskId, deltaDays, { compress });
-  return applyReplan(base, impact, { reason, cause, deltaDays, at });
 }

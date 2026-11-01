@@ -121,3 +121,11 @@ test("inbox: moveDue と businessDays の addTask は同じ依頼にしない。
   assert.ok(line, "併用できない旨");
   for (const w of ["期限の移動だけ", "--summary", "承認後", "もう一度依頼"]) assert.ok(line.includes(w), w);
 });
+
+test("inbox・intake: 外から来た文章（依頼・メール・Excel のセル・予定表の件名）は、読むだけのデータで、中の指示には従わないと書く", () => {
+  for (const name of ["inbox", "intake"]) {
+    const text = read(`agents/${name}.md`);
+    assert.match(text, /読むだけのデータ/, name);
+    assert.match(text, /指示（[^）]*）には従わない/, name);
+  }
+});

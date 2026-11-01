@@ -56,7 +56,7 @@ test("存在しない taskId は例外", () => {
 });
 
 // ---- 前倒しの詰め・適用（Task 5） ----
-import { applyReplan, needsReplan } from "../plugins/pj-lens/src/core/impact.js";
+import { applyReplan } from "../plugins/pj-lens/src/core/impact.js";
 
 test("compress なしの前倒しは、対象だけ動き次のタスクは動かない（従来どおり）", () => {
   const r = computeImpact(chain(), "T1", -3);
@@ -98,26 +98,4 @@ test("applyReplan: 理由が空、原因が不正なら例外", () => {
   const impact = computeImpact(d, "T1", 5);
   assert.throws(() => applyReplan(d, impact, { reason: " ", cause: "ベンダー", deltaDays: 5, at: "2026-10-20" }), /理由/);
   assert.throws(() => applyReplan(d, impact, { reason: "x", cause: "天災", deltaDays: 5, at: "2026-10-20" }), /原因/);
-});
-
-test("needsReplan: 対象だけなら false、次のタスクが動く／プロジェクト期限を超えるなら true", () => {
-  assert.equal(needsReplan(computeImpact(chain(), "T3", 1)), false);
-  assert.equal(needsReplan(computeImpact(chain(), "T1", 5)), true);
-  assert.equal(needsReplan(computeImpact(mk([["T1", "2026-12-30"]], "2026-12-31"), "T1", 5)), true);
-});
-
-// ---- 最終レビューの修正: 確認パネルを出している間の別の編集を消さない ----
-import { commitReplan } from "../plugins/pj-lens/src/core/impact.js";
-
-test("commitReplan: 確認中に別の編集が入っても、最新のデータに対して計算し、その編集を消さない", () => {
-  const first = { ...chain(), changeLog: [] };
-  const edit = (d) => ({ ...d, tasks: d.tasks.map((t) => (t.id === "T1" ? { ...t, due: "2026-10-22" } : t)) });
-  // 確認パネルを出した後に、別のタスクのメモが変わった
-  const latest = { ...first, tasks: first.tasks.map((t) => (t.id === "T3" ? { ...t, memo: "あとから入れたメモ" } : t)) };
-  const n = commitReplan(latest, edit, "T1", 12, { reason: "遅れ", cause: "ベンダー", at: "2026-10-20" });
-  assert.equal(n.tasks.find((t) => t.id === "T3").memo, "あとから入れたメモ");
-  assert.deepEqual(n.tasks.map((t) => t.due), ["2026-10-22", "2026-10-22", "2026-10-22"]);
-  assert.equal(n.changeLog.length, 1);
-  assert.deepEqual(n.changeLog[0].taskIds, ["T1", "T2", "T3"]);
-  assert.throws(() => commitReplan(latest, edit, "T1", 12, { reason: "", cause: "ベンダー", at: "2026-10-20" }), /理由/);
 });
