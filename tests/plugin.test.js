@@ -126,3 +126,11 @@ test("README: コマンド一覧に inbox・replan・holidays が無く、init�
   for (const n of ["init", "mcp", "watch", "intake"]) assert.ok(table.includes(`/pj-lens:${n}`), n);
   for (const n of ["inbox", "replan", "holidays"]) assert.ok(!readme.includes(`/pj-lens:${n}`), n);
 });
+
+test("Node の版: package.json の engines が README の動作確認の版（24）と一致し、GitHub Actions が同じ版で npm test を実行する", () => {
+  assert.equal(json("package.json").engines?.node, ">=24");
+  assert.match(readFileSync(new URL("README.md", repoRoot), "utf8"), /Node\.js（24 で動作確認）/);
+  const wf = readFileSync(new URL(".github/workflows/test.yml", repoRoot), "utf8");
+  assert.match(wf, /node-version: 24\b/);
+  assert.match(wf, /run: npm test\b/);
+});
