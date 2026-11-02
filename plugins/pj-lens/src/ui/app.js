@@ -715,8 +715,8 @@ function onChange(el) {
   }
   if (el.dataset.addpre !== undefined) {
     if (el.value) {
-      const id = el.dataset.addpre, pre = el.value, start = S.data.tasks.find((t) => t.id === id)?.start;
-      apply((d) => addPredecessor(d, id, pre, today), start ? `前のタスクを追加しました。開始日 ${fmtMD(start)} を外し、前のタスクの期限から決まる形にしました` : "前のタスクを追加しました");
+      const id = el.dataset.addpre, pre = el.value;
+      apply((d) => addPredecessor(d, id, pre, today), "前のタスクを追加しました");
     }
     return;
   }
@@ -768,13 +768,48 @@ function showTip(text, x, y) {
 function hideTip() { document.getElementById("dragtip")?.remove(); }
 
 view.addEventListener("dragstart", (e) => {
-  const li = e.target.closest("[data-pick]"), bl = e.target.closest("[data-dragsess]"), mg = e.target.closest("[data-dragmtg]");
-  drag = li ? { kind: "task", id: li.dataset.pick } : bl ? { kind: "sess", id: bl.dataset.dragsess } : mg ? { kind: "mtg", id: mg.dataset.dragmtg } : null;
+  const li = e.target.closest("[data-pick]"), bl = e.target.closest("[data-dragsess]"), mg = e.target.closest("[data-dragmtg]"), mv = e.target.closest("[data-mvh]");
+  drag = li ? { kind: "task", id: li.dataset.pick } : bl ? { kind: "sess", id: bl.dataset.dragsess } : mg ? { kind: "mtg", id: mg.dataset.dragmtg } : mv ? { kind: "order", id: mv.dataset.mvh } : null;
   if (!drag) return;
+  if (mv) e.dataTransfer.setDragImage(mv.closest("tr,.g-label"), 12, 12); // 動かしているタスクの見た目にする（ガントは、横に長い行ではなくラベルだけ）
   e.dataTransfer.setData("text/plain", drag.id);
   e.dataTransfer.effectAllowed = "move";
 });
+/** タスクの並べ替え（リスト・ガントの「⠿」）。落とす位置の行から、moveTask に渡す指定を決める。落とせない・動かないときは null */
+function planOrder(e) {
+  const row = e.target.closest?.("tr, .g-row");
+  if (!row) return null;
+  const dragged = S.data.tasks.find((t) => t.id === drag.id);
+  const info = (r) => { const s = r.matches("tr") ? r : r.querySelector(":scope > .g-label"); return s ? { id: s.dataset.mvrow, pid: s.dataset.mvgrp, g: s.dataset.mvg ?? "", sg: s.dataset.mvsg ?? "" } : {}; };
+  const here = info(row);
+  const target = here.id ? S.data.tasks.find((t) => t.id === here.id) : null;
+  const pid = target ? target.projectId : here.pid;
+  if (!dragged || !pid || pid !== dragged.projectId) return null;
+  const rows = [...row.parentNode.children].filter((r) => r.matches("tr, .g-row"));
+  // その行より下で、同じセクションの先頭のタスク行（見出しに当たったらなし）
+  const nextTaskId = () => { for (const r of rows.slice(rows.indexOf(row) + 1)) { const i = info(r); if (i.id) return i.id; if (i.pid) return null; } return null; };
+  let plan;
+  if (target) {
+    const box = row.getBoundingClientRect();
+    plan = e.clientY < box.top + box.height / 2
+      ? { beforeId: target.id, pos: "before" }
+      : { beforeId: nextTaskId(), group: target.group ?? "", subgroup: target.subgroup ?? "", pos: "after" };
+  } else {
+    plan = { beforeId: nextTaskId(), group: here.g, subgroup: here.sg, pos: "after" }; // 見出しへ落とすと、そのセクションの先頭
+  }
+  if (moveTask(S.data, drag.id, plan) === S.data) return null;
+  return { ...plan, row };
+}
+const clearOrderLine = () => view.querySelectorAll(".drop-before,.drop-after").forEach((r) => r.classList.remove("drop-before", "drop-after"));
 view.addEventListener("dragover", (e) => {
+  if (drag?.kind === "order") {
+    const p = planOrder(e);
+    clearOrderLine();
+    if (!p) return;
+    e.preventDefault();
+    p.row.classList.add(p.pos === "before" ? "drop-before" : "drop-after");
+    return;
+  }
   const dz = e.target.closest(".dz");
   if (!dz || !drag) return;
   e.preventDefault();
@@ -787,6 +822,14 @@ view.addEventListener("dragover", (e) => {
   if (p.error) hideTip(); else showTip(`${hm(p.st)}–${hm(p.end)}`, e.clientX, e.clientY);
 });
 view.addEventListener("drop", (e) => {
+  if (drag?.kind === "order") {
+    e.preventDefault();
+    const p = planOrder(e), id = drag.id;
+    clearOrderLine();
+    drag = null;
+    if (p) apply((d) => moveTask(d, id, { beforeId: p.beforeId, group: p.group, subgroup: p.subgroup }), "並べ替えました");
+    return;
+  }
   const dz = e.target.closest(".dz");
   if (!dz || !drag) return;
   e.preventDefault();
@@ -798,7 +841,7 @@ view.addEventListener("drop", (e) => {
   S.picked = null;
   apply((d) => p.next(d), `${p.msg}${p.warning ? `(${p.warning})` : ""}`);
 });
-view.addEventListener("dragend", () => { drag = null; ghost?.remove(); ghost = null; hideTip(); });
+view.addEventListener("dragend", () => { clearOrderLine(); drag = null; ghost?.remove(); ghost = null; hideTip(); });
 
 /* ---------- 枠・手入力の会議の下端ドラッグ(終了時刻を変える) ---------- */
 view.addEventListener("mousedown", (e) => {
@@ -854,12 +897,12 @@ view.addEventListener("mousedown", (e) => {
   const sc = tg.closest(".gscroll"), lane = tg.closest(".g-lane");
   const total = +sc.dataset.span, s0 = sc.dataset.s0, ppd = lane.offsetWidth / total;
   const idx = (d) => diffDays(d, s0);
-  let kind, t, p, mIdx, mode = handle, s, en;
+  let kind, t, p, mIdx, mode = handle, s, en, raw;
   if (tg.dataset.gt) {
     kind = "t"; t = S.data.tasks.find((x) => x.id === tg.dataset.gt);
-    en = idx(t.due); s = idx(taskStart(S.data, t.id));
-    const hasPre = (t.predecessors ?? []).length > 0;
-    if (tg.classList.contains("dot") || s === en) mode = !t.start || t.start > t.due ? "r" : "both-point";
+    raw = idx(taskStart(S.data, t.id));
+    en = idx(t.due); s = Math.min(raw, en); // 開始が期限より後のタスクは、描画と同じく期限の 1 日分の棒として扱う
+    if (tg.classList.contains("dot") || (!t.start && raw > en)) mode = "r"; // 点（期限だけのタスク）と、開始日の指定がなく前のタスクの期限が期限より後のタスクは、期限だけが動く（開始日を足し引きすると、期限より後になるため）
   } else if (tg.dataset.gp) {
     kind = "p"; p = S.data.projects.find((x) => x.id === tg.dataset.gp);
     s = idx(p.start); en = idx(p.due);
@@ -874,13 +917,21 @@ view.addEventListener("mousedown", (e) => {
   const x0 = e.clientX;
   let dd = 0;
   const pct = (n) => `${((n / total) * 100).toFixed(3)}%`;
+  // 右つまみ: 開始日の指定がなく、開始 ≥ 期限のタスク（点・前のタスクだけが頼りの帯）は、前のタスクの期限へ跳ばさず、そのまま動かす。それ以外は開始日より前へ動かさない
+  const edges = (dd) => {
+    if (mode === "l") return [Math.min(s + dd, en), en];
+    if (mode === "r") {
+      const free = kind === "m" || (kind === "t" && !t.start && s >= en);
+      const ne = free ? en + dd : Math.max(en + dd, s);
+      return [kind === "t" && free ? Math.min(raw, ne) : s, ne]; // 開始日の指定がないタスクは、保存後、前のタスクの期限（raw）から期限までの棒になる（期限が raw より前なら、期限の 1 日分）。プレビューも同じにする
+    }
+    return [s + dd, en + dd];
+  };
   const move = (ev) => {
     dd = Math.round((ev.clientX - x0) / ppd);
-    let ns = s, ne = en;
-    if (mode === "l") ns = Math.min(s + dd, en);
-    else if (mode === "r") ne = kind === "m" ? en + dd : (s >= en ? en + dd : Math.max(en + dd, s)); // 点（開始 ≥ 期限）は、前のタスクの期限へ跳ばさず、そのまま動かす
-    else { ns = s + dd; ne = en + dd; }
-    if (kind === "m" || tg.classList.contains("dot")) tg.style.left = pct(ne);
+    const [ns, ne] = edges(dd);
+    const dot = tg.classList.contains("dot");
+    if (kind === "m" || dot) tg.style.left = dot ? `calc(${pct(ne)} + ${pct(0.5)})` : pct(ne); // 点は日付マスの中央（描画と同じ）
     else { tg.style.left = pct(ns); tg.style.width = pct(ne - ns + 1); } // 期限日のマスを含める（描画と同じ）
     tg.title = `${fmtMD(addDays(s0, ns))}〜${fmtMD(addDays(s0, ne))}`;
   };
@@ -889,10 +940,7 @@ view.addEventListener("mousedown", (e) => {
     document.removeEventListener("mouseup", up);
     gbody?.classList.remove("dep-hide");
     if (!dd) { if (kind === "t") openTaskPop(t.id, ev.clientX, ev.clientY); return; } // 動かさずに離した = クリック
-    let ns = s, ne = en;
-    if (mode === "l") ns = Math.min(s + dd, en);
-    else if (mode === "r") ne = kind === "m" ? en + dd : (s >= en ? en + dd : Math.max(en + dd, s)); // 点（開始 ≥ 期限）は、前のタスクの期限へ跳ばさず、そのまま動かす
-    else { ns = s + dd; ne = en + dd; }
+    const [ns, ne] = edges(dd);
     let result, msg, dragEdit;
     if (kind === "t") {
       const m = mode === "l" ? "start" : mode === "r" ? "due" : "both";
@@ -1082,6 +1130,14 @@ function pinTableHeads() {
     const r = box.getBoundingClientRect();
     const dy = Math.max(0, Math.min(top - r.top, r.height - ths[0].offsetHeight - 4));
     for (const th of ths) th.style.transform = dy ? `translateY(${dy}px)` : "";
+  }
+  // ガントの日付軸も同じ手法で固定する（.gscroll が overflow-x:auto なので sticky が効かない）。固定位置は、ヘッダー・フィルタ行・.gtop の下。プロジェクトごとに、その下端で止める
+  const axisTop = top + (view.querySelector(".gtop")?.offsetHeight ?? 0);
+  for (const gb of view.querySelectorAll(".gbody")) {
+    const head = gb.querySelector(".g-head");
+    if (!head) continue;
+    const dy = Math.max(0, Math.min(axisTop - gb.getBoundingClientRect().top, gb.offsetHeight - head.offsetHeight - 4)); // 軸の行は gbody の先頭なので、動かす前の上端 = gbody の上端
+    head.style.transform = dy ? `translateY(${dy}px)` : "";
   }
 }
 let pinQueued = false;

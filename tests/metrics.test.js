@@ -69,8 +69,12 @@ test("ganttRows: 行・point・actual・マイルストーン", () => {
   assert.equal(g.rows.find((r) => r.taskId === "A4").actual, null);
   assert.deepEqual(g.milestones.map((m) => m.name), ["機器発注", "本番切替"]);
   assert.ok(g.range.start <= "2026-06-01" && g.range.end >= "2027-03-31");
-  const bad = mk([{ id: "T1", due: "2026-10-05", start: "2026-10-20" }]);
-  assert.equal(ganttRows(bad, "P", TODAY).rows[0].point, true);
+  // 点は、開始も前のタスクもない（期限だけの）タスクに限る。開始が期限以後のタスク・前のタスクがあるタスクは、期限の 1 日分の棒
+  const rowOf = (t) => ganttRows(mk([{ id: "T0", due: "2026-10-01" }, t]), "P", TODAY).rows.find((r) => r.taskId === t.id);
+  assert.deepEqual([rowOf({ id: "T1", due: "2026-10-05" })].map((r) => [r.start, r.end, r.point]), [["2026-10-05", "2026-10-05", true]]);
+  assert.deepEqual([rowOf({ id: "T1", due: "2026-10-05", start: "2026-10-05" })].map((r) => [r.start, r.end, r.point]), [["2026-10-05", "2026-10-05", false]]);
+  assert.deepEqual([rowOf({ id: "T1", due: "2026-10-05", start: "2026-10-20" })].map((r) => [r.start, r.end, r.point]), [["2026-10-05", "2026-10-05", false]]);
+  assert.deepEqual([rowOf({ id: "T1", due: "2026-10-01", predecessors: ["T0"] })].map((r) => [r.start, r.end, r.point]), [["2026-10-01", "2026-10-01", false]], "前のタスクの期限と同じ日");
   assert.deepEqual(ganttRows(mk([]), "P", TODAY).rows, []);
 });
 

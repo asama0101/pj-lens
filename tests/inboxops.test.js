@@ -197,13 +197,14 @@ test("planOps(addTask): 前のタスクがなければ開始日は今日（期�
   assert.deepEqual(warn(out).filter((w) => !warn(d).includes(w)), [], "登録で、新しい注意が増えない");
 });
 
-test("planOps(addPred): 開始日のあるタスクに前のタスクを足すと、開始日を外し（前のタスクから決まる）、その旨を警告する。validate の注意が増えない", () => {
+test("planOps(addPred): 開始日のあるタスクに前のタスクを足しても、開始日は変えず、警告も出さない。validate の注意が増えない", () => {
   const d = load();
-  assert.ok(d.tasks.find((t) => t.id === "A5").start, "前提: A5 は開始日を持つ");
+  const start = d.tasks.find((t) => t.id === "A5").start;
+  assert.ok(start, "前提: A5 は開始日を持つ");
   const p = planOps(d, [{ op: "addPred", taskId: "A5", predId: "A3" }], { today: TODAY });
-  assert.ok(p.warnings.some((w) => w.includes("A5") && w.includes("開始日")), "開始日を外すことを警告する");
+  assert.ok(!p.warnings.some((w) => w.includes("A5") && w.includes("開始日")), "開始日の警告は出ない");
   const out = apply(d, [{ op: "addPred", taskId: "A5", predId: "A3" }]);
-  assert.equal(out.tasks.find((t) => t.id === "A5").start, null);
+  assert.equal(out.tasks.find((t) => t.id === "A5").start, start);
   const warn = (x) => validate(x, { date: TODAY, time: "10:00" }).warnings;
   assert.deepEqual(warn(out).filter((w) => !warn(d).includes(w)), [], "新しい注意が増えない");
 });

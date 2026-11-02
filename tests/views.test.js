@@ -1050,16 +1050,44 @@ test("renderGantt: タスクのバー・プロジェクト全体のバー・実�
   near(+/class="g-due mono" style="left:([\d.]+)%/.exec(sumRow)[1], edge(P.due), "プロジェクト全体の期限の表示");
 });
 
-test("renderGantt: 開始と期限が同じ日のタスクは点（dot）で、期限の表示はその日の左端のまま（バーのように翌日へ動かさない）", () => {
+test("renderGantt: 重要度が高・中の未完了タスクのラベルに印（imp-high・imp-mid）が付き、低・未設定・完了したタスクには付かない", () => {
+  const d = load();
+  const set = (id, imp, status) => { const t = d.tasks.find((x) => x.id === id); t.importance = imp; if (status) t.status = status; };
+  set("A1", "high", "Done"); set("A2", "mid", "Cancelled"); set("A3", "high", "Waiting"); set("A4", "mid", "To Do"); set("A5", "low", "In Progress"); set("A6", null, "To Do");
+  const html = gantt(d, ["A"]);
+  const label = (id) => /<div class="g-label([^"]*)"/.exec(html.split('<div class="g-row">').find((r) => r.includes(`data-gt="${id}"`)))[1];
+  assert.deepEqual(["A1", "A2", "A3", "A4", "A5", "A6"].map(label), ["", "", " imp-high", " imp-mid", "", ""]);
+});
+
+test("renderGantt: 開始も前のタスクもない（期限だけの）タスクは点で、期限の日のマスの中央に置く。期限の表示は翌日の左端", () => {
   const d = load();
   const a1 = d.tasks.find((t) => t.id === "A1");
-  a1.start = a1.due; // 前のタスクなし・開始 = 期限 → 点
+  a1.start = null; a1.predecessors = []; // 期限だけ → 点
   const html = gantt(d, ["A"]);
   const s0 = /data-s0="([^"]+)"/.exec(html)[1], span = +/data-span="(\d+)"/.exec(html)[1];
-  assert.match(html, /<i class="dot mk[^"]*"[^>]*data-gt="A1"/, "点で描かれる");
   const row = html.split('<div class="g-row">').find((r) => r.includes('data-gt="A1"'));
+  const m = /<i class="dot mk[^"]*"[^>]*data-gt="A1"[^>]*style="left:calc\(([\d.]+)% \+ ([\d.]+)%\)/.exec(row);
+  assert.ok(m, "点で描かれ、左は『期限の日の左端 + 半マス』");
+  assert.ok(Math.abs(+m[1] + +m[2] - ((diffDays(a1.due, s0) + 0.5) / span) * 100) < 0.01, `マスの中央: ${m[1]} + ${m[2]}`);
   const left = +/class="g-due mono" style="left:([\d.]+)%/.exec(row)[1];
-  assert.ok(Math.abs(left - (diffDays(a1.due, s0) / span) * 100) < 0.01, `期限の表示は左端: ${left}`);
+  assert.ok(Math.abs(left - ((diffDays(a1.due, s0) + 1) / span) * 100) < 0.01, `期限の表示は翌日の左端: ${left}`);
+});
+
+test("renderGantt: 開始が期限と同じ日のタスクと、前のタスクの期限が期限と同じ日のタスクは、1 日分の棒（両端のつまみつき）で、点にしない", () => {
+  const d = load();
+  const a1 = d.tasks.find((t) => t.id === "A1");
+  a1.start = a1.due; a1.predecessors = [];
+  const a2 = d.tasks.find((t) => t.id === "A2");
+  a2.start = null; a2.predecessors = ["A1"]; a2.due = a1.due;
+  const html = gantt(d, ["A"]);
+  const span = +/data-span="(\d+)"/.exec(html)[1];
+  for (const id of ["A1", "A2"]) {
+    const row = html.split('<div class="g-row">').find((r) => r.includes(`data-gt="${id}"`));
+    assert.doesNotMatch(row, /class="dot mk/, `${id}: 点にしない`);
+    const m = /<i class="gbar[^"]*"[^>]*data-gt="[^"]*"[^>]*style="left:[\d.]+%;width:([\d.]+)%/.exec(row);
+    assert.ok(m && Math.abs(+m[1] - (1 / span) * 100) < 0.01, `${id}: 幅は 1 日分`);
+    assert.match(row, /data-gh="l"[\s\S]*data-gh="r"/, `${id}: 両端のつまみ`);
+  }
 });
 
 test("renderProjects・renderSchedule: showPrio が true でも false でも data-pref=\"prio\" の取っ手が 1 つ出る。aria-expanded は開閉に合わせ、閉じると「今日の優先」は出ない", () => {
@@ -1208,4 +1236,29 @@ test("設定: 規則のエラー（ruleError）も、閉じた「キーワード
   const head = (html) => html.match(/data-fold="rules"[^>]*><summary>([^]*?)<\/summary>/)[1];
   assert.match(head(setv(load(), { closed: ["rules"], ruleError: "同じキーワードがあります" })), /注意 1 件/);
   assert.doesNotMatch(head(setv(load(), { closed: ["rules"] })), /注意/);
+});
+
+test("タスクの並べ替え: 編集画面のリストとガントに「⠿」ハンドル（data-mvh）と、見出し・行の落とし先（data-mvgrp・data-mvrow）が出る。レポート（読み取り専用）には出ない", () => {
+  const d = load();
+  const list = renderProjects(d, TODAY, { filter: "A", view: "list" });
+  const edit = gantt(d, ["A"]);
+  const proj = d.tasks.filter((t) => t.projectId === "A");
+  for (const [name, html] of [["リスト", list], ["ガント", edit]]) {
+    assert.equal(count(html, /data-mvh="/g), proj.length, `${name}: タスクごとに 1 つのハンドル`);
+    assert.equal(count(html, /data-mvrow="/g), proj.length, `${name}: 行の落とし先`);
+    assert.ok(count(html, /data-mvgrp="A"/g) >= 4, `${name}: セクションの見出し（設計・調達・構築×2 と （なし））`);
+  }
+  assert.match(list, /data-mvgrp="A" data-mvg="調達" data-mvsg="機器選定"/);
+  const ro = gantt(d, ["A"], { readonly: true });
+  assert.doesNotMatch(ro, /data-mv(h|row|grp)=/);
+});
+
+test("レポート: プロジェクト別の詳細表のタスクは、配列の順ではなく、ガントと同じセクションの順に並ぶ", () => {
+  const d = load();
+  const by = new Map(d.tasks.map((t) => [t.id, t]));
+  d.tasks = ["A2", "A4", "A3", "A1", "A5", "A6", "A7", "B1", "B2", "B3", "B4", "C1", "C2", "C3"].map((id) => by.get(id)); // 調達・構築・調達・設計の順
+  const html = buildReportHtml(d);
+  const seq = [...new Set([...html.matchAll(/<span class="mono">(A\d)<\/span>/g)].map((m) => m[1]))];
+  assert.deepEqual(seq, ["A2", "A3", "A4", "A5", "A6", "A7", "A1"].filter((id) => seq.includes(id)));
+  assert.ok(seq.length >= 5, `詳細表に A のタスクが出る: ${seq}`);
 });

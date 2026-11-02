@@ -9,7 +9,7 @@ const COMMANDS = ["show", "set", "clear"];
 const dir = pickHome(data);
 const [cmd, role, ...pairs] = rest;
 const usage = () => {
-  console.error("使い方: node tools/mcpconf.js --data <保存先フォルダ> show | set calendar key=value ... | clear calendar\n  calendar: server・listTool");
+  console.error("使い方: node tools/mcpconf.js --data <保存先フォルダ> show | set calendar key=value ... | clear calendar\n  calendar: server・listTool（必須）、selfEmails・roomKeywords（任意。カンマ区切り。空にすると消える）");
   process.exit(2);
 };
 if (!COMMANDS.includes(cmd)) usage();

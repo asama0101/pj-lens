@@ -4,10 +4,11 @@ import { readFileSync } from "node:fs";
 import { validate } from "../plugins/pj-lens/src/core/schema.js";
 import { taskStart } from "../plugins/pj-lens/src/core/metrics.js";
 import { addDays } from "../plugins/pj-lens/src/core/dates.js";
+import { groupSections } from "../plugins/pj-lens/src/core/groups.js";
 import {
   updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveTaskDates, moveProjectDates, moveMilestone,
   addTaskQuick, predecessorCandidates, addTask, deleteTask, addProject, deleteProject,
-  addHoliday, addHolidayRange, holidayRangeDays, removeHoliday, addWorkday, removeWorkday, addPredecessor,
+  addHoliday, addHolidayRange, holidayRangeDays, removeHoliday, addWorkday, removeWorkday, addPredecessor, moveTask,
 } from "../plugins/pj-lens/src/ui/edit.js";
 
 const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
@@ -329,13 +330,82 @@ test("updateTask: 前のタスクがあるタスクでも、開始日が期限�
   assert.equal(task(updateTask(d, "A4", { start: "2026-11-20" }), "A4").start, "2026-11-20");
 });
 
-test("addPredecessor: 前のタスクを足すと、指定してあった開始日を外し、開始日は前のタスクの期限から決まる", () => {
+test("addPredecessor: 前のタスクを足しても、指定してあった開始日は変わらない", () => {
   const d = load();
   assert.equal(task(d, "A5").start, "2026-10-12");
   const n = addPredecessor(d, "A5", "A3");
   assert.deepEqual(task(n, "A5").predecessors, ["A3"]);
-  assert.equal(task(n, "A5").start ?? null, null);
-  assert.equal(taskStart(n, "A5"), task(n, "A3").due);
+  assert.equal(task(n, "A5").start, "2026-10-12");
+  assert.equal(taskStart(n, "A5"), "2026-10-12");
   const m = addPredecessor(d, "A4", "A5"); // 開始日の指定がないタスクは、前のタスクが増えるだけ
   assert.deepEqual(task(m, "A4").predecessors, ["A3", "A5"]);
+});
+
+// ---- moveTask: 表示順の入れ替え ----
+const idsOf = (d, pid) => d.tasks.filter((t) => t.projectId === pid).map((t) => t.id);
+const shownOrder = (d, pid) => groupSections(d.tasks.filter((t) => t.projectId === pid)).flatMap((s) => s.tasks.map((t) => t.id));
+const place = (d, id) => [task(d, id).group, task(d, id).subgroup];
+
+test("moveTask: 同じセクション内で、指定したタスクの前へ入れ替える。大項目・中項目は変わらない", () => {
+  const n = moveTask(load(), "A3", { beforeId: "A2" });
+  assert.deepEqual(idsOf(n, "A"), ["A1", "A3", "A2", "A4", "A5", "A6", "A7"]);
+  assert.deepEqual(place(n, "A3"), ["調達", "機器選定"]);
+  ok(n);
+});
+
+test("moveTask: 別のセクションのタスクの前へ落とすと、そのタスクの大項目・中項目になる。セクションの順は変わらない", () => {
+  const n = moveTask(load(), "A1", { beforeId: "A5" });
+  assert.deepEqual(idsOf(n, "A"), ["A2", "A3", "A4", "A1", "A5", "A6", "A7"]);
+  assert.deepEqual(place(n, "A1"), ["構築", "切替準備"]);
+  assert.deepEqual(groupSections(n.tasks.filter((t) => t.projectId === "A")).map((s) => `${s.group}/${s.subgroup}`), ["調達/機器選定", "構築/検証環境", "構築/切替準備"]);
+  ok(n);
+});
+
+test("moveTask: beforeId が null のときは、指定した大項目・中項目のセクションの末尾へ入る。空の指定は「（なし）」", () => {
+  const e = moveTask(load(), "A1", { beforeId: null, group: "調達", subgroup: "機器選定" });
+  assert.deepEqual(idsOf(e, "A"), ["A2", "A3", "A1", "A4", "A5", "A6", "A7"]);
+  assert.deepEqual(place(e, "A1"), ["調達", "機器選定"]);
+  const none = moveTask(load(), "A1", { beforeId: null, group: "", subgroup: "" });
+  assert.deepEqual(place(none, "A1"), [null, null]);
+  assert.deepEqual(idsOf(none, "A"), ["A2", "A3", "A4", "A5", "A6", "A7", "A1"]);
+  ok(e); ok(none);
+});
+
+test("moveTask: 今の位置のままになる移動（すぐ次のタスクの前・自分の前）は、何も変えず同じデータを返す", () => {
+  const d = load();
+  assert.equal(moveTask(d, "A2", { beforeId: "A3" }), d);
+  assert.equal(moveTask(d, "A2", { beforeId: "A2" }), d);
+  assert.equal(moveTask(d, "A3", { beforeId: null, group: "調達", subgroup: "機器選定" }), d);
+});
+
+test("moveTask: 不正な指定は例外（存在しない ID・別のプロジェクトのタスクの前）。元のデータは変えない", () => {
+  const d = load();
+  const before = JSON.stringify(d);
+  assert.throws(() => moveTask(d, "X9", { beforeId: "A1" }), /X9/);
+  assert.throws(() => moveTask(d, "A1", { beforeId: "X9" }), /X9/);
+  assert.throws(() => moveTask(d, "A1", { beforeId: "B1" }), /別のプロジェクト/);
+  moveTask(d, "A1", { beforeId: "A5" });
+  assert.equal(JSON.stringify(d), before);
+});
+
+test("moveTask: 他のプロジェクトのタスクの配列上の位置は変えず、動かしたプロジェクトは表示順に整える", () => {
+  const d = load();
+  const by = new Map(d.tasks.map((t) => [t.id, t]));
+  d.tasks = ["A1", "B1", "A2", "B2", "A3", "C1", "A4", "B3", "A5", "A6", "B4", "A7", "C2", "C3"].map((id) => by.get(id)); // A・B・C が交互
+  const pos = (x, pid) => x.tasks.map((t, i) => (t.projectId === pid ? i : -1)).filter((i) => i >= 0);
+  const n = moveTask(d, "A5", { beforeId: "A2" });
+  for (const pid of ["A", "B", "C"]) assert.deepEqual(pos(n, pid), pos(d, pid), `${pid} の占める位置`);
+  assert.deepEqual(["B", "C"].map((pid) => idsOf(n, pid)), ["B", "C"].map((pid) => idsOf(d, pid)));
+  assert.deepEqual(idsOf(n, "A"), shownOrder(n, "A"), "配列の順 = 表示の順");
+  assert.deepEqual(place(n, "A5"), ["調達", "機器選定"]);
+  ok(n);
+});
+
+test("moveTask: 配列の順が表示の順と違うプロジェクトも、動かしたあとは配列の順 = 表示の順になる", () => {
+  const d = load();
+  const by = new Map(d.tasks.map((t) => [t.id, t]));
+  d.tasks = ["A2", "A4", "A3", "A1", "A5", "A6", "A7", "B1", "B2", "B3", "B4", "C1", "C2", "C3"].map((id) => by.get(id)); // 調達・構築・調達・設計の順
+  assert.deepEqual(shownOrder(d, "A"), ["A2", "A3", "A4", "A5", "A6", "A7", "A1"]);
+  const n = moveTask(d, "A7", { beforeId: "A6" });
+  assert.deepEqual(idsOf(n, "A"), ["A2", "A3", "A4", "A5", "A7", "A6", "A1"]);
 });

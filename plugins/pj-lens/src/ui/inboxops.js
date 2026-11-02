@@ -157,10 +157,7 @@ function simulate(data, ops, today) {
     if (before.has(predId)) touched.add(predId);
     if (o.op === "addPred") {
       if (has) { predRows.push({ taskId, predId, action: "same" }); warnings.push(`${predId} は、すでに ${taskId} の前のタスクです`); continue; }
-      // 前のタスクを足したら、開始日は前のタスクから決まる形に戻す（指定した開始日は外す）。外すので、提案の注意に出す
-      const patch = { predecessors: [...(t.predecessors ?? []), predId] };
-      if (t.start) { patch.start = null; warnings.push(`${taskId} は前のタスクができるので、開始日 ${t.start} を外します（前のタスクから決まります）`); }
-      w = updateTask(w, taskId, patch, today);
+      w = updateTask(w, taskId, { predecessors: [...(t.predecessors ?? []), predId] }, today); // 開始日は触らない
       predRows.push({ taskId, predId, action: "add" });
       predCount++; inboxIds.add(taskId);
       if (!isClosed(p)) raise(taskId, p.due, `前のタスク ${predId} を追加`, inboxIds);
