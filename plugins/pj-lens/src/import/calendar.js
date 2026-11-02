@@ -15,7 +15,7 @@ const DEFAULT_ROOM_KEYWORDS = ["会議室"];
 export function excludeSolo(fetched, cfg = {}) {
   const selfs = new Set((cfg?.selfEmails ?? []).map((e) => String(e).trim().toLowerCase()).filter(Boolean));
   if (!selfs.size) {
-    const warnings = fetched.some((f) => Array.isArray(f.attendees)) ? ["自分のメールアドレス（selfEmails）が未設定のため、対象外の判定をしていません。/pj-lens:mcp で設定してください"] : [];
+    const warnings = fetched.some((f) => Array.isArray(f.attendees)) ? ["自分のメールアドレス（selfEmails）が設定されていない（または設定を読めていない）ため、対象外の判定をしていません。/pj-lens:mcp で設定してください"] : [];
     return { kept: fetched, excluded: [], warnings };
   }
   const keywords = (cfg.roomKeywords ?? DEFAULT_ROOM_KEYWORDS).map((k) => String(k).trim().toLowerCase()).filter(Boolean);

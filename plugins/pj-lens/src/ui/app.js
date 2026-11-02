@@ -897,11 +897,12 @@ view.addEventListener("mousedown", (e) => {
   const sc = tg.closest(".gscroll"), lane = tg.closest(".g-lane");
   const total = +sc.dataset.span, s0 = sc.dataset.s0, ppd = lane.offsetWidth / total;
   const idx = (d) => diffDays(d, s0);
-  let kind, t, p, mIdx, mode = handle, s, en;
+  let kind, t, p, mIdx, mode = handle, s, en, raw;
   if (tg.dataset.gt) {
     kind = "t"; t = S.data.tasks.find((x) => x.id === tg.dataset.gt);
-    en = idx(t.due); s = Math.min(idx(taskStart(S.data, t.id)), en); // 開始が期限より後のタスクは、描画と同じく期限の 1 日分の棒として扱う
-    if (tg.classList.contains("dot")) mode = "r"; // 点（期限だけのタスク）は、期限だけが動く
+    raw = idx(taskStart(S.data, t.id));
+    en = idx(t.due); s = Math.min(raw, en); // 開始が期限より後のタスクは、描画と同じく期限の 1 日分の棒として扱う
+    if (tg.classList.contains("dot") || (!t.start && raw > en)) mode = "r"; // 点（期限だけのタスク）と、開始日の指定がなく前のタスクの期限が期限より後のタスクは、期限だけが動く（開始日を足し引きすると、期限より後になるため）
   } else if (tg.dataset.gp) {
     kind = "p"; p = S.data.projects.find((x) => x.id === tg.dataset.gp);
     s = idx(p.start); en = idx(p.due);
@@ -919,7 +920,11 @@ view.addEventListener("mousedown", (e) => {
   // 右つまみ: 開始日の指定がなく、開始 ≥ 期限のタスク（点・前のタスクだけが頼りの帯）は、前のタスクの期限へ跳ばさず、そのまま動かす。それ以外は開始日より前へ動かさない
   const edges = (dd) => {
     if (mode === "l") return [Math.min(s + dd, en), en];
-    if (mode === "r") return [s, kind === "m" || (kind === "t" && !t.start && s >= en) ? en + dd : Math.max(en + dd, s)];
+    if (mode === "r") {
+      const free = kind === "m" || (kind === "t" && !t.start && s >= en);
+      const ne = free ? en + dd : Math.max(en + dd, s);
+      return [kind === "t" && free ? Math.min(raw, ne) : s, ne]; // 開始日の指定がないタスクは、保存後、前のタスクの期限（raw）から期限までの棒になる（期限が raw より前なら、期限の 1 日分）。プレビューも同じにする
+    }
     return [s + dd, en + dd];
   };
   const move = (ev) => {

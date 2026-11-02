@@ -195,3 +195,22 @@ test("calendar-plan・calendar-apply: 設定ファイルの指定が正しくな
   }
   assert.equal(w.read(), before);
 });
+
+test("calendar-plan: 取り込み済みの会議が対象外になって削除される場合は、removedByExclusion に、確認済み（confirmed）かどうかとあわせて出る（エージェントの文章に頼らず、確認済みの実績が消えることを見せるため）", () => {
+  const w = work();
+  const d = w.json();
+  d.events.push({ id: "m90", date: "2026-10-22", start: "09:00", end: "10:00", title: "作業ブロック", source: "mcp", skip: false, externalId: "solo1", confirmed: true });
+  d.events.push({ id: "m91", date: "2026-10-22", start: "10:00", end: "11:00", title: "ひとりで会議室", source: "mcp", skip: true, externalId: "solo2" });
+  d.events.push({ id: "m92", date: "2026-10-23", start: "10:00", end: "11:00", title: "予定表から消えた会議", source: "mcp", skip: false, externalId: "gone" });
+  writeFileSync(w.data, JSON.stringify(d));
+  const fetched = w.put("fetched.json", fetchedSolo());
+  const p = runEnv({ PJ_LENS_HOME: homeWith({ selfEmails: [SELF] }) }, "calendar-plan", w.data, fetched, "2026-10-19", "2026-10-25");
+  assert.equal(p.status, 0, p.err);
+  assert.deepEqual(p.out.removedByExclusion, [
+    { id: "m90", title: "作業ブロック", date: "2026-10-22", confirmed: true },
+    { id: "m91", title: "ひとりで会議室", date: "2026-10-22", confirmed: false },
+  ]);
+  const removedIds = p.out.removed.map((e) => e.id);
+  assert.ok(["m90", "m91", "m92"].every((id) => removedIds.includes(id)), "3 件とも removed に出る");
+  assert.ok(!p.out.removedByExclusion.some((e) => e.id === "m92"), "予定表から消えた会議（m92）は、removedByExclusion に出ない");
+});

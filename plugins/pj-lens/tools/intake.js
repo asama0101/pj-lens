@@ -30,7 +30,9 @@ const COMMANDS = {
   }],
   "calendar-plan": [4, (d, [, f, s, e], o) => {
     const { added, updated, removed, excluded, warnings } = planCalendarSync(d, readJson(f), { start: s, end: e }, o.calendar);
-    out({ added, updated, removed, excluded: excluded.map(({ externalId, title, date, start, end }) => ({ externalId, title, date, start, end })), warnings }); // 参加者（メールアドレス）は出さない
+    const gone = new Set(excluded.map((e) => e.externalId));
+    const removedByExclusion = removed.filter((e) => gone.has(e.externalId)).map((e) => ({ id: e.id, title: e.title, date: e.date, confirmed: !!e.confirmed })); // 対象外になって消える取り込み済みの会議。確認済みの実績も消えるので、承認の前に見せる
+    out({ added, updated, removed, excluded: excluded.map(({ externalId, title, date, start, end }) => ({ externalId, title, date, start, end })), removedByExclusion, warnings }); // 参加者（メールアドレス）は出さない
   }],
   "calendar-apply": [4, (d, [path, f, s, e], o) => {
     const plan = planCalendarSync(d, readJson(f), { start: s, end: e }, o.calendar);

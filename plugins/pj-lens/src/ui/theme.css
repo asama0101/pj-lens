@@ -294,6 +294,8 @@ tr.drop-after>td,.g-row.drop-after>.g-label,.g-row.drop-after>.g-lane{box-shadow
 
 .g-label{grid-template-columns:28px minmax(0,1fr) auto}
 .g-label .g-pre{grid-column:2/-1}
+.g-label[data-mvrow]{grid-template-columns:auto 28px minmax(0,1fr) auto} /* 先頭の列は「⠿」 */
+.g-label[data-mvrow] .g-pre{grid-column:3/-1}
 .g-name{font:inherit;font-size:13px;text-align:left;background:none;border:0;padding:0;color:var(--ink);cursor:pointer;line-height:1.35;overflow-wrap:anywhere}
 .g-name:hover{color:var(--accent);text-decoration:underline}
 .gx{font:inherit;border:0;background:transparent;color:var(--muted);cursor:pointer;padding:0 4px;opacity:0;line-height:1}
