@@ -67,7 +67,7 @@ test("setMcpRole: savedAt を足す。不正は例外", () => {
   const d = dir();
   const c = setMcpRole(d, "calendar", { server: "s", listTool: "l" });
   assert.match(c.savedAt, /^\d{4}-\d{2}-\d{2}$/);
-  assert.throws(() => setMcpRole(d, "calendar", { server: "s" }));
+  assert.throws(() => setMcpRole(dir(), "calendar", { server: "s" })); // 保存済みの値がなければ、必須の項目が足りず例外（あれば、保存済みの値に合成する）
   assert.equal(readMcpConfig(d).calendar.server, "s");
 });
 
@@ -110,4 +110,46 @@ test("置き場: PJ_LENS_HOME が最優先、次に --data。どちらも無け�
   assert.equal(cliEnv({}, "show").status, 2);
   assert.equal(cliEnv({}, arg, "show").status, 2, "位置引数は受け付けない");
   assert.equal(cliEnv({ PJ_LENS_HOME: env }, "show").status, 0, "環境変数だけでも動く");
+});
+
+// ---- 任意の項目（selfEmails・roomKeywords） ----
+test("validateMcpConfig: 任意の項目 selfEmails・roomKeywords は、あれば、空でない文字列の配列", () => {
+  const base = { server: "s", listTool: "l" };
+  assert.deepEqual(validateMcpConfig({ calendar: { ...base, selfEmails: ["a@x.com"], roomKeywords: ["会議室", "Room"] } }), []);
+  assert.deepEqual(validateMcpConfig({ calendar: base }), []);
+  assert.ok(validateMcpConfig({ calendar: { ...base, selfEmails: "a@x.com" } }).length > 0);
+  assert.ok(validateMcpConfig({ calendar: { ...base, selfEmails: ["a@x.com", " "] } }).length > 0);
+  assert.ok(validateMcpConfig({ calendar: { ...base, roomKeywords: [1] } }).length > 0);
+});
+
+test("setMcpRole: 任意の項目はカンマ区切りで保存し、既存の値に合成する（必須の 2 項目を毎回指定しなくてよい）。空にすると消える", () => {
+  const d = dir();
+  setMcpRole(d, "calendar", { server: "s", listTool: "l" });
+  const a = setMcpRole(d, "calendar", { selfEmails: " me@x.com, Me2@x.com ,," });
+  assert.deepEqual(a.calendar, { server: "s", listTool: "l", selfEmails: ["me@x.com", "Me2@x.com"] });
+  const b = setMcpRole(d, "calendar", { roomKeywords: "会議室,Room" });
+  assert.deepEqual(b.calendar, { server: "s", listTool: "l", selfEmails: ["me@x.com", "Me2@x.com"], roomKeywords: ["会議室", "Room"] });
+  const c = setMcpRole(d, "calendar", { server: "s2", roomKeywords: "" });
+  assert.deepEqual(c.calendar, { server: "s2", listTool: "l", selfEmails: ["me@x.com", "Me2@x.com"] });
+  assert.deepEqual(readMcpConfig(d).calendar, c.calendar);
+});
+
+test("setMcpRole: 不明な項目（打ち間違い）は例外で、何も書かない。必須の項目が無ければ、任意の項目だけでは作れない", () => {
+  const d = dir();
+  assert.throws(() => setMcpRole(d, "calendar", { server: "s", listTool: "l", selfEmail: "a@x.com" }), /selfEmail/);
+  assert.ok(!existsSync(join(d, "pj-lens-mcp.json")));
+  assert.throws(() => setMcpRole(d, "calendar", { selfEmails: "a@x.com" }), /server/);
+  assert.ok(!existsSync(join(d, "pj-lens-mcp.json")));
+});
+
+test("mcpconf CLI: set calendar selfEmails=… で任意の項目だけ足せる。show に出る。schema_version は 1 のまま", () => {
+  const d = dir();
+  assert.equal(cli(d, "set", ...CAL).status, 0);
+  const r = cli(d, "set", "calendar", "selfEmails=me@x.com,me2@x.com", "roomKeywords=会議室");
+  assert.equal(r.status, 0, r.err);
+  const s = cli(d, "show");
+  assert.deepEqual(s.out.config.calendar.selfEmails, ["me@x.com", "me2@x.com"]);
+  assert.deepEqual(s.out.config.calendar.roomKeywords, ["会議室"]);
+  assert.equal(s.out.config.schema_version, 1);
+  assert.equal(cli(d, "set", "calendar", "selfEmail=a@x.com").status, 1);
 });

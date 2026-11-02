@@ -41,9 +41,12 @@ description: Excel の WBS、予定表の会議、会議のプロジェクト規
 ## calendar（予定表の会議を取り込む）
 依頼の例: `calendar`、`calendar 来週`
 1. `node "${CLAUDE_PLUGIN_ROOT}/tools/mcpconf.js" --data "${CLAUDE_PLUGIN_DATA}" show` で `calendar` の指定を確認する。無ければ `/pj-lens:mcp` を案内して止まる。
-2. 期間は依頼にあればそれ、なければ今日から14日後まで。指定の `listTool` で取得し、`fetched.json`（`[{externalId, title, date, start, end}]`。終日の予定は含めない）を OS の一時フォルダに書く。
-3. `calendar-plan ".pj-lens/data.json" "<fetched.json>" <開始日> <終了日>` で、追加・更新・削除（予定表から消えた会議）を表で見せる。規則で付くプロジェクトも示す。
-4. **承認後に** `calendar-apply` を同じ引数で実行する。手入力の会議、「参加しない」の設定、確認済みの実績、手動のプロジェクトは変わらない。結果と、使った MCP を報告する。
+2. 期間は依頼にあればそれ、なければ今日から14日後まで。指定の `listTool` で取得し、`fetched.json`（`[{externalId, title, date, start, end, attendees}]`。終日の予定は含めない）を OS の一時フォルダに書く。
+   - `attendees` は `[{type, email, name}]`（`type` は、人なら `"person"`、会議室・備品なら `"resource"`）。MCP が参加者を返さない予定は、`attendees` の項目ごと省く（参加者が不明の予定は、除外されずに取り込まれる）。取得に失敗したときに、空の配列 `[]` を書かない（`[]` は「参加者なし」として、除外の対象になる）。
+3. `calendar-plan ".pj-lens/data.json" "<fetched.json>" <開始日> <終了日> --data "${CLAUDE_PLUGIN_DATA}"` で、追加・更新・削除（予定表から消えた会議）を表で見せる。規則で付くプロジェクトも示す。
+   - **対象外 N 件**（`excluded` の件数。自分だけ・自分と会議室だけの予定で、取り込まない）を、表に添える。判定は `/pj-lens:mcp` で設定した自分のメールアドレス（`selfEmails`）と会議室の名前のキーワード（`roomKeywords`）による。`warnings` があれば伝える（自分のメールアドレスが未設定のときは、何も除かれていないので、`/pj-lens:mcp` での設定を案内する）。
+   - 取り込み済みの会議が対象外になると、削除の行に出る（`removed` の `externalId` が `excluded` にあるもの）。その行には「対象外になったため」と添え、`confirmed: true`（確認済み。稼働の実績に数えている）のものには、**「実績から外れます」と注意を付ける**。
+4. **承認後に** `calendar-apply` を同じ引数（`--data` を含む）で実行する。手入力の会議、「参加しない」の設定、確認済みの実績、手動のプロジェクトは変わらない。ただし、対象外になって削除する会議は、確認済みの実績と「参加しない」の設定ごと消える（3 の注意のとおり）。結果と、使った MCP を報告する。取り込みが終わったら、`fetched.json`（参加者のメールアドレスを含む）を消す。
 
 ## rules（会議のプロジェクト規則）
 依頼の例: `rules`、`rules [A社] はプロジェクト A`

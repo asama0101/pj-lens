@@ -10,6 +10,8 @@ export const SCHEMA_VERSION = 1;
 
 /** 役割ごとの必須項目: 予定表は期間の取得 */
 export const ROLES = { calendar: ["server", "listTool"] };
+/** 役割ごとの任意項目（空でない文字列の配列）: 予定表は、自分のメールアドレスと、会議室の名前のキーワード（取り込みで、自分だけ・自分と会議室だけの予定を除く） */
+export const OPTIONAL = { calendar: ["selfEmails", "roomKeywords"] };
 
 /** 指定の誤り（空なら正常）。役割は calendar のみ、各役割の必須項目は非空の文字列 */
 export function validateMcpConfig(cfg) {
@@ -18,6 +20,9 @@ export function validateMcpConfig(cfg) {
     if (role === "savedAt" || role === "schema_version") continue;
     if (!ROLES[role]) { errors.push(`不明な役割です: ${role}（calendar のみ）`); continue; }
     for (const k of ROLES[role]) if (typeof v?.[k] !== "string" || !v[k].trim()) errors.push(`${role}.${k} が必要です`);
+    for (const k of OPTIONAL[role] ?? []) {
+      if (v?.[k] !== undefined && !(Array.isArray(v[k]) && v[k].every((x) => typeof x === "string" && x.trim()))) errors.push(`${role}.${k} は、空でない文字列の配列にしてください`);
+    }
   }
   return errors;
 }
@@ -42,10 +47,22 @@ function write(dir, cfg) {
   return out;
 }
 
-/** 役割の指定を保存する（他の役割は保つ）。検証に通らなければ例外で、何も書かない */
+/**
+ * 役割の指定を保存する（他の役割は保つ）。values に無い項目は、保存済みの値を保つ（任意の項目だけを足せる）。
+ * 任意の項目は、カンマ区切りの文字列（または配列）で渡し、空にすると消える。不明な項目（打ち間違い）・検証に通らない指定は例外で、何も書かない
+ */
 export function setMcpRole(dir, role, values) {
   if (!ROLES[role]) throw new Error(`不明な役割です: ${role}（calendar のみ）`);
-  const entry = Object.fromEntries(ROLES[role].map((k) => [k, String(values?.[k] ?? "").trim()]));
+  const known = [...ROLES[role], ...(OPTIONAL[role] ?? [])];
+  const unknown = Object.keys(values ?? {}).filter((k) => !known.includes(k));
+  if (unknown.length) throw new Error(`不明な項目です: ${unknown.join("・")}（${known.join("・")}）`);
+  const entry = { ...readMcpConfig(dir)[role] };
+  for (const k of ROLES[role]) entry[k] = String(values?.[k] ?? entry[k] ?? "").trim();
+  for (const k of OPTIONAL[role] ?? []) {
+    if (!(k in (values ?? {}))) continue;
+    const list = (Array.isArray(values[k]) ? values[k] : String(values[k]).split(",")).map((x) => String(x).trim()).filter(Boolean);
+    if (list.length) entry[k] = list; else delete entry[k];
+  }
   const errors = validateMcpConfig({ [role]: entry });
   if (errors.length) throw new Error(errors.join(" / "));
   return write(dir, { ...readMcpConfig(dir), [role]: entry, savedAt: today() });

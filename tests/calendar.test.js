@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planCalendarSync, applyCalendarSync } from "../plugins/pj-lens/src/import/calendar.js";
+import { planCalendarSync, applyCalendarSync, excludeSolo } from "../plugins/pj-lens/src/import/calendar.js";
 
 const D = "2026-10-20";
 const range = { start: "2026-10-19", end: "2026-10-25" };
@@ -33,4 +33,78 @@ test("applyCalendarSync: 確認済み（confirmed）と手動のひも付けは�
 test("applyCalendarSync: 検証エラーになるデータには例外", () => {
   const d = mk([ev("m1", "x", { externalId: "e1", projectId: "ZZ" })]);
   assert.throws(() => applyCalendarSync(d, [f("e1", "x")], range));
+});
+
+// ---- 自分だけ・自分と会議室だけの予定を除く ----
+const SELF = "me@example.com";
+const cfg = { selfEmails: [SELF] };
+const who = (email, extra = {}) => ({ type: "person", email, name: email, ...extra });
+const room = (name = "会議室 A", extra = {}) => ({ type: "resource", email: "room-a@example.com", name, ...extra });
+
+test("excludeSolo: 自分だけ、自分と会議室だけは対象外。他の人が 1 人でもいれば残す", () => {
+  const cases = [
+    ["自分だけ", [who(SELF)], true],
+    ["自分と resource 種別の会議室", [who(SELF), room("Room 12")], true],
+    ["自分と、名前に「会議室」を含む参加者（種別が person でも）", [who(SELF), { type: "person", email: "x@example.com", name: "第3会議室" }], true],
+    ["自分と他の人", [who(SELF), who("a@example.com")], false],
+    ["自分以外の 1 人だけ（自分が参加者に載らない）", [who("a@example.com")], false],
+    ["自分と会議室と他の人", [who(SELF), room(), who("a@example.com")], false],
+    ["メールの大文字小文字は区別しない", [who("ME@Example.com")], true],
+    ["参加者が空（参加者なし）", [], true],
+  ];
+  for (const [name, attendees, excluded] of cases) {
+    const r = excludeSolo([f("e1", name, { attendees })], cfg);
+    assert.deepEqual([name, r.excluded.length, r.kept.length], [name, excluded ? 1 : 0, excluded ? 0 : 1]);
+  }
+});
+
+test("excludeSolo: 参加者の項目がない予定（不明）は残す。roomKeywords で会議室の名前を足せる。元の配列は変えない", () => {
+  const input = [f("e1", "不明"), f("e2", "会議室 Z だけ", { attendees: [who(SELF), { type: "person", email: "z@example.com", name: "Z ルーム" }] })];
+  const before = JSON.stringify(input);
+  assert.deepEqual(excludeSolo(input, cfg).kept.map((e) => e.externalId), ["e1", "e2"]);
+  assert.deepEqual(excludeSolo(input, { ...cfg, roomKeywords: ["ルーム"] }).excluded.map((e) => e.externalId), ["e2"]);
+  assert.equal(JSON.stringify(input), before);
+});
+
+test("excludeSolo: 自分のメールアドレス（selfEmails）が未設定なら、何も除かず、参加者つきの予定があるときだけ警告する", () => {
+  const withAtt = [f("e1", "x", { attendees: [who(SELF)] })];
+  for (const c of [{}, { selfEmails: [] }, undefined]) {
+    const r = excludeSolo(withAtt, c);
+    assert.deepEqual([r.kept.length, r.excluded.length], [1, 0]);
+    assert.match(r.warnings[0], /selfEmails/);
+  }
+  assert.deepEqual(excludeSolo([f("e1", "x")], {}).warnings, []);
+});
+
+test("planCalendarSync: 対象外の予定は追加されない。取り込み済みの該当予定は削除に出て、確認済み（confirmed）かどうかが分かる。手入力の会議は変わらない", () => {
+  const d = mk([ev("m1", "作業ブロック", { externalId: "e1", confirmed: true }), ev("m2", "作業ブロック2", { externalId: "e2" }), ev("m3", "手入力", { source: "manual", externalId: null })]);
+  const fetched = [
+    f("e1", "作業ブロック", { attendees: [who(SELF)] }),
+    f("e2", "作業ブロック2", { attendees: [who(SELF), room()] }),
+    f("e9", "新しい自分だけの予定", { attendees: [who(SELF)] }),
+    f("e10", "ベンダーX 定例", { start: "13:00", end: "14:00", attendees: [who(SELF), who("v@example.com")] }),
+  ];
+  const p = planCalendarSync(d, fetched, range, cfg);
+  assert.deepEqual(p.excluded.map((e) => e.externalId), ["e1", "e2", "e9"]);
+  assert.deepEqual(p.added.map((e) => e.title), ["ベンダーX 定例"]);
+  assert.deepEqual(p.removed.map((e) => [e.id, !!e.confirmed]), [["m1", true], ["m2", false]]);
+  assert.ok(p.data.events.some((e) => e.id === "m3"));
+  assert.deepEqual(applyCalendarSync(d, fetched, range, cfg).events.map((e) => e.id).sort(), ["m3", "m4"].sort());
+});
+
+test("planCalendarSync: cfg を渡さなければ、従来どおりすべて取り込む（excluded は空）", () => {
+  const p = planCalendarSync(mk([]), [f("e1", "x", { attendees: [who(SELF)] })], range);
+  assert.deepEqual([p.added.length, p.excluded.length], [1, 0]);
+});
+
+test("excludeSolo: attendees に null や文字列など、形が崩れた要素がある予定は、参加者が不明として残す（例外にしない）", () => {
+  const input = [f("e1", "null", { attendees: [null] }), f("e2", "文字列", { attendees: [SELF] }), f("e3", "混在", { attendees: [who(SELF), null] })];
+  const r = excludeSolo(input, cfg);
+  assert.deepEqual([r.kept.map((e) => e.externalId), r.excluded.length], [["e1", "e2", "e3"], 0]);
+});
+
+test("excludeSolo: selfEmails を設定済みなのに、どの予定にも参加者の項目がないときは、判定できていないと警告する", () => {
+  assert.match(excludeSolo([f("e1", "x"), f("e2", "y")], cfg).warnings[0], /参加者/);
+  assert.deepEqual(excludeSolo([], cfg).warnings, []);
+  assert.deepEqual(excludeSolo([f("e1", "x"), f("e2", "y", { attendees: [who("a@example.com")] })], cfg).warnings, []);
 });
