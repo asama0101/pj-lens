@@ -768,13 +768,48 @@ function showTip(text, x, y) {
 function hideTip() { document.getElementById("dragtip")?.remove(); }
 
 view.addEventListener("dragstart", (e) => {
-  const li = e.target.closest("[data-pick]"), bl = e.target.closest("[data-dragsess]"), mg = e.target.closest("[data-dragmtg]");
-  drag = li ? { kind: "task", id: li.dataset.pick } : bl ? { kind: "sess", id: bl.dataset.dragsess } : mg ? { kind: "mtg", id: mg.dataset.dragmtg } : null;
+  const li = e.target.closest("[data-pick]"), bl = e.target.closest("[data-dragsess]"), mg = e.target.closest("[data-dragmtg]"), mv = e.target.closest("[data-mvh]");
+  drag = li ? { kind: "task", id: li.dataset.pick } : bl ? { kind: "sess", id: bl.dataset.dragsess } : mg ? { kind: "mtg", id: mg.dataset.dragmtg } : mv ? { kind: "order", id: mv.dataset.mvh } : null;
   if (!drag) return;
+  if (mv) e.dataTransfer.setDragImage(mv.closest("tr,.g-label"), 12, 12); // 動かしているタスクの見た目にする（ガントは、横に長い行ではなくラベルだけ）
   e.dataTransfer.setData("text/plain", drag.id);
   e.dataTransfer.effectAllowed = "move";
 });
+/** タスクの並べ替え（リスト・ガントの「⠿」）。落とす位置の行から、moveTask に渡す指定を決める。落とせない・動かないときは null */
+function planOrder(e) {
+  const row = e.target.closest?.("tr, .g-row");
+  if (!row) return null;
+  const dragged = S.data.tasks.find((t) => t.id === drag.id);
+  const info = (r) => { const s = r.matches("tr") ? r : r.querySelector(":scope > .g-label"); return s ? { id: s.dataset.mvrow, pid: s.dataset.mvgrp, g: s.dataset.mvg ?? "", sg: s.dataset.mvsg ?? "" } : {}; };
+  const here = info(row);
+  const target = here.id ? S.data.tasks.find((t) => t.id === here.id) : null;
+  const pid = target ? target.projectId : here.pid;
+  if (!dragged || !pid || pid !== dragged.projectId) return null;
+  const rows = [...row.parentNode.children].filter((r) => r.matches("tr, .g-row"));
+  // その行より下で、同じセクションの先頭のタスク行（見出しに当たったらなし）
+  const nextTaskId = () => { for (const r of rows.slice(rows.indexOf(row) + 1)) { const i = info(r); if (i.id) return i.id; if (i.pid) return null; } return null; };
+  let plan;
+  if (target) {
+    const box = row.getBoundingClientRect();
+    plan = e.clientY < box.top + box.height / 2
+      ? { beforeId: target.id, pos: "before" }
+      : { beforeId: nextTaskId(), group: target.group ?? "", subgroup: target.subgroup ?? "", pos: "after" };
+  } else {
+    plan = { beforeId: nextTaskId(), group: here.g, subgroup: here.sg, pos: "after" }; // 見出しへ落とすと、そのセクションの先頭
+  }
+  if (moveTask(S.data, drag.id, plan) === S.data) return null;
+  return { ...plan, row };
+}
+const clearOrderLine = () => view.querySelectorAll(".drop-before,.drop-after").forEach((r) => r.classList.remove("drop-before", "drop-after"));
 view.addEventListener("dragover", (e) => {
+  if (drag?.kind === "order") {
+    const p = planOrder(e);
+    clearOrderLine();
+    if (!p) return;
+    e.preventDefault();
+    p.row.classList.add(p.pos === "before" ? "drop-before" : "drop-after");
+    return;
+  }
   const dz = e.target.closest(".dz");
   if (!dz || !drag) return;
   e.preventDefault();
@@ -787,6 +822,14 @@ view.addEventListener("dragover", (e) => {
   if (p.error) hideTip(); else showTip(`${hm(p.st)}–${hm(p.end)}`, e.clientX, e.clientY);
 });
 view.addEventListener("drop", (e) => {
+  if (drag?.kind === "order") {
+    e.preventDefault();
+    const p = planOrder(e), id = drag.id;
+    clearOrderLine();
+    drag = null;
+    if (p) apply((d) => moveTask(d, id, { beforeId: p.beforeId, group: p.group, subgroup: p.subgroup }), "並べ替えました");
+    return;
+  }
   const dz = e.target.closest(".dz");
   if (!dz || !drag) return;
   e.preventDefault();
@@ -798,7 +841,7 @@ view.addEventListener("drop", (e) => {
   S.picked = null;
   apply((d) => p.next(d), `${p.msg}${p.warning ? `(${p.warning})` : ""}`);
 });
-view.addEventListener("dragend", () => { drag = null; ghost?.remove(); ghost = null; hideTip(); });
+view.addEventListener("dragend", () => { clearOrderLine(); drag = null; ghost?.remove(); ghost = null; hideTip(); });
 
 /* ---------- 枠・手入力の会議の下端ドラッグ(終了時刻を変える) ---------- */
 view.addEventListener("mousedown", (e) => {

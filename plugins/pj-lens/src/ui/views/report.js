@@ -5,6 +5,7 @@ import { sessionKind } from "../../core/sessions.js";
 import { reportPeriod, periodReport, progressAsOf } from "../../core/reportspec.js";
 import { esc, fmtMD, wdJa, flagPills, statusDotHtml } from "../common.js";
 import { renderGantt } from "./gantt.js";
+import { groupSections } from "../../core/groups.js";
 
 const PRINT_CSS = `
 html{background:var(--bg)}
@@ -45,7 +46,7 @@ function overview(data, projects, today, asOf, rows) {
 }
 
 function detail(data, p, today, period, row) {
-  const tasks = data.tasks.filter((t) => t.projectId === p.id);
+  const tasks = groupSections(data.tasks.filter((t) => t.projectId === p.id)).flatMap((s) => s.tasks); // ガントと同じ、セクション（大項目・中項目）の順
   const trs = tasks.map((t) => {
     const a = row?.tasks.find((x) => x.id === t.id) ?? { hours: 0, count: 0 };
     const late = taskFlags(t, today, data.settings).includes("overdue");

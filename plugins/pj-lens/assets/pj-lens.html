@@ -231,6 +231,10 @@ label{font-size:13px}
 .g-lane{flex:none}
 /* 重要度: 高は左端に太い赤の縦線と、行の薄い赤の背景。中は細いグレーの縦線。縦線は横スクロールで流れないよう、固定のラベルに付ける */
 .g-row>.g-label{padding-left:9px}
+.mv{cursor:grab;color:var(--muted);user-select:none;margin-right:4px}
+.mv:hover{color:var(--ink)}
+tr.drop-before>td,.g-row.drop-before>.g-label,.g-row.drop-before>.g-lane{box-shadow:inset 0 2px 0 var(--accent)}
+tr.drop-after>td,.g-row.drop-after>.g-label,.g-row.drop-after>.g-lane{box-shadow:inset 0 -2px 0 var(--accent)}
 .g-label.imp-high::before,.g-label.imp-mid::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--bad)}
 .g-label.imp-mid::before{width:2px;background:var(--todo)}
 .g-label.imp-high{background:var(--bad-soft)}
@@ -2257,8 +2261,9 @@ return { depPath, depMarkup, drawDeps, focusDeps };
 })();
 
 /* src/ui/edit.js */
-const { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, addPredecessor, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject } = (() => {
+const { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, addPredecessor, moveTask, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject } = (() => {
 // 画面からの編集（追加・削除・更新）。すべて不変更新で、不正な入力は例外にする（呼び出し側が理由を表示する）。
+
 
 
 
@@ -2435,6 +2440,37 @@ function addPredecessor(data, taskId, predId, today = nowLocal().date) {
   return updateTask(data, taskId, { predecessors: [...(t.predecessors ?? []), predId] }, today);
 }
 
+/**
+ * 表示順の入れ替え。beforeId のタスクの前へ入れ、そのタスクの大項目・中項目になる。
+ * beforeId が null（省略）のときは、指定した大項目・中項目（空は「（なし）」）のセクションの末尾へ入れる。
+ * 同じプロジェクトのタスクだけを指せる。動かしたあと、そのプロジェクトのタスクを表示の順（セクション順）に並べ直して、配列の同じ位置へ戻す
+ * （他のプロジェクトのタスクの位置は変わらない）。今の表示と同じ位置・同じ大項目・中項目になるときは、同じデータを返す。
+ */
+function moveTask(data, id, { beforeId = null, group = "", subgroup = "" } = {}) {
+  const t = data.tasks.find((x) => x.id === id);
+  if (!t) throw new Error(`タスク ${id} がありません`);
+  const b = beforeId ? data.tasks.find((x) => x.id === beforeId) : null;
+  if (beforeId && !b) throw new Error(`タスク ${beforeId} がありません`);
+  if (b && b.projectId !== t.projectId) throw new Error(`タスク ${id} と ${beforeId} は別のプロジェクトです`);
+  if (beforeId === id) return data;
+
+  const mine = data.tasks.filter((x) => x.projectId === t.projectId);
+  const shown = groupSections(mine);
+  const secs = shown.map((s) => ({ ...s, tasks: s.tasks.filter((x) => x.id !== id) }));
+  const g = b ? (b.group ?? "") : String(group ?? "").trim();
+  const sg = b ? (b.subgroup ?? "") : String(subgroup ?? "").trim();
+  let sec = b ? secs.find((s) => s.tasks.some((x) => x.id === beforeId)) : secs.find((s) => s.group === g && s.subgroup === sg);
+  if (!sec) secs.push((sec = { group: g, subgroup: sg, tasks: [] }));
+  sec.tasks.splice(b ? sec.tasks.findIndex((x) => x.id === beforeId) : sec.tasks.length, 0, { ...t, group: g || null, subgroup: sg || null });
+  const order = groupSections(secs.flatMap((s) => s.tasks)).flatMap((s) => s.tasks);
+
+  const before = shown.flatMap((s) => s.tasks);
+  const same = order.every((x, i) => x.id === before[i].id) && (t.group ?? "") === g && (t.subgroup ?? "") === sg;
+  if (same) return data;
+  let k = 0;
+  return { ...data, tasks: data.tasks.map((x) => (x.projectId === t.projectId ? order[k++] : x)) };
+}
+
 function moveProjectDates(data, projectId, edge, days) {
   const p = data.projects.find((x) => x.id === projectId);
   if (!p) throw new Error(`プロジェクト ${projectId} がありません`);
@@ -2607,7 +2643,7 @@ function deleteProject(data, projectId) {
   return { data: { ...data, settings, events, projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
 }
 
-return { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, addPredecessor, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject };
+return { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, addPredecessor, moveTask, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject };
 })();
 
 /* src/ui/inboxedits.js */
@@ -3311,7 +3347,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
         const name = readonly ? `<span class="g-name">${esc(t.title)}</span>` : `<button class="g-name" data-gedit="${esc(t.id)}" title="クリックで編集">${esc(t.title)}</button>`;
         const del = readonly ? "" : `<button class="gx" data-del="${esc(t.id)}" aria-label="${esc(t.id)} を削除">×</button>`;
         const imp = ["high", "mid"].includes(t.importance) && !["Done", "Cancelled"].includes(t.status) ? ` imp-${t.importance}` : ""; // 重要度の印（高・中）。完了したタスクには付けない
-        lab = `<div class="g-label${imp}"><span class="id">${esc(t.id)}</span>${name}${del}<span class="g-pre">${hasPre ? "← " + esc(t.predecessors.join(", ")) : ""}</span></div>`;
+        lab = `<div class="g-label${imp}"${readonly ? "" : ` data-mvrow="${esc(t.id)}"`}>${readonly ? "" : `<span class="mv" draggable="true" data-mvh="${esc(t.id)}" title="ドラッグで並べ替え" aria-label="${esc(t.id)} を並べ替え">⠿</span>`}<span class="id">${esc(t.id)}</span>${name}${del}<span class="g-pre">${hasPre ? "← " + esc(t.predecessors.join(", ")) : ""}</span></div>`;
       }
       return `<div class="g-row">${lab}<div class="g-lane" ${laneStyle}>${bar}${act}<span class="g-due mono" style="left:${x(addDays(r.end, 1))}">${fmtMD(t.due)}</span></div></div>`;
     };
@@ -3326,7 +3362,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
       const ctl = readonly ? ""
         : opening ? `<input class="in" data-gadd="${esc(p.id)}" ${at} placeholder="タスク名を入力して Enter" aria-label="${esc(name)} に追加するタスク名"><button class="plus" data-gaddok="${esc(p.id)}">追加</button><button class="plus" data-gaddno>やめる</button>`
         : `<button class="plus" data-gopen="${esc(p.id)}" ${at} aria-label="${esc(name)} にタスクを追加">＋</button>`;
-      return `<div class="g-row g-grp"><div class="g-label"><span class="g-grp-t"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""}</span>${ctl}</div><div class="g-lane" ${laneStyle}></div></div>`;
+      return `<div class="g-row g-grp"><div class="g-label"${readonly ? "" : ` data-mvgrp="${esc(p.id)}" data-mvg="${esc(sec.group)}" data-mvsg="${esc(sec.subgroup)}"`}><span class="g-grp-t"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""}</span>${ctl}</div><div class="g-lane" ${laneStyle}></div></div>`;
     };
     const secs = groupSections(base.map((r) => ({ ...taskOf(r), row: r })), { ensureNone: !readonly && group === "all" });
     if (!readonly && group !== "all" && !secs.length) secs.push({ group, subgroup: "", tasks: [] }); // 絞り込んだ大項目のタスクがなくても、そこへ追加できるように
@@ -3990,7 +4026,7 @@ function renderList(data, p, today, opts) {
       ? `<div class="ask">${dependents.length ? `次のタスク ${esc(dependents.join(", "))} の前のタスクから外れます。` : "このタスクを削除します。"}<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-delyes="${esc(t.id)}">削除する</button><button class="btn" data-delno>やめる</button></div></div>`
       : `<button class="btn" data-del="${esc(t.id)}" aria-label="${esc(t.id)} を削除">削除</button>`;
     const late = taskFlags(t, today, data.settings).includes("overdue");
-    return `<tr data-row="${esc(t.id)}"><td class="id" data-l="ID">${esc(t.id)}</td>
+    return `<tr data-row="${esc(t.id)}" data-mvrow="${esc(t.id)}"><td class="id" data-l="ID"><span class="mv" draggable="true" data-mvh="${esc(t.id)}" title="ドラッグで並べ替え" aria-label="${esc(t.id)} を並べ替え">⠿</span>${esc(t.id)}</td>
       <td data-l="${esc(labels.group)}"><input class="in gi" data-f="group" data-id="${esc(t.id)}" value="${esc(t.group ?? "")}" aria-label="${esc(t.id)} の${esc(labels.group)}"></td>
       <td data-l="${esc(labels.subgroup)}"><input class="in gi" data-f="subgroup" data-id="${esc(t.id)}" value="${esc(t.subgroup ?? "")}" aria-label="${esc(t.id)} の${esc(labels.subgroup)}"></td>
       <td data-l="件名"><input class="in" id="f-${esc(t.id)}-t" data-f="title" data-id="${esc(t.id)}" value="${esc(t.title)}" aria-label="${esc(t.id)} の件名"></td>
@@ -4009,7 +4045,7 @@ function renderList(data, p, today, opts) {
   if (filtered && !secs.length) secs.push({ group: opts.group, subgroup: "", tasks: [] }); // 絞り込んだ大項目のタスクがなくても、そこへ追加できるように
   const rows = secs.map((sec) => {
     const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
-    return `<tr class="grp-tr"><td colspan="13"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""} <button class="plus" data-addat="${esc(p.id)}" data-ag="${esc(sec.group)}" data-asg="${esc(sec.subgroup)}" aria-label="${esc(name)} にタスクを追加">＋</button></td></tr>${sec.tasks.map(rowOf).join("")}`;
+    return `<tr class="grp-tr" data-mvgrp="${esc(p.id)}" data-mvg="${esc(sec.group)}" data-mvsg="${esc(sec.subgroup)}"><td colspan="13"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""} <button class="plus" data-addat="${esc(p.id)}" data-ag="${esc(sec.group)}" data-asg="${esc(sec.subgroup)}" aria-label="${esc(name)} にタスクを追加">＋</button></td></tr>${sec.tasks.map(rowOf).join("")}`;
   }).join("");
 
   const projTaskIds = new Set(tasks.map((t) => t.id));
@@ -4086,6 +4122,7 @@ const { buildReport } = (() => {
 
 
 
+
 const PRINT_CSS = `
 html{background:var(--bg)}
 body{padding:24px 28px}
@@ -4125,7 +4162,7 @@ function overview(data, projects, today, asOf, rows) {
 }
 
 function detail(data, p, today, period, row) {
-  const tasks = data.tasks.filter((t) => t.projectId === p.id);
+  const tasks = groupSections(data.tasks.filter((t) => t.projectId === p.id)).flatMap((s) => s.tasks); // ガントと同じ、セクション（大項目・中項目）の順
   const trs = tasks.map((t) => {
     const a = row?.tasks.find((x) => x.id === t.id) ?? { hours: 0, count: 0 };
     const late = taskFlags(t, today, data.settings).includes("overdue");
@@ -4984,13 +5021,48 @@ function showTip(text, x, y) {
 function hideTip() { document.getElementById("dragtip")?.remove(); }
 
 view.addEventListener("dragstart", (e) => {
-  const li = e.target.closest("[data-pick]"), bl = e.target.closest("[data-dragsess]"), mg = e.target.closest("[data-dragmtg]");
-  drag = li ? { kind: "task", id: li.dataset.pick } : bl ? { kind: "sess", id: bl.dataset.dragsess } : mg ? { kind: "mtg", id: mg.dataset.dragmtg } : null;
+  const li = e.target.closest("[data-pick]"), bl = e.target.closest("[data-dragsess]"), mg = e.target.closest("[data-dragmtg]"), mv = e.target.closest("[data-mvh]");
+  drag = li ? { kind: "task", id: li.dataset.pick } : bl ? { kind: "sess", id: bl.dataset.dragsess } : mg ? { kind: "mtg", id: mg.dataset.dragmtg } : mv ? { kind: "order", id: mv.dataset.mvh } : null;
   if (!drag) return;
+  if (mv) e.dataTransfer.setDragImage(mv.closest("tr,.g-label"), 12, 12); // 動かしているタスクの見た目にする（ガントは、横に長い行ではなくラベルだけ）
   e.dataTransfer.setData("text/plain", drag.id);
   e.dataTransfer.effectAllowed = "move";
 });
+/** タスクの並べ替え（リスト・ガントの「⠿」）。落とす位置の行から、moveTask に渡す指定を決める。落とせない・動かないときは null */
+function planOrder(e) {
+  const row = e.target.closest?.("tr, .g-row");
+  if (!row) return null;
+  const dragged = S.data.tasks.find((t) => t.id === drag.id);
+  const info = (r) => { const s = r.matches("tr") ? r : r.querySelector(":scope > .g-label"); return s ? { id: s.dataset.mvrow, pid: s.dataset.mvgrp, g: s.dataset.mvg ?? "", sg: s.dataset.mvsg ?? "" } : {}; };
+  const here = info(row);
+  const target = here.id ? S.data.tasks.find((t) => t.id === here.id) : null;
+  const pid = target ? target.projectId : here.pid;
+  if (!dragged || !pid || pid !== dragged.projectId) return null;
+  const rows = [...row.parentNode.children].filter((r) => r.matches("tr, .g-row"));
+  // その行より下で、同じセクションの先頭のタスク行（見出しに当たったらなし）
+  const nextTaskId = () => { for (const r of rows.slice(rows.indexOf(row) + 1)) { const i = info(r); if (i.id) return i.id; if (i.pid) return null; } return null; };
+  let plan;
+  if (target) {
+    const box = row.getBoundingClientRect();
+    plan = e.clientY < box.top + box.height / 2
+      ? { beforeId: target.id, pos: "before" }
+      : { beforeId: nextTaskId(), group: target.group ?? "", subgroup: target.subgroup ?? "", pos: "after" };
+  } else {
+    plan = { beforeId: nextTaskId(), group: here.g, subgroup: here.sg, pos: "after" }; // 見出しへ落とすと、そのセクションの先頭
+  }
+  if (moveTask(S.data, drag.id, plan) === S.data) return null;
+  return { ...plan, row };
+}
+const clearOrderLine = () => view.querySelectorAll(".drop-before,.drop-after").forEach((r) => r.classList.remove("drop-before", "drop-after"));
 view.addEventListener("dragover", (e) => {
+  if (drag?.kind === "order") {
+    const p = planOrder(e);
+    clearOrderLine();
+    if (!p) return;
+    e.preventDefault();
+    p.row.classList.add(p.pos === "before" ? "drop-before" : "drop-after");
+    return;
+  }
   const dz = e.target.closest(".dz");
   if (!dz || !drag) return;
   e.preventDefault();
@@ -5003,6 +5075,14 @@ view.addEventListener("dragover", (e) => {
   if (p.error) hideTip(); else showTip(`${hm(p.st)}–${hm(p.end)}`, e.clientX, e.clientY);
 });
 view.addEventListener("drop", (e) => {
+  if (drag?.kind === "order") {
+    e.preventDefault();
+    const p = planOrder(e), id = drag.id;
+    clearOrderLine();
+    drag = null;
+    if (p) apply((d) => moveTask(d, id, { beforeId: p.beforeId, group: p.group, subgroup: p.subgroup }), "並べ替えました");
+    return;
+  }
   const dz = e.target.closest(".dz");
   if (!dz || !drag) return;
   e.preventDefault();
@@ -5014,7 +5094,7 @@ view.addEventListener("drop", (e) => {
   S.picked = null;
   apply((d) => p.next(d), `${p.msg}${p.warning ? `(${p.warning})` : ""}`);
 });
-view.addEventListener("dragend", () => { drag = null; ghost?.remove(); ghost = null; hideTip(); });
+view.addEventListener("dragend", () => { clearOrderLine(); drag = null; ghost?.remove(); ghost = null; hideTip(); });
 
 /* ---------- 枠・手入力の会議の下端ドラッグ(終了時刻を変える) ---------- */
 view.addEventListener("mousedown", (e) => {

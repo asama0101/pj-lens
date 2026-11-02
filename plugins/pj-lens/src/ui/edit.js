@@ -2,6 +2,7 @@
 import { addDays, diffDays, isDate, isTime, isWeekend, toMin, nowLocal } from "../core/dates.js";
 import { calendarOf } from "../core/holidays.js";
 import { taskStart } from "../core/metrics.js";
+import { groupSections } from "../core/groups.js";
 import { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, HOLIDAY_KINDS } from "../core/schema.js";
 
 const mapTask = (data, id, fn) => {
@@ -173,6 +174,37 @@ export function addPredecessor(data, taskId, predId, today = nowLocal().date) {
   const t = data.tasks.find((x) => x.id === taskId);
   if (!t) throw new Error(`タスク ${taskId} がありません`);
   return updateTask(data, taskId, { predecessors: [...(t.predecessors ?? []), predId] }, today);
+}
+
+/**
+ * 表示順の入れ替え。beforeId のタスクの前へ入れ、そのタスクの大項目・中項目になる。
+ * beforeId が null（省略）のときは、指定した大項目・中項目（空は「（なし）」）のセクションの末尾へ入れる。
+ * 同じプロジェクトのタスクだけを指せる。動かしたあと、そのプロジェクトのタスクを表示の順（セクション順）に並べ直して、配列の同じ位置へ戻す
+ * （他のプロジェクトのタスクの位置は変わらない）。今の表示と同じ位置・同じ大項目・中項目になるときは、同じデータを返す。
+ */
+export function moveTask(data, id, { beforeId = null, group = "", subgroup = "" } = {}) {
+  const t = data.tasks.find((x) => x.id === id);
+  if (!t) throw new Error(`タスク ${id} がありません`);
+  const b = beforeId ? data.tasks.find((x) => x.id === beforeId) : null;
+  if (beforeId && !b) throw new Error(`タスク ${beforeId} がありません`);
+  if (b && b.projectId !== t.projectId) throw new Error(`タスク ${id} と ${beforeId} は別のプロジェクトです`);
+  if (beforeId === id) return data;
+
+  const mine = data.tasks.filter((x) => x.projectId === t.projectId);
+  const shown = groupSections(mine);
+  const secs = shown.map((s) => ({ ...s, tasks: s.tasks.filter((x) => x.id !== id) }));
+  const g = b ? (b.group ?? "") : String(group ?? "").trim();
+  const sg = b ? (b.subgroup ?? "") : String(subgroup ?? "").trim();
+  let sec = b ? secs.find((s) => s.tasks.some((x) => x.id === beforeId)) : secs.find((s) => s.group === g && s.subgroup === sg);
+  if (!sec) secs.push((sec = { group: g, subgroup: sg, tasks: [] }));
+  sec.tasks.splice(b ? sec.tasks.findIndex((x) => x.id === beforeId) : sec.tasks.length, 0, { ...t, group: g || null, subgroup: sg || null });
+  const order = groupSections(secs.flatMap((s) => s.tasks)).flatMap((s) => s.tasks);
+
+  const before = shown.flatMap((s) => s.tasks);
+  const same = order.every((x, i) => x.id === before[i].id) && (t.group ?? "") === g && (t.subgroup ?? "") === sg;
+  if (same) return data;
+  let k = 0;
+  return { ...data, tasks: data.tasks.map((x) => (x.projectId === t.projectId ? order[k++] : x)) };
 }
 
 export function moveProjectDates(data, projectId, edge, days) {

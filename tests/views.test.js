@@ -1055,7 +1055,7 @@ test("renderGantt: 重要度が高・中の未完了タスクのラベルに印�
   const set = (id, imp, status) => { const t = d.tasks.find((x) => x.id === id); t.importance = imp; if (status) t.status = status; };
   set("A1", "high", "Done"); set("A2", "mid", "Cancelled"); set("A3", "high", "Waiting"); set("A4", "mid", "To Do"); set("A5", "low", "In Progress"); set("A6", null, "To Do");
   const html = gantt(d, ["A"]);
-  const label = (id) => /<div class="g-label([^"]*)">/.exec(html.split('<div class="g-row">').find((r) => r.includes(`data-gt="${id}"`)))[1];
+  const label = (id) => /<div class="g-label([^"]*)"/.exec(html.split('<div class="g-row">').find((r) => r.includes(`data-gt="${id}"`)))[1];
   assert.deepEqual(["A1", "A2", "A3", "A4", "A5", "A6"].map(label), ["", "", " imp-high", " imp-mid", "", ""]);
 });
 
@@ -1236,4 +1236,29 @@ test("設定: 規則のエラー（ruleError）も、閉じた「キーワード
   const head = (html) => html.match(/data-fold="rules"[^>]*><summary>([^]*?)<\/summary>/)[1];
   assert.match(head(setv(load(), { closed: ["rules"], ruleError: "同じキーワードがあります" })), /注意 1 件/);
   assert.doesNotMatch(head(setv(load(), { closed: ["rules"] })), /注意/);
+});
+
+test("タスクの並べ替え: 編集画面のリストとガントに「⠿」ハンドル（data-mvh）と、見出し・行の落とし先（data-mvgrp・data-mvrow）が出る。レポート（読み取り専用）には出ない", () => {
+  const d = load();
+  const list = renderProjects(d, TODAY, { filter: "A", view: "list" });
+  const edit = gantt(d, ["A"]);
+  const proj = d.tasks.filter((t) => t.projectId === "A");
+  for (const [name, html] of [["リスト", list], ["ガント", edit]]) {
+    assert.equal(count(html, /data-mvh="/g), proj.length, `${name}: タスクごとに 1 つのハンドル`);
+    assert.equal(count(html, /data-mvrow="/g), proj.length, `${name}: 行の落とし先`);
+    assert.ok(count(html, /data-mvgrp="A"/g) >= 4, `${name}: セクションの見出し（設計・調達・構築×2 と （なし））`);
+  }
+  assert.match(list, /data-mvgrp="A" data-mvg="調達" data-mvsg="機器選定"/);
+  const ro = gantt(d, ["A"], { readonly: true });
+  assert.doesNotMatch(ro, /data-mv(h|row|grp)=/);
+});
+
+test("レポート: プロジェクト別の詳細表のタスクは、配列の順ではなく、ガントと同じセクションの順に並ぶ", () => {
+  const d = load();
+  const by = new Map(d.tasks.map((t) => [t.id, t]));
+  d.tasks = ["A2", "A4", "A3", "A1", "A5", "A6", "A7", "B1", "B2", "B3", "B4", "C1", "C2", "C3"].map((id) => by.get(id)); // 調達・構築・調達・設計の順
+  const html = buildReportHtml(d);
+  const seq = [...new Set([...html.matchAll(/<span class="mono">(A\d)<\/span>/g)].map((m) => m[1]))];
+  assert.deepEqual(seq, ["A2", "A3", "A4", "A5", "A6", "A7", "A1"].filter((id) => seq.includes(id)));
+  assert.ok(seq.length >= 5, `詳細表に A のタスクが出る: ${seq}`);
 });
