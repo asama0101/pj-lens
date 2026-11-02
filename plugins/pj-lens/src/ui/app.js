@@ -715,8 +715,8 @@ function onChange(el) {
   }
   if (el.dataset.addpre !== undefined) {
     if (el.value) {
-      const id = el.dataset.addpre, pre = el.value, start = S.data.tasks.find((t) => t.id === id)?.start;
-      apply((d) => addPredecessor(d, id, pre, today), start ? `前のタスクを追加しました。開始日 ${fmtMD(start)} を外し、前のタスクの期限から決まる形にしました` : "前のタスクを追加しました");
+      const id = el.dataset.addpre, pre = el.value;
+      apply((d) => addPredecessor(d, id, pre, today), "前のタスクを追加しました");
     }
     return;
   }
@@ -857,9 +857,8 @@ view.addEventListener("mousedown", (e) => {
   let kind, t, p, mIdx, mode = handle, s, en;
   if (tg.dataset.gt) {
     kind = "t"; t = S.data.tasks.find((x) => x.id === tg.dataset.gt);
-    en = idx(t.due); s = idx(taskStart(S.data, t.id));
-    const hasPre = (t.predecessors ?? []).length > 0;
-    if (tg.classList.contains("dot") || s === en) mode = !t.start || t.start > t.due ? "r" : "both-point";
+    en = idx(t.due); s = Math.min(idx(taskStart(S.data, t.id)), en); // 開始が期限より後のタスクは、描画と同じく期限の 1 日分の棒として扱う
+    if (tg.classList.contains("dot")) mode = "r"; // 点（期限だけのタスク）は、期限だけが動く
   } else if (tg.dataset.gp) {
     kind = "p"; p = S.data.projects.find((x) => x.id === tg.dataset.gp);
     s = idx(p.start); en = idx(p.due);
@@ -874,13 +873,17 @@ view.addEventListener("mousedown", (e) => {
   const x0 = e.clientX;
   let dd = 0;
   const pct = (n) => `${((n / total) * 100).toFixed(3)}%`;
+  // 右つまみ: 開始日の指定がなく、開始 ≥ 期限のタスク（点・前のタスクだけが頼りの帯）は、前のタスクの期限へ跳ばさず、そのまま動かす。それ以外は開始日より前へ動かさない
+  const edges = (dd) => {
+    if (mode === "l") return [Math.min(s + dd, en), en];
+    if (mode === "r") return [s, kind === "m" || (kind === "t" && !t.start && s >= en) ? en + dd : Math.max(en + dd, s)];
+    return [s + dd, en + dd];
+  };
   const move = (ev) => {
     dd = Math.round((ev.clientX - x0) / ppd);
-    let ns = s, ne = en;
-    if (mode === "l") ns = Math.min(s + dd, en);
-    else if (mode === "r") ne = kind === "m" ? en + dd : (s >= en ? en + dd : Math.max(en + dd, s)); // 点（開始 ≥ 期限）は、前のタスクの期限へ跳ばさず、そのまま動かす
-    else { ns = s + dd; ne = en + dd; }
-    if (kind === "m" || tg.classList.contains("dot")) tg.style.left = pct(ne);
+    const [ns, ne] = edges(dd);
+    const dot = tg.classList.contains("dot");
+    if (kind === "m" || dot) tg.style.left = dot ? `calc(${pct(ne)} + ${pct(0.5)})` : pct(ne); // 点は日付マスの中央（描画と同じ）
     else { tg.style.left = pct(ns); tg.style.width = pct(ne - ns + 1); } // 期限日のマスを含める（描画と同じ）
     tg.title = `${fmtMD(addDays(s0, ns))}〜${fmtMD(addDays(s0, ne))}`;
   };
@@ -889,10 +892,7 @@ view.addEventListener("mousedown", (e) => {
     document.removeEventListener("mouseup", up);
     gbody?.classList.remove("dep-hide");
     if (!dd) { if (kind === "t") openTaskPop(t.id, ev.clientX, ev.clientY); return; } // 動かさずに離した = クリック
-    let ns = s, ne = en;
-    if (mode === "l") ns = Math.min(s + dd, en);
-    else if (mode === "r") ne = kind === "m" ? en + dd : (s >= en ? en + dd : Math.max(en + dd, s)); // 点（開始 ≥ 期限）は、前のタスクの期限へ跳ばさず、そのまま動かす
-    else { ns = s + dd; ne = en + dd; }
+    const [ns, ne] = edges(dd);
     let result, msg, dragEdit;
     if (kind === "t") {
       const m = mode === "l" ? "start" : mode === "r" ? "due" : "both";
@@ -1082,6 +1082,14 @@ function pinTableHeads() {
     const r = box.getBoundingClientRect();
     const dy = Math.max(0, Math.min(top - r.top, r.height - ths[0].offsetHeight - 4));
     for (const th of ths) th.style.transform = dy ? `translateY(${dy}px)` : "";
+  }
+  // ガントの日付軸も同じ手法で固定する（.gscroll が overflow-x:auto なので sticky が効かない）。固定位置は、ヘッダー・フィルタ行・.gtop の下。プロジェクトごとに、その下端で止める
+  const axisTop = top + (view.querySelector(".gtop")?.offsetHeight ?? 0);
+  for (const gb of view.querySelectorAll(".gbody")) {
+    const head = gb.querySelector(".g-head");
+    if (!head) continue;
+    const dy = Math.max(0, Math.min(axisTop - gb.getBoundingClientRect().top, gb.offsetHeight - head.offsetHeight - 4)); // 軸の行は gbody の先頭なので、動かす前の上端 = gbody の上端
+    head.style.transform = dy ? `translateY(${dy}px)` : "";
   }
 }
 let pinQueued = false;

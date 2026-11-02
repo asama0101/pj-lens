@@ -175,7 +175,7 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .b-done{background:var(--ok);opacity:.5}
 .b-cancel{background:var(--todo);opacity:.35}
 .g-due{position:absolute;top:10px;margin-left:8px;font-size:11px;color:var(--muted)}
-.g-lane .mk{top:13px}
+.g-lane .mk{position:absolute;top:13px;transform:translateX(-50%)}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
 .seg button{font:inherit;font-size:13px;background:var(--surface);color:var(--muted);border:0;padding:4px 14px;cursor:pointer}
 .seg button[aria-pressed=true]{background:var(--accent-soft);color:var(--accent);font-weight:700}
@@ -222,7 +222,16 @@ label{font-size:13px}
 .g-row{display:flex;gap:12px;align-items:stretch;border-bottom:1px solid var(--line-soft)}
 .g-label{position:sticky;left:0;z-index:4;flex:none;width:230px;background:var(--surface)}
 .g-lane{flex:none}
-.g-head{border-bottom:1px solid var(--line)}
+/* 重要度: 高は左端に太い赤の縦線と、行の薄い赤の背景。中は細いグレーの縦線。縦線は横スクロールで流れないよう、固定のラベルに付ける */
+.g-row>.g-label{padding-left:9px}
+.g-label.imp-high::before,.g-label.imp-mid::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--bad)}
+.g-label.imp-mid::before{width:2px;background:var(--todo)}
+.g-label.imp-high{background:var(--bad-soft)}
+.g-row:has(>.g-label.imp-high){background:var(--bad-soft)} /* :has() 非対応のブラウザでも、上の規則（ラベル）が捨てられないよう、分ける */
+.imp-key{display:inline-block;height:12px;margin-right:6px;vertical-align:middle}
+.imp-key.hi{width:5px;background:var(--bad)}
+.imp-key.mid{width:2px;background:var(--todo)}
+.g-head{border-bottom:1px solid var(--line);position:relative;z-index:6;background:var(--surface)} /* 日付軸は、app.js の pinTableHeads が上端に固定する */
 .g-axis{height:24px;position:relative}
 .g-axis span.yr{font-weight:700;color:var(--ink);border-left-color:var(--ink)}
 .gl.yr{border-left:1px solid var(--muted)}
@@ -297,7 +306,7 @@ label{font-size:13px}
 tr.hl{outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-soft)}
 tr.hl td{transition:background .3s}
 .tbl.edit td[data-l="開始"] small{font-size:11px}
-.g-add .g-label{display:block;padding:4px 0}.g-add .g-label .in{width:100%}
+.g-add .g-label{display:block;padding:4px 0 4px 9px}.g-add .g-label .in{width:100%}
 
 .g-lane .ms{position:absolute;transform:translateX(-50%) rotate(45deg);width:11px;height:11px;background:var(--ink);opacity:.9;cursor:ew-resize;z-index:3}
 .g-lane .ms-l{position:absolute;transform:translateX(10px);font-size:11px;line-height:1.3;color:var(--ink);white-space:nowrap;pointer-events:none;z-index:3}

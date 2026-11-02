@@ -33,10 +33,10 @@ export function ganttRows(data, projectId, today) {
   const milestones = [...(p.milestones ?? [])].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const rows = tasks.map((t) => {
     const s = taskStart(data, t.id);
-    const point = s >= t.due;
+    const point = !t.start && !(t.predecessors ?? []).length; // 点は、開始も前のタスクもない（期限だけの）タスクに限る。開始が期限以後の他のタスクは、期限の 1 日分の棒
     return {
       taskId: t.id,
-      start: point ? t.due : s,
+      start: s >= t.due ? t.due : s,
       end: t.due,
       point,
       actual: actualSpan(t, today),

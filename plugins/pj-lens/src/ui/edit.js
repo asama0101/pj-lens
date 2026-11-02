@@ -168,11 +168,11 @@ export function moveTaskDates(data, taskId, mode, days) {
   return { data: mapTask(data, taskId, (x) => ({ ...x, ...patch })) };
 }
 
-/** 前のタスクを足す。指定してあった開始日は外す（開始日は前のタスクの期限から決まる形に戻る。「Claude Code に依頼する」で足したときと同じ） */
+/** 前のタスクを足す。開始日は触らない（指定してあれば、そのまま残る） */
 export function addPredecessor(data, taskId, predId, today = nowLocal().date) {
   const t = data.tasks.find((x) => x.id === taskId);
   if (!t) throw new Error(`タスク ${taskId} がありません`);
-  return updateTask(data, taskId, { predecessors: [...(t.predecessors ?? []), predId], ...(t.start && { start: null }) }, today);
+  return updateTask(data, taskId, { predecessors: [...(t.predecessors ?? []), predId] }, today);
 }
 
 export function moveProjectDates(data, projectId, edge, days) {

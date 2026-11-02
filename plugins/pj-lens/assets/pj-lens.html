@@ -182,7 +182,7 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .b-done{background:var(--ok);opacity:.5}
 .b-cancel{background:var(--todo);opacity:.35}
 .g-due{position:absolute;top:10px;margin-left:8px;font-size:11px;color:var(--muted)}
-.g-lane .mk{top:13px}
+.g-lane .mk{position:absolute;top:13px;transform:translateX(-50%)}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
 .seg button{font:inherit;font-size:13px;background:var(--surface);color:var(--muted);border:0;padding:4px 14px;cursor:pointer}
 .seg button[aria-pressed=true]{background:var(--accent-soft);color:var(--accent);font-weight:700}
@@ -229,7 +229,16 @@ label{font-size:13px}
 .g-row{display:flex;gap:12px;align-items:stretch;border-bottom:1px solid var(--line-soft)}
 .g-label{position:sticky;left:0;z-index:4;flex:none;width:230px;background:var(--surface)}
 .g-lane{flex:none}
-.g-head{border-bottom:1px solid var(--line)}
+/* 重要度: 高は左端に太い赤の縦線と、行の薄い赤の背景。中は細いグレーの縦線。縦線は横スクロールで流れないよう、固定のラベルに付ける */
+.g-row>.g-label{padding-left:9px}
+.g-label.imp-high::before,.g-label.imp-mid::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--bad)}
+.g-label.imp-mid::before{width:2px;background:var(--todo)}
+.g-label.imp-high{background:var(--bad-soft)}
+.g-row:has(>.g-label.imp-high){background:var(--bad-soft)} /* :has() 非対応のブラウザでも、上の規則（ラベル）が捨てられないよう、分ける */
+.imp-key{display:inline-block;height:12px;margin-right:6px;vertical-align:middle}
+.imp-key.hi{width:5px;background:var(--bad)}
+.imp-key.mid{width:2px;background:var(--todo)}
+.g-head{border-bottom:1px solid var(--line);position:relative;z-index:6;background:var(--surface)} /* 日付軸は、app.js の pinTableHeads が上端に固定する */
 .g-axis{height:24px;position:relative}
 .g-axis span.yr{font-weight:700;color:var(--ink);border-left-color:var(--ink)}
 .gl.yr{border-left:1px solid var(--muted)}
@@ -304,7 +313,7 @@ label{font-size:13px}
 tr.hl{outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-soft)}
 tr.hl td{transition:background .3s}
 .tbl.edit td[data-l="開始"] small{font-size:11px}
-.g-add .g-label{display:block;padding:4px 0}.g-add .g-label .in{width:100%}
+.g-add .g-label{display:block;padding:4px 0 4px 9px}.g-add .g-label .in{width:100%}
 
 .g-lane .ms{position:absolute;transform:translateX(-50%) rotate(45deg);width:11px;height:11px;background:var(--ink);opacity:.9;cursor:ew-resize;z-index:3}
 .g-lane .ms-l{position:absolute;transform:translateX(10px);font-size:11px;line-height:1.3;color:var(--ink);white-space:nowrap;pointer-events:none;z-index:3}
@@ -914,10 +923,10 @@ function ganttRows(data, projectId, today) {
   const milestones = [...(p.milestones ?? [])].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const rows = tasks.map((t) => {
     const s = taskStart(data, t.id);
-    const point = s >= t.due;
+    const point = !t.start && !(t.predecessors ?? []).length; // 点は、開始も前のタスクもない（期限だけの）タスクに限る。開始が期限以後の他のタスクは、期限の 1 日分の棒
     return {
       taskId: t.id,
-      start: point ? t.due : s,
+      start: s >= t.due ? t.due : s,
       end: t.due,
       point,
       actual: actualSpan(t, today),
@@ -2419,11 +2428,11 @@ function moveTaskDates(data, taskId, mode, days) {
   return { data: mapTask(data, taskId, (x) => ({ ...x, ...patch })) };
 }
 
-/** 前のタスクを足す。指定してあった開始日は外す（開始日は前のタスクの期限から決まる形に戻る。「Claude Code に依頼する」で足したときと同じ） */
+/** 前のタスクを足す。開始日は触らない（指定してあれば、そのまま残る） */
 function addPredecessor(data, taskId, predId, today = nowLocal().date) {
   const t = data.tasks.find((x) => x.id === taskId);
   if (!t) throw new Error(`タスク ${taskId} がありません`);
-  return updateTask(data, taskId, { predecessors: [...(t.predecessors ?? []), predId], ...(t.start && { start: null }) }, today);
+  return updateTask(data, taskId, { predecessors: [...(t.predecessors ?? []), predId] }, today);
 }
 
 function moveProjectDates(data, projectId, edge, days) {
@@ -2894,10 +2903,7 @@ function simulate(data, ops, today) {
     if (before.has(predId)) touched.add(predId);
     if (o.op === "addPred") {
       if (has) { predRows.push({ taskId, predId, action: "same" }); warnings.push(`${predId} は、すでに ${taskId} の前のタスクです`); continue; }
-      // 前のタスクを足したら、開始日は前のタスクから決まる形に戻す（指定した開始日は外す）。外すので、提案の注意に出す
-      const patch = { predecessors: [...(t.predecessors ?? []), predId] };
-      if (t.start) { patch.start = null; warnings.push(`${taskId} は前のタスクができるので、開始日 ${t.start} を外します（前のタスクから決まります）`); }
-      w = updateTask(w, taskId, patch, today);
+      w = updateTask(w, taskId, { predecessors: [...(t.predecessors ?? []), predId] }, today); // 開始日は触らない
       predRows.push({ taskId, predId, action: "add" });
       predCount++; inboxIds.add(taskId);
       if (!isClosed(p)) raise(taskId, p.due, `前のタスク ${predId} を追加`, inboxIds);
@@ -3161,7 +3167,7 @@ const { assignLevels, layoutMilestones, renderGantt } = (() => {
 
 const GANTT_WINDOWS = [["m1", "1か月"], ["m3", "3か月"], ["m6", "6か月"], ["y1", "1年"], ["all", "全期間"]];
 
-const legend = (showActual) => `<div class="legend"><span><i class="gbar b-todo" style="position:static;display:inline-block;width:22px;height:10px"></i>To Do</span><span><i class="gbar b-prog" style="position:static;display:inline-block;width:22px;height:10px"></i>In Progress</span><span><i class="gbar b-wait" style="position:static;display:inline-block;width:22px;height:10px"></i>Waiting</span><span><i class="gbar b-done" style="position:static;display:inline-block;width:22px;height:10px"></i>Done</span><span><i class="gbar gsum" style="position:static;display:inline-block;width:22px;height:8px"></i>プロジェクト全体</span><span><i class="ms" style="position:static;display:inline-block;transform:rotate(45deg);width:9px;height:9px"></i>マイルストーン</span>${showActual ? `<span><i class="gact" style="position:static;display:inline-block;width:22px;height:5px"></i>実績(最初の作業日〜完了日・今日)</span>` : ""}<span>開始日は、未入力なら前のタスクの期限から</span></div>`;
+const legend = (showActual) => `<div class="legend"><span><i class="gbar b-todo" style="position:static;display:inline-block;width:22px;height:10px"></i>To Do</span><span><i class="gbar b-prog" style="position:static;display:inline-block;width:22px;height:10px"></i>In Progress</span><span><i class="gbar b-wait" style="position:static;display:inline-block;width:22px;height:10px"></i>Waiting</span><span><i class="gbar b-done" style="position:static;display:inline-block;width:22px;height:10px"></i>Done</span><span><i class="gbar gsum" style="position:static;display:inline-block;width:22px;height:8px"></i>プロジェクト全体</span><span><i class="ms" style="position:static;display:inline-block;transform:rotate(45deg);width:9px;height:9px"></i>マイルストーン</span>${showActual ? `<span><i class="gact" style="position:static;display:inline-block;width:22px;height:5px"></i>実績(最初の作業日〜完了日・今日)</span>` : ""}<span><i class="imp-key hi"></i>重要度 高（行を薄い赤で塗る）</span><span><i class="imp-key mid"></i>重要度 中</span><span>開始日は、未入力なら前のタスクの期限から</span></div>`;
 
 function tools(win, hideDone) {
   const seg = GANTT_WINDOWS.map(([k, l]) => `<button data-gwin="${k}" aria-pressed="${win === k}">${l}</button>`).join("");
@@ -3292,7 +3298,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
       const drag = readonly ? "" : " gdrag";
       const label = `${esc(t.id)} ${esc(t.title)} ${fmtMD(r.start)}〜${fmtMD(r.end)}`;
       const bar = r.point
-        ? `<i class="dot mk${drag} ${ui.dot}${late ? " is-late" : ""}"${gt} style="left:${x(r.end)};top:13px" title="${label}${readonly ? "" : "(ドラッグで期限を変更)"}"></i>`
+        ? `<i class="dot mk${drag} ${ui.dot}${late ? " is-late" : ""}"${gt} style="left:calc(${x(r.end)} + ${(50 / total).toFixed(3)}%)" title="${label}${readonly ? "" : "(ドラッグで期限を変更)"}"></i>`
         : `<i class="gbar${drag} ${ui.bar}${late ? " is-late" : ""}"${gt} style="left:${x(r.start)};width:${(((diffDays(r.end, r.start) + 1) / total) * 100).toFixed(3)}%;min-width:5px" title="${label}${readonly ? "" : "(クリックで編集、ドラッグで移動、両端で開始・期限を変更)"}">${readonly ? "" : '<b class="gh l" data-gh="l"></b><b class="gh r" data-gh="r"></b>'}</i>`;
       const act = r.actual && showActual
         ? `<i class="gact" style="left:${x(r.actual.start)};width:${((Math.max(diffDays(r.actual.end, r.actual.start), 0) + 1) / total * 100).toFixed(3)}%;min-width:4px" title="実績 ${fmtMD(r.actual.start)}〜${fmtMD(r.actual.end)}"></i>`
@@ -3304,9 +3310,10 @@ function renderGantt(data, projectIds, today, opts = {}) {
       } else {
         const name = readonly ? `<span class="g-name">${esc(t.title)}</span>` : `<button class="g-name" data-gedit="${esc(t.id)}" title="クリックで編集">${esc(t.title)}</button>`;
         const del = readonly ? "" : `<button class="gx" data-del="${esc(t.id)}" aria-label="${esc(t.id)} を削除">×</button>`;
-        lab = `<div class="g-label"><span class="id">${esc(t.id)}</span>${name}${del}<span class="g-pre">${hasPre ? "← " + esc(t.predecessors.join(", ")) : ""}</span></div>`;
+        const imp = ["high", "mid"].includes(t.importance) && !["Done", "Cancelled"].includes(t.status) ? ` imp-${t.importance}` : ""; // 重要度の印（高・中）。完了したタスクには付けない
+        lab = `<div class="g-label${imp}"><span class="id">${esc(t.id)}</span>${name}${del}<span class="g-pre">${hasPre ? "← " + esc(t.predecessors.join(", ")) : ""}</span></div>`;
       }
-      return `<div class="g-row">${lab}<div class="g-lane" ${laneStyle}>${bar}${act}<span class="g-due mono" style="left:${x(r.point ? r.end : addDays(r.end, 1))}">${fmtMD(t.due)}</span></div></div>`;
+      return `<div class="g-row">${lab}<div class="g-lane" ${laneStyle}>${bar}${act}<span class="g-due mono" style="left:${x(addDays(r.end, 1))}">${fmtMD(t.due)}</span></div></div>`;
     };
     // (大項目, 中項目) ごとに見出し行を入れて並べる。編集画面は、追加の入口になるので、大項目がなくても「（なし）」の見出しを常に出す。
     // 見出しは完了を隠していても残す（そのグループへ追加できるように）。レポート用は、見える行があるグループだけを出す
@@ -4924,8 +4931,8 @@ function onChange(el) {
   }
   if (el.dataset.addpre !== undefined) {
     if (el.value) {
-      const id = el.dataset.addpre, pre = el.value, start = S.data.tasks.find((t) => t.id === id)?.start;
-      apply((d) => addPredecessor(d, id, pre, today), start ? `前のタスクを追加しました。開始日 ${fmtMD(start)} を外し、前のタスクの期限から決まる形にしました` : "前のタスクを追加しました");
+      const id = el.dataset.addpre, pre = el.value;
+      apply((d) => addPredecessor(d, id, pre, today), "前のタスクを追加しました");
     }
     return;
   }
@@ -5066,9 +5073,8 @@ view.addEventListener("mousedown", (e) => {
   let kind, t, p, mIdx, mode = handle, s, en;
   if (tg.dataset.gt) {
     kind = "t"; t = S.data.tasks.find((x) => x.id === tg.dataset.gt);
-    en = idx(t.due); s = idx(taskStart(S.data, t.id));
-    const hasPre = (t.predecessors ?? []).length > 0;
-    if (tg.classList.contains("dot") || s === en) mode = !t.start || t.start > t.due ? "r" : "both-point";
+    en = idx(t.due); s = Math.min(idx(taskStart(S.data, t.id)), en); // 開始が期限より後のタスクは、描画と同じく期限の 1 日分の棒として扱う
+    if (tg.classList.contains("dot")) mode = "r"; // 点（期限だけのタスク）は、期限だけが動く
   } else if (tg.dataset.gp) {
     kind = "p"; p = S.data.projects.find((x) => x.id === tg.dataset.gp);
     s = idx(p.start); en = idx(p.due);
@@ -5083,13 +5089,17 @@ view.addEventListener("mousedown", (e) => {
   const x0 = e.clientX;
   let dd = 0;
   const pct = (n) => `${((n / total) * 100).toFixed(3)}%`;
+  // 右つまみ: 開始日の指定がなく、開始 ≥ 期限のタスク（点・前のタスクだけが頼りの帯）は、前のタスクの期限へ跳ばさず、そのまま動かす。それ以外は開始日より前へ動かさない
+  const edges = (dd) => {
+    if (mode === "l") return [Math.min(s + dd, en), en];
+    if (mode === "r") return [s, kind === "m" || (kind === "t" && !t.start && s >= en) ? en + dd : Math.max(en + dd, s)];
+    return [s + dd, en + dd];
+  };
   const move = (ev) => {
     dd = Math.round((ev.clientX - x0) / ppd);
-    let ns = s, ne = en;
-    if (mode === "l") ns = Math.min(s + dd, en);
-    else if (mode === "r") ne = kind === "m" ? en + dd : (s >= en ? en + dd : Math.max(en + dd, s)); // 点（開始 ≥ 期限）は、前のタスクの期限へ跳ばさず、そのまま動かす
-    else { ns = s + dd; ne = en + dd; }
-    if (kind === "m" || tg.classList.contains("dot")) tg.style.left = pct(ne);
+    const [ns, ne] = edges(dd);
+    const dot = tg.classList.contains("dot");
+    if (kind === "m" || dot) tg.style.left = dot ? `calc(${pct(ne)} + ${pct(0.5)})` : pct(ne); // 点は日付マスの中央（描画と同じ）
     else { tg.style.left = pct(ns); tg.style.width = pct(ne - ns + 1); } // 期限日のマスを含める（描画と同じ）
     tg.title = `${fmtMD(addDays(s0, ns))}〜${fmtMD(addDays(s0, ne))}`;
   };
@@ -5098,10 +5108,7 @@ view.addEventListener("mousedown", (e) => {
     document.removeEventListener("mouseup", up);
     gbody?.classList.remove("dep-hide");
     if (!dd) { if (kind === "t") openTaskPop(t.id, ev.clientX, ev.clientY); return; } // 動かさずに離した = クリック
-    let ns = s, ne = en;
-    if (mode === "l") ns = Math.min(s + dd, en);
-    else if (mode === "r") ne = kind === "m" ? en + dd : (s >= en ? en + dd : Math.max(en + dd, s)); // 点（開始 ≥ 期限）は、前のタスクの期限へ跳ばさず、そのまま動かす
-    else { ns = s + dd; ne = en + dd; }
+    const [ns, ne] = edges(dd);
     let result, msg, dragEdit;
     if (kind === "t") {
       const m = mode === "l" ? "start" : mode === "r" ? "due" : "both";
@@ -5291,6 +5298,14 @@ function pinTableHeads() {
     const r = box.getBoundingClientRect();
     const dy = Math.max(0, Math.min(top - r.top, r.height - ths[0].offsetHeight - 4));
     for (const th of ths) th.style.transform = dy ? `translateY(${dy}px)` : "";
+  }
+  // ガントの日付軸も同じ手法で固定する（.gscroll が overflow-x:auto なので sticky が効かない）。固定位置は、ヘッダー・フィルタ行・.gtop の下。プロジェクトごとに、その下端で止める
+  const axisTop = top + (view.querySelector(".gtop")?.offsetHeight ?? 0);
+  for (const gb of view.querySelectorAll(".gbody")) {
+    const head = gb.querySelector(".g-head");
+    if (!head) continue;
+    const dy = Math.max(0, Math.min(axisTop - gb.getBoundingClientRect().top, gb.offsetHeight - head.offsetHeight - 4)); // 軸の行は gbody の先頭なので、動かす前の上端 = gbody の上端
+    head.style.transform = dy ? `translateY(${dy}px)` : "";
   }
 }
 let pinQueued = false;

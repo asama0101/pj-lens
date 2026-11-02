@@ -329,13 +329,13 @@ test("updateTask: 前のタスクがあるタスクでも、開始日が期限�
   assert.equal(task(updateTask(d, "A4", { start: "2026-11-20" }), "A4").start, "2026-11-20");
 });
 
-test("addPredecessor: 前のタスクを足すと、指定してあった開始日を外し、開始日は前のタスクの期限から決まる", () => {
+test("addPredecessor: 前のタスクを足しても、指定してあった開始日は変わらない", () => {
   const d = load();
   assert.equal(task(d, "A5").start, "2026-10-12");
   const n = addPredecessor(d, "A5", "A3");
   assert.deepEqual(task(n, "A5").predecessors, ["A3"]);
-  assert.equal(task(n, "A5").start ?? null, null);
-  assert.equal(taskStart(n, "A5"), task(n, "A3").due);
+  assert.equal(task(n, "A5").start, "2026-10-12");
+  assert.equal(taskStart(n, "A5"), "2026-10-12");
   const m = addPredecessor(d, "A4", "A5"); // 開始日の指定がないタスクは、前のタスクが増えるだけ
   assert.deepEqual(task(m, "A4").predecessors, ["A3", "A5"]);
 });
