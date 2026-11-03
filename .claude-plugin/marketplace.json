@@ -1,0 +1,16 @@
+{
+  "name": "pj-lens",
+  "owner": {
+    "name": "pj-lens contributors"
+  },
+  "plugins": [
+    {
+      "name": "pj-lens",
+      "source": "./plugins/pj-lens",
+      "description": "プロジェクト・タスク管理ダッシュボードと、日程見直しと取り込み（WBS・予定表）のサブエージェント。Windows 専用"
+    }
+  ],
+  "metadata": {
+    "description": "ネットワーク設備の管理者向け、プロジェクト・タスク管理ダッシュボードと Claude Code のサブエージェント"
+  }
+}
