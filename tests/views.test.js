@@ -1276,3 +1276,18 @@ test("renderProjects（リスト）: 名前と状態は .pstick にあり、種�
     for (const f of ["type", "start", "due"]) assert.ok(head.includes(`data-pf="${f}"`), `${name}: .phead に ${f}`);
   }
 });
+
+test("renderProjects（リスト）: .phead（種別・開始・期限・進捗・稼働・注意の印）も .pstick の中にあり、名前・状態の行（.prow）の次に並ぶ。固定する範囲に、プロジェクトの見出し全体が入る", () => {
+  const html = renderProjects(load(), TODAY, { filter: "A", view: "list" });
+  const start = html.indexOf('<div class="pstick">');
+  // .pstick の閉じ（最初の <div の深さが 0 に戻る位置）を探す
+  let depth = 0, end = -1;
+  for (const m of html.slice(start).matchAll(/<div\b|<\/div>/g)) { depth += m[0] === "</div>" ? -1 : 1; if (depth === 0) { end = start + m.index + m[0].length; break; } }
+  const stick = html.slice(start, end);
+  assert.ok(end > start, ".pstick の閉じが見つかる");
+  assert.ok(stick.startsWith('<div class="pstick"><div class="prow">'), "最初が名前・状態の行（.prow）");
+  assert.ok(stick.indexOf('data-pf="name"') < stick.indexOf('<div class="phead">') && stick.indexOf('data-pf="status"') < stick.indexOf('<div class="phead">'), "名前・状態は .phead の前");
+  for (const f of ["type", "start", "due"]) assert.ok(stick.includes(`data-pf="${f}"`), `.pstick の中に ${f}`);
+  assert.ok(stick.includes("class=\"hrs\"") || stick.includes("mono hrs"), "稼働も .pstick の中");
+  assert.ok(html.slice(end).trimStart().startsWith('<div class="tscroll tlist">'), ".pstick の直後が表の枠");
+});

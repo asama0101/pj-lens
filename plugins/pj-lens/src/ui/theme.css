@@ -476,7 +476,9 @@ body{padding-block:16px 76px}
 #view .gscroll{overflow:auto;max-height:calc(100vh - var(--gsy,0px) - var(--ibh,0px) - 16px)} /* --gsy は枠の上端のページ上の位置。ページの先頭で、枠の下端が下の固定の帯（--ibh）の上に収まる */
 #view .pg-head{top:0;background:var(--surface);z-index:7;padding:2px 0 6px;margin-bottom:0;width:calc(100cqw - var(--sbw,0px))} /* すきまを作らない（padding-bottom）。縦スクロールバーの幅を引くのは、右端で sticky に押し戻されて先頭の文字が欠けるのを防ぐため */
 #view .g-head{position:sticky;top:var(--pgh,0px);z-index:6}
-#view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px));z-index:6;background:var(--surface);display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:4px 0 6px}
+#view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px));z-index:6;background:var(--surface);padding:4px 0 6px} /* プロジェクトの見出し全体（名前・状態の行 + 種別〜稼働・注意の印の行）。列見出しの複製は、この下端に重なる */
+#view .pstick .prow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+#view .pstick .phead{margin:6px 0 0}
 #view .pstick h2{margin:0;font-size:17px}
 #view .pstick label{font-size:13px;color:var(--muted)}
 #view .thstrip{display:none;position:absolute;top:100%;left:0;right:0;overflow:hidden;box-sizing:border-box;border-bottom:1px solid var(--line);background:var(--surface)} /* リストの列見出しの複製。app.js の syncThStrips が作り、updateThStrips が .on で出す */

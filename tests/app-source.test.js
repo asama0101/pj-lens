@@ -300,7 +300,7 @@ test("app.js: リストの列見出しは、名前・状態の行（.pstick）�
 });
 
 test("theme.css: 列見出しの複製の規則は #view の中だけ。リストの表を sticky・横スクロールの枠にする規則は持たない", () => {
-  for (const rule of ["#view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px))", "#view .thstrip{display:none;position:absolute;top:100%;left:0;right:0;", "#view .thstrip.on{display:block}", "#view .thstrip .thin{display:flex"]) assert.ok(css.includes(rule), rule);
+  for (const rule of ["#view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px))", "#view .pstick .prow{display:flex", "#view .pstick .phead{margin:", "#view .thstrip{display:none;position:absolute;top:100%;left:0;right:0;", "#view .thstrip.on{display:block}", "#view .thstrip .thin{display:flex"]) assert.ok(css.includes(rule), rule);
   assert.ok(!css.includes("is-scroll") && !css.includes(".tscroll.tlist"), "表を枠にする規則の名残がない");
 });
 
