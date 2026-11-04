@@ -265,3 +265,25 @@ test("app.js: 設定タブの節の開閉は、toggle イベント（バブリ�
   assert.doesNotMatch(fn, /render\(\)/);
   assert.match(fn, /\}, true\);/, "キャプチャ");
 });
+
+// ---- 固定表示（ガント）: 画面のスクロールに対して、CSS の sticky で付ける ----
+const css = readFileSync(new URL("../plugins/pj-lens/src/ui/theme.css", import.meta.url), "utf8");
+
+test("theme.css: ガントの固定表示の規則は #view の中だけ。枠は縦横にスクロールし、見出しと日付軸は sticky", () => {
+  assert.match(css, /#view \.gscroll\{[^}]*overflow:auto[^}]*max-height:calc\(100vh - var\(--hh,0px\) - var\(--th,0px\) - var\(--gt,0px\) - var\(--ibh,0px\) - 24px\)/);
+  assert.match(css, /#view \.g-head\{[^}]*position:sticky[^}]*top:var\(--pgh,0px\)/);
+  assert.match(css, /#view \.pg-head\{[^}]*top:0[^}]*width:calc\(100cqw - var\(--sbw,0px\)\)/);
+});
+
+test("app.js: pinTableHeads は日付軸（.g-head）をずらさない。syncSticky が --gt・--ibh・--sbw・--pgh を入れる", () => {
+  const fn = src.slice(src.indexOf("function pinTableHeads"), src.indexOf("let pinQueued"));
+  assert.ok(fn.length > 50, "pinTableHeads を切り出せた");
+  assert.doesNotMatch(fn, /g-head/);
+  for (const v of ["--gt", "--ibh", "--sbw", "--pgh"]) assert.ok(src.includes(`setProperty("${v}"`), `${v} を入れる`);
+});
+
+test("app.js: 描き直しで、ガントの縦のスクロール位置（scrollTop）も保って戻す", () => {
+  const fn = src.slice(src.indexOf("function render()"), src.indexOf("function scrollToday"));
+  assert.match(fn, /map\(\(c\) => c\.scrollTop\)/);
+  assert.match(fn, /c\.scrollTop = prevTop\[i\]/);
+});

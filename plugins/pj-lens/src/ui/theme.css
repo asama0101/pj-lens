@@ -471,3 +471,8 @@ body{padding-block:16px 76px}
 .tpop .tp-f .in{width:100%;box-sizing:border-box;min-width:0}
 .tpop .tp-r{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
 .tpop .tp-a{display:flex;gap:8px;justify-content:space-between}
+
+/* 固定表示（ガント・リスト）: 画面のスクロールに対して、CSS の sticky で付ける。レポートは #view の外なので、影響しない */
+#view .gscroll{overflow:auto;max-height:calc(100vh - var(--hh,0px) - var(--th,0px) - var(--gt,0px) - var(--ibh,0px) - 24px)}
+#view .pg-head{top:0;background:var(--surface);z-index:7;padding:2px 0 6px;margin-bottom:0;width:calc(100cqw - var(--sbw,0px))} /* すきまを作らない（padding-bottom）。縦スクロールバーの幅を引くのは、右端で sticky に押し戻されて先頭の文字が欠けるのを防ぐため */
+#view .g-head{position:sticky;top:var(--pgh,0px);z-index:6}

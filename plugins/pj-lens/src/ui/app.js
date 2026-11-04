@@ -83,12 +83,13 @@ function render() {
   renderBar();
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
   const prev = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollLeft);
+  const prevTop = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollTop);
   const keepFocus = focusSelector(document.activeElement);
   view.innerHTML = (S.data && S.reportPanel ? renderReportPanel(S.data, S.reportPanel, c.date) : "") + renderBody();
   if (keepFocus && !S.focusSel) { try { view.querySelector(keepFocus)?.focus(); } catch { /* 無視 */ } }
   const bars = [...view.querySelectorAll(".gscroll")];
   if (S.resetScroll || !prev.length || prev.length !== bars.length) scrollToday(false);
-  else bars.forEach((c, i) => { c.scrollLeft = prev[i]; });
+  else bars.forEach((c, i) => { c.scrollLeft = prev[i]; c.scrollTop = prevTop[i]; });
   S.resetScroll = false;
   if (S.focusSel) {
     let el = null;
@@ -1020,6 +1021,7 @@ function renderBar(force = false) {
   const keep = a && el.contains(a) ? { sel: barSelector(a), s: a.selectionStart, e: a.selectionEnd } : null;
   el.innerHTML = renderInboxBar(S.data, { ...S.ib, canWrite: store.hasFile, nowMs: Date.now() });
   barSig = barSignature();
+  syncIbh();
   if (keep?.sel) {
     const n = el.querySelector(keep.sel);
     if (n) { n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch { /* 選択できない欄 */ } }
@@ -1117,8 +1119,15 @@ function syncSticky() {
   root.setProperty("--hh", `${topbar?.offsetHeight ?? 0}px`);
   const tool = view.querySelector(".ptool");
   root.setProperty("--th", `${tool ? tool.offsetHeight : 0}px`);
+  root.setProperty("--gt", `${view.querySelector(".gtop")?.offsetHeight ?? 0}px`);
+  syncIbh();
+  // ガントの枠（縦スクロールバーの幅を、名前の行の幅から引く）と、プロジェクトごとの見出しの高さ（日付軸の固定位置）。スクロールには連動させない
+  for (const gs of view.querySelectorAll(".gscroll")) gs.style.setProperty("--sbw", `${gs.offsetWidth - gs.clientWidth}px`);
+  for (const pg of view.querySelectorAll("section.pg")) { const h = pg.querySelector(".pg-head"); if (h) pg.style.setProperty("--pgh", `${h.offsetHeight}px`); }
   pinTableHeads();
 }
+/** 下の固定の帯（.ib）の高さ。ガントの枠の高さの計算に使う。帯は renderBar のたびに作り直される */
+function syncIbh() { document.documentElement.style.setProperty("--ibh", `${document.querySelector(".ib")?.offsetHeight ?? 0}px`); }
 
 /** リストの表の列見出しを、スクロール中も、ヘッダーとフィルタ行の下に付ける（表の枠の中でセルをずらす。表の下端は越えない） */
 function pinTableHeads() {
@@ -1130,14 +1139,6 @@ function pinTableHeads() {
     const r = box.getBoundingClientRect();
     const dy = Math.max(0, Math.min(top - r.top, r.height - ths[0].offsetHeight - 4));
     for (const th of ths) th.style.transform = dy ? `translateY(${dy}px)` : "";
-  }
-  // ガントの日付軸も同じ手法で固定する（.gscroll が overflow-x:auto なので sticky が効かない）。固定位置は、ヘッダー・フィルタ行・.gtop の下。プロジェクトごとに、その下端で止める
-  const axisTop = top + (view.querySelector(".gtop")?.offsetHeight ?? 0);
-  for (const gb of view.querySelectorAll(".gbody")) {
-    const head = gb.querySelector(".g-head");
-    if (!head) continue;
-    const dy = Math.max(0, Math.min(axisTop - gb.getBoundingClientRect().top, gb.offsetHeight - head.offsetHeight - 4)); // 軸の行は gbody の先頭なので、動かす前の上端 = gbody の上端
-    head.style.transform = dy ? `translateY(${dy}px)` : "";
   }
 }
 let pinQueued = false;
