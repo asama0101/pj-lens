@@ -1021,7 +1021,7 @@ function renderBar(force = false) {
   const keep = a && el.contains(a) ? { sel: barSelector(a), s: a.selectionStart, e: a.selectionEnd } : null;
   el.innerHTML = renderInboxBar(S.data, { ...S.ib, canWrite: store.hasFile, nowMs: Date.now() });
   barSig = barSignature();
-  syncIbh();
+  if (syncIbh()) syncSticky();
   if (keep?.sel) {
     const n = el.querySelector(keep.sel);
     if (n) { n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch { /* 選択できない欄 */ } }
@@ -1119,19 +1119,23 @@ function syncSticky() {
   root.setProperty("--hh", `${topbar?.offsetHeight ?? 0}px`);
   const tool = view.querySelector(".ptool");
   root.setProperty("--th", `${tool ? tool.offsetHeight : 0}px`);
-  root.setProperty("--gt", `${view.querySelector(".gtop")?.offsetHeight ?? 0}px`);
   syncIbh();
   // ガントの枠（縦スクロールバーの幅を、名前の行の幅から引く）と、プロジェクトごとの見出しの高さ（日付軸の固定位置）。スクロールには連動させない
-  for (const gs of view.querySelectorAll(".gscroll")) gs.style.setProperty("--sbw", `${gs.offsetWidth - gs.clientWidth}px`);
+  for (const gs of view.querySelectorAll(".gscroll")) { gs.style.setProperty("--sbw", `${gs.offsetWidth - gs.clientWidth}px`); gs.style.setProperty("--gsy", `${gs.getBoundingClientRect().top + window.scrollY}px`); }
   for (const pg of view.querySelectorAll("section.pg")) { const h = pg.querySelector(".pg-head"); if (h) pg.style.setProperty("--pgh", `${h.offsetHeight}px`); }
   for (const panel of view.querySelectorAll("section.panel")) { const st = panel.querySelector(":scope > .pstick"); if (st) panel.style.setProperty("--pst", `${st.offsetHeight}px`); }
   for (const box of view.querySelectorAll(".tlist")) { const t = box.querySelector("table"); if (t) box.classList.toggle("is-scroll", t.offsetWidth > box.clientWidth); } // 表が枠より広いとき（横スクロールが要るとき）だけ
   pinTableHeads();
 }
 /** 下の固定の帯（.ib）の高さ。ガントの枠の高さの計算に使う。帯は renderBar のたびに作り直される */
-function syncIbh() { document.documentElement.style.setProperty("--ibh", `${document.querySelector(".ib")?.offsetHeight ?? 0}px`); }
+function syncIbh() {
+  const v = `${document.querySelector(".ib")?.offsetHeight ?? 0}px`, root = document.documentElement.style;
+  const changed = root.getPropertyValue("--ibh") !== v;
+  root.setProperty("--ibh", v);
+  return changed; // 変わったとき、枠の高さが変わり、縦スクロールバーが出入りするので、呼び出し側が syncSticky をやり直す
+}
 
-/** リストの表の列見出しを、スクロール中も、ヘッダーとフィルタ行の下に付ける（表の枠の中でセルをずらす。表の下端は越えない） */
+/** 横スクロールの枠の中で sticky が効かない表（横スクロールが要る狭い画面のリストと、設定・稼働の表）の列見出しを、スクロール中も、ヘッダーとフィルタ行（リストは名前・状態の行も）の下に付ける（表の枠の中でセルをずらす。表の下端は越えない）。表が枠に収まるリストは、CSS の sticky */
 function pinTableHeads() {
   const cs = getComputedStyle(document.documentElement);
   const top = (parseFloat(cs.getPropertyValue("--hh")) || 0) + (parseFloat(cs.getPropertyValue("--th")) || 0);

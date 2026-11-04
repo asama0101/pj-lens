@@ -270,16 +270,16 @@ test("app.js: 設定タブの節の開閉は、toggle イベント（バブリ�
 const css = readFileSync(new URL("../plugins/pj-lens/src/ui/theme.css", import.meta.url), "utf8");
 
 test("theme.css: ガントの固定表示の規則は #view の中だけ。枠は縦横にスクロールし、見出しと日付軸は sticky", () => {
-  assert.match(css, /#view \.gscroll\{[^}]*overflow:auto[^}]*max-height:calc\(100vh - var\(--hh,0px\) - var\(--th,0px\) - var\(--gt,0px\) - var\(--ibh,0px\) - 24px\)/);
+  assert.match(css, /#view \.gscroll\{[^}]*overflow:auto[^}]*max-height:calc\(100vh - var\(--gsy,0px\) - var\(--ibh,0px\) - 16px\)/);
   assert.match(css, /#view \.g-head\{[^}]*position:sticky[^}]*top:var\(--pgh,0px\)/);
   assert.match(css, /#view \.pg-head\{[^}]*top:0[^}]*width:calc\(100cqw - var\(--sbw,0px\)\)/);
 });
 
-test("app.js: pinTableHeads は日付軸（.g-head）をずらさない。syncSticky が --gt・--ibh・--sbw・--pgh を入れる", () => {
+test("app.js: pinTableHeads は日付軸（.g-head）をずらさない。syncSticky が --gsy・--ibh・--sbw・--pgh を入れる（--gt は使わない）", () => {
   const fn = src.slice(src.indexOf("function pinTableHeads"), src.indexOf("let pinQueued"));
   assert.ok(fn.length > 50, "pinTableHeads を切り出せた");
   assert.doesNotMatch(fn, /g-head/);
-  for (const v of ["--gt", "--ibh", "--sbw", "--pgh"]) assert.ok(src.includes(`setProperty("${v}"`), `${v} を入れる`);
+  for (const v of ["--gsy", "--ibh", "--sbw", "--pgh"]) assert.ok(src.includes(`setProperty("${v}"`), `${v} を入れる`);
 });
 
 test("app.js: 描き直しで、ガントの縦のスクロール位置（scrollTop）も保って戻す", () => {
@@ -306,4 +306,17 @@ test("theme.css: リストの固定行と列見出しの規則は #view の中�
     "#view .tscroll.tlist.is-scroll{overflow-x:auto}",
     "#view .tlist:not(.is-scroll) .tbl.edit thead th{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + var(--pst,0px))",
   ]) assert.ok(css.includes(rule), rule);
+});
+
+// ---- 固定表示の見直し（ブランチ全体のレビューの指摘） ----
+test("app.js: --gt は使わない（枠の高さは、枠の上端の実位置 --gsy から決める）", () => {
+  assert.ok(!src.includes('setProperty("--gt"'), "--gt はもう使わない");
+  assert.doesNotMatch(css, /--gt\b/);
+});
+
+test("app.js: 下の帯の高さが変わったら、syncSticky（--sbw・--pgh・.is-scroll）もやり直す", () => {
+  const bar = src.slice(src.indexOf("function renderBar"), src.indexOf("const barSignature"));
+  assert.match(bar, /if \(syncIbh\(\)\) syncSticky\(\)/);
+  const ibh = src.slice(src.indexOf("function syncIbh"), src.indexOf("function pinTableHeads") > 0 ? src.indexOf("function pinTableHeads") : undefined);
+  assert.match(ibh, /return /, "syncIbh は、高さが変わったかを返す");
 });

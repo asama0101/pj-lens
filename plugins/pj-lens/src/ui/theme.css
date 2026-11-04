@@ -183,7 +183,7 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .in.sm{width:auto}
 .in.gi{width:7em}
 .tscroll{overflow-x:auto}
-/* 列見出しは、スクロール中も上端に付ける。表が横スクロールの枠の中にあり sticky が効かないので、app.js が見出しのセルをずらす */
+/* 列見出しは、スクロール中も上端に付ける。リストは、表が枠に収まるとき CSS の sticky（下の「固定表示」の節）。横スクロールが要る表と、設定・稼働の表は、sticky が効かないので、app.js の pinTableHeads が見出しのセルをずらす */
 .tbl.edit thead th{position:relative;z-index:2;background:var(--surface);box-shadow:inset 0 -1px 0 var(--line)}
 .hrs{background:var(--accent-soft);color:var(--ink);border-radius:4px;padding:0 8px}
 .wl-tbl .num{text-align:right;white-space:nowrap}
@@ -233,7 +233,7 @@ tr.drop-after>td,.g-row.drop-after>.g-label,.g-row.drop-after>.g-lane{box-shadow
 .g-row:has(>.g-label.imp-high){background:var(--bad-soft)} /* :has() 非対応のブラウザでも、上の規則（ラベル）が捨てられないよう、分ける */
 .imp-key{display:inline-block;height:12px;margin-right:6px;vertical-align:middle}
 .imp-key.hi{width:5px;background:var(--bad)}
-.g-head{border-bottom:1px solid var(--line);position:relative;z-index:6;background:var(--surface)} /* 日付軸は、app.js の pinTableHeads が上端に固定する */
+.g-head{border-bottom:1px solid var(--line);position:relative;z-index:6;background:var(--surface)} /* 日付軸は、下の「固定表示」の節で、枠の中の sticky で上端に固定する */
 .g-axis{height:24px;position:relative}
 .g-axis span.yr{font-weight:700;color:var(--ink);border-left-color:var(--ink)}
 .gl.yr{border-left:1px solid var(--muted)}
@@ -473,7 +473,7 @@ body{padding-block:16px 76px}
 .tpop .tp-a{display:flex;gap:8px;justify-content:space-between}
 
 /* 固定表示（ガント・リスト）: 画面のスクロールに対して、CSS の sticky で付ける。レポートは #view の外なので、影響しない */
-#view .gscroll{overflow:auto;max-height:calc(100vh - var(--hh,0px) - var(--th,0px) - var(--gt,0px) - var(--ibh,0px) - 24px)}
+#view .gscroll{overflow:auto;max-height:calc(100vh - var(--gsy,0px) - var(--ibh,0px) - 16px)} /* --gsy は枠の上端のページ上の位置。ページの先頭で、枠の下端が下の固定の帯（--ibh）の上に収まる */
 #view .pg-head{top:0;background:var(--surface);z-index:7;padding:2px 0 6px;margin-bottom:0;width:calc(100cqw - var(--sbw,0px))} /* すきまを作らない（padding-bottom）。縦スクロールバーの幅を引くのは、右端で sticky に押し戻されて先頭の文字が欠けるのを防ぐため */
 #view .g-head{position:sticky;top:var(--pgh,0px);z-index:6}
 #view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px));z-index:6;background:var(--surface);display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:4px 0 6px}
