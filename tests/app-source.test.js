@@ -317,11 +317,13 @@ test("app.js: 下の帯の高さが変わったら、syncSticky（--sbw・--pgh�
   assert.match(ibh, /return /, "syncIbh は、高さが変わったかを返す");
 });
 
-test("app.js: updateThStrips は、複製の有無で名前・状態の行の高さが変わらない前提（絶対配置）で、baseH を st.offsetHeight とし、thead の高さ（theadH）も渡す", () => {
-  const fn = src.slice(src.indexOf("function updateThStrips"), src.indexOf("function pinTableHeads") > 0 ? src.indexOf("function syncIbh") : undefined);
-  const up = src.slice(src.indexOf("function updateThStrips"), src.indexOf("function updateThStrips") + 900);
+test("app.js: 複製は .pstick の子で、updateThStrips は baseH を st.offsetHeight（複製の有無で変わらない）とし、thead の上端（theadTop）と高さ（theadH）を渡す", () => {
+  assert.ok(src.includes("st.appendChild(strip)"), "複製は .pstick の子（絶対配置の基準）");
+  const start = src.indexOf("function updateThStrips");
+  const up = src.slice(start, src.indexOf("}\n", start + 100));
+  assert.ok(up.length > 200, "updateThStrips を切り出せた");
   assert.match(up, /baseH: st\.offsetHeight[,\s]/);
-  assert.doesNotMatch(up, /st\.offsetHeight - /, "複製が出ているときの高さを引かない（複製は流れの高さを増やさない）");
-  assert.match(up, /theadH: /);
-  assert.ok(fn.length > 0);
+  assert.doesNotMatch(up, /st\.offsetHeight [-+]/, "複製が出ているときの高さを引いたり足したりしない（複製は流れの高さを増やさない）");
+  assert.match(up, /theadTop: thead\.getBoundingClientRect\(\)\.top/);
+  assert.match(up, /theadH: thead\.offsetHeight/);
 });

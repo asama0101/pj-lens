@@ -2198,13 +2198,14 @@ function flagPills(data, projectId, today, flags) {
 }
 
 /**
- * リストの列見出しの複製（.thstrip）を出すか。本物の thead が、名前・状態の行の本物の部分（baseH）の下端より上に隠れ、
+ * リストの列見出しの複製（.thstrip）を出すか。本物の thead の上端が、名前・状態の行（高さ baseH）の下端に達したら出す
+ * （複製は、その下端から下に重なるので、本物の thead の真上に重なり、切り替えが見えない）。
  * かつ表の下端が、複製の高さ（stripH）と余裕（8px）を足した位置より下にあるときだけ出す（マイルストーン・履歴の部分では出さない）。
  * 引数は画面上の位置と高さ（px）。pin はヘッダーとフィルタ行の高さの和、baseH は名前・状態の行の高さ、theadH は本物の thead の高さ
  * （幅 860px 以下では thead が非表示で 0。位置も全部 0 になるので、このときは出さない）
  */
-function thStripOn({ theadBottom, tableBottom, pin, baseH, stripH, theadH }) {
-  return theadH > 0 && theadBottom <= pin + baseH + 1 && tableBottom > pin + baseH + stripH + 8;
+function thStripOn({ theadTop, tableBottom, pin, baseH, stripH, theadH }) {
+  return theadH > 0 && theadTop <= pin + baseH + 1 && tableBottom > pin + baseH + stripH + 8;
 }
 
 return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills, thStripOn };
@@ -5434,7 +5435,7 @@ function updateThStrips() {
     if (!strip || !table) continue;
     const thead = table.querySelector("thead"), stripH = parseFloat(strip.style.height) || 0;
     // 複製は絶対配置で、名前・状態の行の流れの高さを増やさない（増やすと、出した途端に表がずれ、出す・隠すがちらつく）
-    strip.classList.toggle("on", thStripOn({ theadBottom: thead.getBoundingClientRect().bottom, tableBottom: table.getBoundingClientRect().bottom, pin, baseH: st.offsetHeight, stripH, theadH: thead.offsetHeight }));
+    strip.classList.toggle("on", thStripOn({ theadTop: thead.getBoundingClientRect().top, tableBottom: table.getBoundingClientRect().bottom, pin, baseH: st.offsetHeight, stripH, theadH: thead.offsetHeight }));
   }
 }
 /** 下の固定の帯（.ib）の高さ。ガントの枠の高さの計算に使う。帯は renderBar のたびに作り直される */

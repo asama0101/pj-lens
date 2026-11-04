@@ -1161,7 +1161,7 @@ function updateThStrips() {
     if (!strip || !table) continue;
     const thead = table.querySelector("thead"), stripH = parseFloat(strip.style.height) || 0;
     // 複製は絶対配置で、名前・状態の行の流れの高さを増やさない（増やすと、出した途端に表がずれ、出す・隠すがちらつく）
-    strip.classList.toggle("on", thStripOn({ theadBottom: thead.getBoundingClientRect().bottom, tableBottom: table.getBoundingClientRect().bottom, pin, baseH: st.offsetHeight, stripH, theadH: thead.offsetHeight }));
+    strip.classList.toggle("on", thStripOn({ theadTop: thead.getBoundingClientRect().top, tableBottom: table.getBoundingClientRect().bottom, pin, baseH: st.offsetHeight, stripH, theadH: thead.offsetHeight }));
   }
 }
 /** 下の固定の帯（.ib）の高さ。ガントの枠の高さの計算に使う。帯は renderBar のたびに作り直される */
