@@ -300,7 +300,7 @@ test("app.js: リストの列見出しは、名前・状態の行（.pstick）�
 });
 
 test("theme.css: 列見出しの複製の規則は #view の中だけ。リストの表を sticky・横スクロールの枠にする規則は持たない", () => {
-  for (const rule of ["#view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px))", "#view .thstrip{display:none;", "#view .thstrip.on{display:block}", "#view .thstrip .thin{display:flex"]) assert.ok(css.includes(rule), rule);
+  for (const rule of ["#view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px))", "#view .thstrip{display:none;position:absolute;top:100%;left:0;right:0;", "#view .thstrip.on{display:block}", "#view .thstrip .thin{display:flex"]) assert.ok(css.includes(rule), rule);
   assert.ok(!css.includes("is-scroll") && !css.includes(".tscroll.tlist"), "表を枠にする規則の名残がない");
 });
 
@@ -315,4 +315,13 @@ test("app.js: 下の帯の高さが変わったら、syncSticky（--sbw・--pgh�
   assert.match(bar, /if \(syncIbh\(\)\) syncSticky\(\)/);
   const ibh = src.slice(src.indexOf("function syncIbh"), src.indexOf("function pinTableHeads") > 0 ? src.indexOf("function pinTableHeads") : undefined);
   assert.match(ibh, /return /, "syncIbh は、高さが変わったかを返す");
+});
+
+test("app.js: updateThStrips は、複製の有無で名前・状態の行の高さが変わらない前提（絶対配置）で、baseH を st.offsetHeight とし、thead の高さ（theadH）も渡す", () => {
+  const fn = src.slice(src.indexOf("function updateThStrips"), src.indexOf("function pinTableHeads") > 0 ? src.indexOf("function syncIbh") : undefined);
+  const up = src.slice(src.indexOf("function updateThStrips"), src.indexOf("function updateThStrips") + 900);
+  assert.match(up, /baseH: st\.offsetHeight[,\s]/);
+  assert.doesNotMatch(up, /st\.offsetHeight - /, "複製が出ているときの高さを引かない（複製は流れの高さを増やさない）");
+  assert.match(up, /theadH: /);
+  assert.ok(fn.length > 0);
 });

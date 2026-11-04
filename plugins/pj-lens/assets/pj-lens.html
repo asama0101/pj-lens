@@ -486,7 +486,7 @@ body{padding-block:16px 76px}
 #view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px));z-index:6;background:var(--surface);display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:4px 0 6px}
 #view .pstick h2{margin:0;font-size:17px}
 #view .pstick label{font-size:13px;color:var(--muted)}
-#view .thstrip{display:none;flex:1 1 100%;overflow:hidden;box-sizing:border-box;border-bottom:1px solid var(--line);background:var(--surface)} /* リストの列見出しの複製。app.js の syncThStrips が作り、updateThStrips が .on で出す */
+#view .thstrip{display:none;position:absolute;top:100%;left:0;right:0;overflow:hidden;box-sizing:border-box;border-bottom:1px solid var(--line);background:var(--surface)} /* リストの列見出しの複製。app.js の syncThStrips が作り、updateThStrips が .on で出す */
 #view .thstrip.on{display:block}
 #view .thstrip .thin{display:flex;white-space:nowrap}
 #view .thstrip .thc{flex:none;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--muted);text-align:left}
@@ -2200,10 +2200,11 @@ function flagPills(data, projectId, today, flags) {
 /**
  * リストの列見出しの複製（.thstrip）を出すか。本物の thead が、名前・状態の行の本物の部分（baseH）の下端より上に隠れ、
  * かつ表の下端が、複製の高さ（stripH）と余裕（8px）を足した位置より下にあるときだけ出す（マイルストーン・履歴の部分では出さない）。
- * 引数は画面上の位置と高さ（px）。pin はヘッダーとフィルタ行の高さの和
+ * 引数は画面上の位置と高さ（px）。pin はヘッダーとフィルタ行の高さの和、baseH は名前・状態の行の高さ、theadH は本物の thead の高さ
+ * （幅 860px 以下では thead が非表示で 0。位置も全部 0 になるので、このときは出さない）
  */
-function thStripOn({ theadBottom, tableBottom, pin, baseH, stripH }) {
-  return theadBottom <= pin + baseH + 1 && tableBottom > pin + baseH + stripH + 8;
+function thStripOn({ theadBottom, tableBottom, pin, baseH, stripH, theadH }) {
+  return theadH > 0 && theadBottom <= pin + baseH + 1 && tableBottom > pin + baseH + stripH + 8;
 }
 
 return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills, thStripOn };
@@ -5431,8 +5432,9 @@ function updateThStrips() {
   for (const panel of view.querySelectorAll("section.panel")) {
     const st = panel.querySelector(":scope > .pstick"), strip = st?.querySelector(".thstrip"), table = panel.querySelector(".tlist table");
     if (!strip || !table) continue;
-    const stripH = strip.offsetHeight || parseFloat(strip.style.height) || 0, on = strip.classList.contains("on");
-    strip.classList.toggle("on", thStripOn({ theadBottom: table.querySelector("thead").getBoundingClientRect().bottom, tableBottom: table.getBoundingClientRect().bottom, pin, baseH: st.offsetHeight - (on ? stripH : 0), stripH }));
+    const thead = table.querySelector("thead"), stripH = parseFloat(strip.style.height) || 0;
+    // 複製は絶対配置で、名前・状態の行の流れの高さを増やさない（増やすと、出した途端に表がずれ、出す・隠すがちらつく）
+    strip.classList.toggle("on", thStripOn({ theadBottom: thead.getBoundingClientRect().bottom, tableBottom: table.getBoundingClientRect().bottom, pin, baseH: st.offsetHeight, stripH, theadH: thead.offsetHeight }));
   }
 }
 /** 下の固定の帯（.ib）の高さ。ガントの枠の高さの計算に使う。帯は renderBar のたびに作り直される */

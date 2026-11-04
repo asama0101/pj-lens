@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { thStripOn } from "../plugins/pj-lens/src/ui/common.js";
 
 // 画面上の位置（px）。pin = ヘッダーとフィルタ行の高さの和、baseH = 名前・状態の行の本物の高さ、stripH = 複製の高さ
-const base = { pin: 115, baseH: 47, stripH: 32 };
+const base = { pin: 115, baseH: 47, stripH: 32, theadH: 33 }; // theadH = 本物の thead の高さ（幅 860px 以下では thead が非表示で 0）
 
 test("thStripOn: 本物の列見出しが見えている間は、複製を出さない", () => {
   assert.equal(thStripOn({ ...base, theadBottom: 500, tableBottom: 3000 }), false);
@@ -20,4 +20,9 @@ test("thStripOn: 表の下端が、複製の高さと余裕（8px）を足した
   assert.equal(thStripOn({ ...base, theadBottom: 100, tableBottom: edge + 1 }), true);
   assert.equal(thStripOn({ ...base, theadBottom: 100, tableBottom: edge }), false);
   assert.equal(thStripOn({ ...base, theadBottom: -400, tableBottom: 120 }), false);
+});
+
+test("thStripOn: 本物の thead が非表示（高さ 0。幅 860px 以下）のときは、位置が全部 0 でも、複製を出さない", () => {
+  assert.equal(thStripOn({ ...base, theadH: 0, theadBottom: 0, tableBottom: 3000 }), false);
+  assert.equal(thStripOn({ ...base, theadH: 33, theadBottom: 0, tableBottom: 3000 }), true, "高さがあれば、従来どおり");
 });

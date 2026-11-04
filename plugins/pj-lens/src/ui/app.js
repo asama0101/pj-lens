@@ -1159,8 +1159,9 @@ function updateThStrips() {
   for (const panel of view.querySelectorAll("section.panel")) {
     const st = panel.querySelector(":scope > .pstick"), strip = st?.querySelector(".thstrip"), table = panel.querySelector(".tlist table");
     if (!strip || !table) continue;
-    const stripH = strip.offsetHeight || parseFloat(strip.style.height) || 0, on = strip.classList.contains("on");
-    strip.classList.toggle("on", thStripOn({ theadBottom: table.querySelector("thead").getBoundingClientRect().bottom, tableBottom: table.getBoundingClientRect().bottom, pin, baseH: st.offsetHeight - (on ? stripH : 0), stripH }));
+    const thead = table.querySelector("thead"), stripH = parseFloat(strip.style.height) || 0;
+    // 複製は絶対配置で、名前・状態の行の流れの高さを増やさない（増やすと、出した途端に表がずれ、出す・隠すがちらつく）
+    strip.classList.toggle("on", thStripOn({ theadBottom: thead.getBoundingClientRect().bottom, tableBottom: table.getBoundingClientRect().bottom, pin, baseH: st.offsetHeight, stripH, theadH: thead.offsetHeight }));
   }
 }
 /** 下の固定の帯（.ib）の高さ。ガントの枠の高さの計算に使う。帯は renderBar のたびに作り直される */
