@@ -327,3 +327,19 @@ test("app.js: 複製は .pstick の子で、updateThStrips は baseH を st.offs
   assert.match(up, /theadTop: thead\.getBoundingClientRect\(\)\.top/);
   assert.match(up, /theadH: thead\.offsetHeight/);
 });
+
+
+// ---- ページの先頭でも、固定の行が、固定したときと同じ位置にある（スクロールの始めに、固定の行が動かない） ----
+test("theme.css: ガント・リスト（.ptool がある画面）では、上部の余白を詰めて、先頭の位置が固定したときの位置と同じになる。規則は、その画面とアプリだけに効く（レポート・ほかの画面は変えない）", () => {
+  for (const rule of [
+    "body:has(.ptool){padding-block-start:8px}",
+    ".wrap:has(.ptool){gap:0}",
+    "#banner:not(:empty){margin-block:8px}",
+    "#view section.panel:has(> .gtop):first-of-type,#view section.panel:has(> .pstick):first-of-type{padding-top:0;border-top-width:0;border-top-left-radius:0;border-top-right-radius:0}",
+    "#view .cols>.side,#view .side-toggle{margin-top:8px}",
+  ]) assert.ok(css.includes(rule), rule);
+  // 新しい規則は、レポートに効かない（レポートには .ptool も #banner も #view もない）
+  const section = css.slice(css.indexOf("/* ページの先頭でも"));
+  assert.ok(section.length > 100, "節がある");
+  for (const line of section.split(/\r?\n/).filter((l) => l.includes("{") && !l.startsWith("/*"))) assert.match(line, /^(body:has\(\.ptool\)|\.wrap:has\(\.ptool\)|#banner|#view)/, line);
+});

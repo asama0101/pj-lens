@@ -492,6 +492,12 @@ body{padding-block:16px 76px}
 #view .thstrip.on{display:block}
 #view .thstrip .thin{display:flex;white-space:nowrap}
 #view .thstrip .thc{flex:none;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--muted);text-align:left}
+/* ページの先頭でも、固定の行が、固定したときと同じ位置にあるようにする（スクロールの始めに、固定の行が数 px 動かない）。ガント・リスト（.ptool がある画面）とアプリだけ。レポート・ほかの画面は変えない */
+body:has(.ptool){padding-block-start:8px}
+.wrap:has(.ptool){gap:0}
+#banner:not(:empty){margin-block:8px}
+#view section.panel:has(> .gtop):first-of-type,#view section.panel:has(> .pstick):first-of-type{padding-top:0;border-top-width:0;border-top-left-radius:0;border-top-right-radius:0}
+#view .cols>.side,#view .side-toggle{margin-top:8px}
 </style>
 </head>
 <body>
