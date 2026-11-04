@@ -272,3 +272,84 @@ test("app.js: 設定タブの節の開閉は、toggle イベント（バブリ�
   assert.doesNotMatch(fn, /render\(\)/);
   assert.match(fn, /\}, true\);/, "キャプチャ");
 });
+
+// ---- 固定表示（ガント）: 画面のスクロールに対して、CSS の sticky で付ける ----
+const css = readFileSync(new URL("../plugins/pj-lens/src/ui/theme.css", import.meta.url), "utf8");
+
+test("theme.css: ガントの固定表示の規則は #view の中だけ。枠は縦横にスクロールし、見出しと日付軸は sticky", () => {
+  assert.match(css, /#view \.gscroll\{[^}]*overflow:auto[^}]*max-height:calc\(100vh - var\(--gsy,0px\) - var\(--ibh,0px\) - 16px\)/);
+  assert.match(css, /#view \.g-head\{[^}]*position:sticky[^}]*top:var\(--pgh,0px\)/);
+  assert.match(css, /#view \.pg-head\{[^}]*top:0[^}]*width:calc\(100cqw - var\(--sbw,0px\)\)/);
+});
+
+test("app.js: pinTableHeads は日付軸（.g-head）をずらさない。syncSticky が --gsy・--ibh・--sbw・--pgh を入れる（--gt は使わない）", () => {
+  const fn = src.slice(src.indexOf("function pinTableHeads"), src.indexOf("let pinQueued"));
+  assert.ok(fn.length > 50, "pinTableHeads を切り出せた");
+  assert.doesNotMatch(fn, /g-head/);
+  for (const v of ["--gsy", "--ibh", "--sbw", "--pgh"]) assert.ok(src.includes(`setProperty("${v}"`), `${v} を入れる`);
+});
+
+test("app.js: 描き直しで、ガントの縦のスクロール位置（scrollTop）も保って戻す", () => {
+  const fn = src.slice(src.indexOf("function render()"), src.indexOf("function scrollToday"));
+  assert.match(fn, /map\(\(c\) => c\.scrollTop\)/);
+  assert.match(fn, /c\.scrollTop = prevTop\[i\]/);
+});
+
+// ---- 固定表示（リスト）: 名前・状態の行の中の、列見出しの複製 ----
+test("app.js: リストの列見出しは、名前・状態の行（.pstick）の中の複製（.thstrip）で固定する。複製は aria-hidden、横スクロールは translateX でそろえる。.is-scroll と --pst は使わない", () => {
+  assert.ok(src.includes('className = "thstrip"'), "複製を作る");
+  assert.ok(src.includes('setAttribute("aria-hidden", "true")'), "複製は、読み上げの対象にしない");
+  assert.match(src, /translateX\(\$\{-box\.scrollLeft\}px\)/);
+  assert.ok(src.includes("thStripOn("), "出す・隠すの判断は thStripOn（common.js）");
+  assert.ok(!src.includes("is-scroll") && !src.includes("--pst"), "表を横スクロールの枠にする案の名残がない");
+  const pin = src.slice(src.indexOf("function pinTableHeads"), src.indexOf("let pinQueued"));
+  assert.match(pin, /classList\.contains\("tlist"\)\) continue/, "リストの表は pinTableHeads の対象外");
+});
+
+test("theme.css: 列見出しの複製の規則は #view の中だけ。リストの表を sticky・横スクロールの枠にする規則は持たない", () => {
+  for (const rule of ["#view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px))", "#view .pstick .prow{display:flex", "#view .pstick .phead{margin:", "#view .thstrip{display:none;position:absolute;top:100%;left:0;right:0;", "#view .thstrip.on{display:block}", "#view .thstrip .thin{display:flex"]) assert.ok(css.includes(rule), rule);
+  assert.ok(!css.includes("is-scroll") && !css.includes(".tscroll.tlist"), "表を枠にする規則の名残がない");
+});
+
+// ---- 固定表示の見直し（ブランチ全体のレビューの指摘） ----
+test("app.js: --gt は使わない（枠の高さは、枠の上端の実位置 --gsy から決める）", () => {
+  assert.ok(!src.includes('setProperty("--gt"'), "--gt はもう使わない");
+  assert.doesNotMatch(css, /--gt\b/);
+});
+
+test("app.js: 下の帯の高さが変わったら、syncSticky（--sbw・--pgh・.is-scroll）もやり直す", () => {
+  const bar = src.slice(src.indexOf("function renderBar"), src.indexOf("const barSignature"));
+  assert.match(bar, /if \(syncIbh\(\)\) syncSticky\(\)/);
+  const ibh = src.slice(src.indexOf("function syncIbh"), src.indexOf("function pinTableHeads") > 0 ? src.indexOf("function pinTableHeads") : undefined);
+  assert.match(ibh, /return /, "syncIbh は、高さが変わったかを返す");
+});
+
+test("app.js: 複製は .pstick の子で、updateThStrips は baseH を st.offsetHeight（複製の有無で変わらない）とし、thead の上端（theadTop）と高さ（theadH）を渡す", () => {
+  assert.ok(src.includes("st.appendChild(strip)"), "複製は .pstick の子（絶対配置の基準）");
+  const start = src.indexOf("function updateThStrips");
+  const up = src.slice(start, src.indexOf("}\n", start + 100));
+  assert.ok(up.length > 200, "updateThStrips を切り出せた");
+  assert.match(up, /baseH: st\.offsetHeight[,\s]/);
+  assert.doesNotMatch(up, /st\.offsetHeight [-+]/, "複製が出ているときの高さを引いたり足したりしない（複製は流れの高さを増やさない）");
+  assert.match(up, /theadTop: thead\.getBoundingClientRect\(\)\.top/);
+  assert.match(up, /theadH: thead\.offsetHeight/);
+});
+
+
+// ---- ページの先頭でも、固定の行が、固定したときと同じ位置にある（スクロールの始めに、固定の行が動かない） ----
+test("theme.css: ガント・リスト（.ptool がある画面）では、上部の余白を詰めて、先頭の位置が固定したときの位置と同じになる。規則は、その画面とアプリだけに効く（レポート・ほかの画面は変えない）", () => {
+  for (const rule of [
+    "body:has(.ptool){padding-block-start:8px}",
+    ".wrap:has(.ptool){gap:0}",
+    "#banner:not(:empty){margin-block:8px}",
+    "#view section.panel:has(> .gtop),#view section.panel:has(> .pstick){padding-top:0}",
+    "#view section.panel > .pstick{padding-top:20px}",
+    "#view section.panel > .gtop{padding-top:22px}",
+    "#view .cols>.side,#view .side-toggle{margin-top:8px}",
+  ]) assert.ok(css.includes(rule), rule);
+  // 新しい規則は、レポートに効かない（レポートには .ptool も #banner も #view もない）
+  const section = css.slice(css.indexOf("/* ページの先頭でも"));
+  assert.ok(section.length > 100, "節がある");
+  assert.ok(!section.includes("border-top-width:0") && !section.includes("border-top-left-radius:0"), "カードの上端の線と角丸は消さない");
+  for (const line of section.split(/\r?\n/).filter((l) => l.includes("{") && !l.startsWith("/*"))) assert.match(line, /^(body:has\(\.ptool\)|\.wrap:has\(\.ptool\)|#banner|#view)/, line);
+});

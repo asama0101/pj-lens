@@ -83,12 +83,13 @@ function render() {
   renderBar();
   // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
   const prev = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollLeft);
+  const prevTop = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollTop);
   const keepFocus = focusSelector(document.activeElement);
   view.innerHTML = (S.data && S.reportPanel ? renderReportPanel(S.data, S.reportPanel, c.date) : "") + renderBody();
   if (keepFocus && !S.focusSel) { try { view.querySelector(keepFocus)?.focus(); } catch { /* 無視 */ } }
   const bars = [...view.querySelectorAll(".gscroll")];
   if (S.resetScroll || !prev.length || prev.length !== bars.length) scrollToday(false);
-  else bars.forEach((c, i) => { c.scrollLeft = prev[i]; });
+  else bars.forEach((c, i) => { c.scrollLeft = prev[i]; c.scrollTop = prevTop[i]; });
   S.resetScroll = false;
   if (S.focusSel) {
     let el = null;
@@ -1021,6 +1022,7 @@ function renderBar(force = false) {
   const keep = a && el.contains(a) ? { sel: barSelector(a), s: a.selectionStart, e: a.selectionEnd } : null;
   el.innerHTML = renderInboxBar(S.data, { ...S.ib, canWrite: store.hasFile, nowMs: Date.now() });
   barSig = barSignature();
+  if (syncIbh()) syncSticky();
   if (keep?.sel) {
     const n = el.querySelector(keep.sel);
     if (n) { n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch { /* 選択できない欄 */ } }
@@ -1118,31 +1120,74 @@ function syncSticky() {
   root.setProperty("--hh", `${topbar?.offsetHeight ?? 0}px`);
   const tool = view.querySelector(".ptool");
   root.setProperty("--th", `${tool ? tool.offsetHeight : 0}px`);
+  syncIbh();
+  // ガントの枠（縦スクロールバーの幅を、名前の行の幅から引く）と、プロジェクトごとの見出しの高さ（日付軸の固定位置）。スクロールには連動させない
+  for (const gs of view.querySelectorAll(".gscroll")) { gs.style.setProperty("--sbw", `${gs.offsetWidth - gs.clientWidth}px`); gs.style.setProperty("--gsy", `${gs.getBoundingClientRect().top + window.scrollY}px`); }
+  for (const pg of view.querySelectorAll("section.pg")) { const h = pg.querySelector(".pg-head"); if (h) pg.style.setProperty("--pgh", `${h.offsetHeight}px`); }
+  syncThStrips();
   pinTableHeads();
 }
+/**
+ * リストの列見出しの複製（.thstrip）を、名前・状態の行（.pstick）の中に作り直す。表は横スクロールの枠の中にあり、列見出しの sticky が画面の縦スクロールに効かないため、
+ * sticky の行の中に複製を置く（縦は CSS の sticky、横スクロールの位置だけ translateX でそろえる）。幅・余白・文字は、本物の thead を測って写す
+ */
+function syncThStrips() {
+  for (const panel of view.querySelectorAll("section.panel")) {
+    const st = panel.querySelector(":scope > .pstick"), box = panel.querySelector(".tlist");
+    const ths = box ? [...box.querySelectorAll("thead th")] : [];
+    if (!st || !ths.length) continue;
+    let strip = st.querySelector(".thstrip");
+    if (!strip) {
+      strip = document.createElement("div"); strip.className = "thstrip"; strip.setAttribute("aria-hidden", "true"); st.appendChild(strip);
+      box.addEventListener("scroll", () => { const inner = strip.firstElementChild; if (inner) inner.style.transform = `translateX(${-box.scrollLeft}px)`; }, { passive: true });
+    }
+    const inner = document.createElement("div"); inner.className = "thin";
+    for (const th of ths) {
+      const c = document.createElement("div"); c.className = "thc"; c.textContent = th.textContent;
+      c.style.width = `${th.getBoundingClientRect().width}px`; c.style.padding = getComputedStyle(th).padding;
+      inner.appendChild(c);
+    }
+    strip.style.height = `${ths[0].offsetHeight}px`;
+    inner.style.transform = `translateX(${-box.scrollLeft}px)`;
+    strip.replaceChildren(inner);
+  }
+  updateThStrips();
+}
+/** 複製を出す・隠す（スクロールで切り替える。位置は動かさないので、遅れは見えない） */
+function updateThStrips() {
+  const cs = getComputedStyle(document.documentElement);
+  const pin = (parseFloat(cs.getPropertyValue("--hh")) || 0) + (parseFloat(cs.getPropertyValue("--th")) || 0);
+  for (const panel of view.querySelectorAll("section.panel")) {
+    const st = panel.querySelector(":scope > .pstick"), strip = st?.querySelector(".thstrip"), table = panel.querySelector(".tlist table");
+    if (!strip || !table) continue;
+    const thead = table.querySelector("thead"), stripH = parseFloat(strip.style.height) || 0;
+    // 複製は絶対配置で、名前・状態の行の流れの高さを増やさない（増やすと、出した途端に表がずれ、出す・隠すがちらつく）
+    strip.classList.toggle("on", thStripOn({ theadTop: thead.getBoundingClientRect().top, tableBottom: table.getBoundingClientRect().bottom, pin, baseH: st.offsetHeight, stripH, theadH: thead.offsetHeight }));
+  }
+}
+/** 下の固定の帯（.ib）の高さ。ガントの枠の高さの計算に使う。帯は renderBar のたびに作り直される */
+function syncIbh() {
+  const v = `${document.querySelector(".ib")?.offsetHeight ?? 0}px`, root = document.documentElement.style;
+  const changed = root.getPropertyValue("--ibh") !== v;
+  root.setProperty("--ibh", v);
+  return changed; // 変わったとき、枠の高さが変わり、縦スクロールバーが出入りするので、呼び出し側が syncSticky をやり直す
+}
 
-/** リストの表の列見出しを、スクロール中も、ヘッダーとフィルタ行の下に付ける（表の枠の中でセルをずらす。表の下端は越えない） */
+/** 横スクロールの枠の中で sticky が効かない表（設定・稼働の表）の列見出しを、スクロール中も、ヘッダーとフィルタ行の下に付ける（表の枠の中でセルをずらす。表の下端は越えない）。リストの表は、名前・状態の行の中の複製（syncThStrips） */
 function pinTableHeads() {
   const cs = getComputedStyle(document.documentElement);
   const top = (parseFloat(cs.getPropertyValue("--hh")) || 0) + (parseFloat(cs.getPropertyValue("--th")) || 0);
   for (const box of view.querySelectorAll(".tscroll")) {
     const ths = box.querySelectorAll("thead th");
     if (!ths.length) continue;
+    if (box.classList.contains("tlist")) continue; // リストの表は、名前・状態の行の中の複製（.thstrip）で固定する
     const r = box.getBoundingClientRect();
     const dy = Math.max(0, Math.min(top - r.top, r.height - ths[0].offsetHeight - 4));
     for (const th of ths) th.style.transform = dy ? `translateY(${dy}px)` : "";
   }
-  // ガントの日付軸も同じ手法で固定する（.gscroll が overflow-x:auto なので sticky が効かない）。固定位置は、ヘッダー・フィルタ行・.gtop の下。プロジェクトごとに、その下端で止める
-  const axisTop = top + (view.querySelector(".gtop")?.offsetHeight ?? 0);
-  for (const gb of view.querySelectorAll(".gbody")) {
-    const head = gb.querySelector(".g-head");
-    if (!head) continue;
-    const dy = Math.max(0, Math.min(axisTop - gb.getBoundingClientRect().top, gb.offsetHeight - head.offsetHeight - 4)); // 軸の行は gbody の先頭なので、動かす前の上端 = gbody の上端
-    head.style.transform = dy ? `translateY(${dy}px)` : "";
-  }
 }
 let pinQueued = false;
-window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); }); } }, { passive: true });
+window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); updateThStrips(); }); } }, { passive: true });
 if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(syncSticky).observe(topbar);
 let depsQueued = false;
 window.addEventListener("resize", () => {
