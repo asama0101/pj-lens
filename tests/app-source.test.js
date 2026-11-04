@@ -85,6 +85,13 @@ test("app.js: 「今日の優先」の取っ手を押すとき、パネル内に
   assert.match(src, /data-pref="actual" aria-pressed/);
 });
 
+test("app.js: 「参加しない会議」のボタン（data-sskip）は showSkipped を反転し、scheduleOpts に渡す。data-pref は持たない（右の列の取っ手・ガント実績と干渉しない）", () => {
+  assert.match(src, /q\("\[data-sskip\]"\)\) \{ togglePref\("showSkipped"\)/);
+  assert.match(src, /const scheduleOpts = \(\) => \(\{[^\n]*showSkipped: S\.prefs\.showSkipped/);
+  const sc = readFileSync(new URL("../plugins/pj-lens/src/ui/views/schedule.js", import.meta.url), "utf8");
+  assert.doesNotMatch(sc, /data-sskip[^>]*data-pref|data-pref[^>]*data-sskip/);
+});
+
 test("schedule.js: ブロックの時刻は esc して出す（toMin が先に検証するが、描画側でも守る）", () => {
   const sc = readFileSync(new URL("../plugins/pj-lens/src/ui/views/schedule.js", import.meta.url), "utf8");
   assert.match(sc, /\$\{esc\(m\.start\)\}-\$\{esc\(m\.end\)\}/);

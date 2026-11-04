@@ -13,19 +13,19 @@ test("loadPrefs: 保存が無い／壊れたJSON／getItem が例外を投げる
   assert.deepEqual(loadPrefs(fake({ "pj-lens.prefs": "{oops" })), DEFAULT_PREFS);
   assert.deepEqual(loadPrefs(boom), DEFAULT_PREFS);
   assert.deepEqual(loadPrefs(null), DEFAULT_PREFS);
-  assert.deepEqual(DEFAULT_PREFS, { showPrio: true, showActual: true });
+  assert.deepEqual(DEFAULT_PREFS, { showPrio: true, showActual: true, showSkipped: false });
 });
 
 test("loadPrefs: 保存された値だけを使い、真偽値以外や未知のキーは無視する", () => {
   const s = fake({ "pj-lens.prefs": JSON.stringify({ showPrio: false, showActual: "no", other: 1 }) });
-  assert.deepEqual(loadPrefs(s), { showPrio: false, showActual: true });
+  assert.deepEqual(loadPrefs(s), { showPrio: false, showActual: true, showSkipped: false });
 });
 
 test("savePrefs→loadPrefs で往復でき、setItem が例外を投げても落ちない", () => {
   const s = fake();
-  savePrefs({ showPrio: false, showActual: false }, s);
-  assert.deepEqual(loadPrefs(s), { showPrio: false, showActual: false });
-  assert.doesNotThrow(() => savePrefs({ showPrio: true, showActual: true }, boom));
+  savePrefs({ showPrio: false, showActual: false, showSkipped: true }, s);
+  assert.deepEqual(loadPrefs(s), { showPrio: false, showActual: false, showSkipped: true });
+  assert.doesNotThrow(() => savePrefs({ showPrio: true, showActual: true, showSkipped: false }, boom));
 });
 
 // ---- レポートの選択(期間・プロジェクト)の保存 ----
