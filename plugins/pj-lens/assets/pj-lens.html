@@ -190,7 +190,7 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .in.sm{width:auto}
 .in.gi{width:7em}
 .tscroll{overflow-x:auto}
-/* 列見出しは、スクロール中も上端に付ける。リストは、名前・状態の行の中の複製で固定する（下の「固定表示」の節）。設定・稼働の表は、sticky が効かないので、app.js の pinTableHeads が見出しのセルをずらす */
+/* 列見出しは、スクロール中も上端に付ける。リストは、表を包む枠の先頭の複製で固定する（下の「固定表示」の節）。設定・稼働の表は、sticky が効かないので、app.js の pinTableHeads が見出しのセルをずらす */
 .tbl.edit thead th{position:relative;z-index:2;background:var(--surface);box-shadow:inset 0 -1px 0 var(--line)}
 .hrs{background:var(--accent-soft);color:var(--ink);border-radius:4px;padding:0 8px}
 .wl-tbl .num{text-align:right;white-space:nowrap}
@@ -240,7 +240,7 @@ tr.drop-after>td,.g-row.drop-after>.g-label,.g-row.drop-after>.g-lane{box-shadow
 .g-row:has(>.g-label.imp-high){background:var(--bad-soft)} /* :has() 非対応のブラウザでも、上の規則（ラベル）が捨てられないよう、分ける */
 .imp-key{display:inline-block;height:12px;margin-right:6px;vertical-align:middle}
 .imp-key.hi{width:5px;background:var(--bad)}
-.g-head{border-bottom:1px solid var(--line);position:relative;z-index:6;background:var(--surface)} /* 日付軸は、下の「固定表示」の節で、枠の中の sticky で上端に固定する */
+.g-head{border-bottom:1px solid var(--line);position:relative;z-index:6;background:var(--surface)} /* 日付軸は、下の「固定表示」の節で、枠の外の複製（.gstrip）を sticky にして固定する */
 .g-axis{height:24px;position:relative}
 .g-axis span.yr{font-weight:700;color:var(--ink);border-left-color:var(--ink)}
 .gl.yr{border-left:1px solid var(--muted)}
@@ -404,7 +404,7 @@ tr.hl td{transition:background .3s}
 .plus{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--surface);color:var(--accent);border-radius:6px;padding:1px 9px;cursor:pointer;flex:none}
 .plus:hover{border-color:var(--accent)}
 .tbl .grp-tr td{background:var(--line-soft);font-size:12px;padding:5px 10px;vertical-align:middle}
-.gfilter{display:inline-flex;align-items:center;gap:6px;margin-left:8px;font-size:12px;color:var(--muted)}
+.pfilter{display:inline-flex;align-items:center;gap:6px;margin-left:8px;font-size:12px;color:var(--muted)}
 .banner{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:13px}
 code{font-family:var(--f-mono);font-size:12px;background:var(--line-soft);padding:0 4px;border-radius:3px}
 
@@ -480,16 +480,32 @@ body{padding-block:16px 76px}
 .tpop .tp-a{display:flex;gap:8px;justify-content:space-between}
 
 /* 固定表示（ガント・リスト）: 画面のスクロールに対して、CSS の sticky で付ける。レポートは #view の外なので、影響しない */
-#view .gscroll{overflow:auto;max-height:calc(100vh - var(--gsy,0px) - var(--ibh,0px) - 16px)} /* --gsy は枠の上端のページ上の位置。ページの先頭で、枠の下端が下の固定の帯（--ibh）の上に収まる */
-#view .pg-head{top:0;background:var(--surface);z-index:7;padding:2px 0 6px;margin-bottom:0;width:calc(100cqw - var(--sbw,0px))} /* すきまを作らない（padding-bottom）。縦スクロールバーの幅を引くのは、右端で sticky に押し戻されて先頭の文字が欠けるのを防ぐため */
-#view .g-head{position:sticky;top:var(--pgh,0px);z-index:6}
+#view{overflow-anchor:none} /* 描き直しのたびに、ブラウザのスクロール位置の補正(スクロールアンカー)で縦の位置が数 px ずれるのを防ぐ。位置は render が戻す */
+#view .gprojects{display:block}
+#view .ptool{display:flex;flex-wrap:nowrap;align-items:center;gap:8px}
+#view .ptool .chips-row{display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;flex:1 1 auto;min-width:0;scrollbar-width:none} /* 1 行に収めて横にスクロールする(プロジェクトが何件でも、固定の行の高さが変わらない) */
+#view .ptool .chips-row::-webkit-scrollbar{display:none} /* スクロールバーを出すと、固定の行が 15px 高くなる(プロジェクトの数で高さが変わる)。縦のホイール・横スワイプ・Tab で動かす */
+#view .ptool .chips-row .chip-btn{flex:none;white-space:nowrap}
+#view .ptool .ptool-end{display:flex;flex:none;align-items:center;gap:8px}
+#view .pgstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + var(--gh,0px));z-index:7;background:var(--surface)} /* プロジェクトの見出し。枠(.gscroll)の外に置くので、画面の縦スクロールで留まり、次のプロジェクトに入ると入れ替わる。--gh は操作の帯(.gtop)の高さ */
+#view .pg-head{position:static;width:auto;background:var(--surface);padding:2px 0 6px;margin-bottom:0} /* 見出しは枠の外なので、横の sticky も幅の指定も要らない。すきまを作らない(padding-bottom) */
+#view .gscroll{overflow-x:auto;overflow-y:hidden} /* 枠は横だけにスクロールする。縦はページが動く */
+#view .g-head{position:relative;z-index:5} /* 日付軸の複製(.gstrip、z-index:6)より下に描く。同じ値だと、境目で本物が複製の上に描かれ、目盛りが見出しの下へ滑り込む */
+#view .gwrap{padding-bottom:calc(var(--sh,0px) + var(--sb,0px))} /* 複製の高さ(--sh)だけ、sticky の範囲を短くする。枠はその分はみ出して、全体の高さは変わらない */
+#view .gwrap > .gscroll{margin-bottom:calc(-1 * (var(--sh,0px) + var(--sb,0px)))}
+#view .gstrip{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + var(--gh,0px) + var(--pgh,0px));z-index:6;display:flex;overflow:hidden;box-sizing:border-box;height:var(--sh,0px);margin-bottom:calc(-1 * var(--sh,0px));border-bottom:1px solid var(--line);background:var(--surface)} /* 日付軸の複製。app.js の syncGStrips が作る。固定していないときは、本物の日付軸に重なる */
+#view .gstrip:empty{display:none}
+#view .gstrip .gsl{flex:none;width:var(--lw);background:var(--surface)}
+#view .gstrip .gsv{flex:1 1 auto;min-width:0;overflow:hidden}
 #view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px));z-index:6;background:var(--surface);padding:4px 0 6px} /* プロジェクトの見出し全体（名前・状態の行 + 種別〜稼働・注意の印の行）。列見出しの複製は、この下端に重なる */
 #view .pstick .prow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 #view .pstick .phead{margin:6px 0 0}
 #view .pstick h2{margin:0;font-size:17px}
 #view .pstick label{font-size:13px;color:var(--muted)}
-#view .thstrip{display:none;position:absolute;top:100%;left:0;right:0;overflow:hidden;box-sizing:border-box;border-bottom:1px solid var(--line);background:var(--surface)} /* リストの列見出しの複製。app.js の syncThStrips が作り、updateThStrips が .on で出す */
-#view .thstrip.on{display:block}
+#view .twrap{padding-bottom:calc(var(--sh,0px) + var(--sb,0px))} /* 複製の高さ(--sh)だけ、sticky の範囲を短くする。表はその分はみ出して、全体の高さは変わらない */
+#view .twrap > .tscroll{margin-bottom:calc(-1 * (var(--sh,0px) + var(--sb,0px)))}
+#view .thstrip{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + var(--ph,0px));z-index:5;overflow:hidden;box-sizing:border-box;height:var(--sh,0px);margin-bottom:calc(-1 * var(--sh,0px));border-bottom:1px solid var(--line);background:var(--surface)} /* リストの列見出しの複製。app.js の syncThStrips が作る。固定していないときは、本物の列見出しに重なる。--ph は名前・状態の行(.pstick)の高さ */
+#view .thstrip:empty{display:none}
 #view .thstrip .thin{display:flex;white-space:nowrap}
 #view .thstrip .thc{flex:none;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--muted);text-align:left}
 /* ページの先頭でも、固定の行が、固定したときと同じ位置にあるようにする（スクロールの始めに、固定の行が数 px 動かない）。ガント・リスト（.ptool がある画面）とアプリだけ。レポート・ほかの画面は変えない */
@@ -1672,8 +1688,8 @@ return { PERIOD_KINDS, reportPeriod, reportFileName, periodReport, progressAsOf 
 })();
 
 /* src/core/groups.js */
-const { groupLabels, groupSections, groupNames } = (() => {
-// 大項目（group）・中項目（subgroup）の扱い（純関数）。階層の集計はせず、見出しと絞り込みに使う文字列として持つ。
+const { groupLabels, groupSections } = (() => {
+// 大項目（group）・中項目（subgroup）の扱い（純関数）。階層の集計はせず、見出しに使う文字列として持つ。
 
 const DEFAULT_LABELS = { group: "大項目", subgroup: "中項目" };
 
@@ -1705,12 +1721,7 @@ function groupSections(tasks, { ensureNone = false } = {}) {
   return out;
 }
 
-/** 空でない大項目の名前を、重複なしで登場順に */
-function groupNames(tasks) {
-  return [...new Set(tasks.map((t) => t.group).filter(Boolean))];
-}
-
-return { groupLabels, groupSections, groupNames };
+return { groupLabels, groupSections };
 })();
 
 /* src/core/inbox.js */
@@ -2166,7 +2177,7 @@ return { saveHtmlFile };
 })();
 
 /* src/ui/common.js */
-const { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills, thStripOn } = (() => {
+const { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills } = (() => {
 // 画面共通の小さな道具（HTML エスケープ、日付・時刻の表示、状態の見た目）。DOM には触れない。
 
 
@@ -2207,18 +2218,7 @@ function flagPills(data, projectId, today, flags) {
   return out.join("");
 }
 
-/**
- * リストの列見出しの複製（.thstrip）を出すか。本物の thead の上端が、名前・状態の行（高さ baseH）の下端に達したら出す
- * （複製は、その下端から下に重なるので、本物の thead の真上に重なり、切り替えが見えない）。
- * かつ表の下端が、複製の高さ（stripH）と余裕（8px）を足した位置より下にあるときだけ出す（マイルストーン・履歴の部分では出さない）。
- * 引数は画面上の位置と高さ（px）。pin はヘッダーとフィルタ行の高さの和、baseH は名前・状態の行の高さ、theadH は本物の thead の高さ
- * （幅 860px 以下では thead が非表示で 0。位置も全部 0 になるので、このときは出さない）
- */
-function thStripOn({ theadTop, tableBottom, pin, baseH, stripH, theadH }) {
-  return theadH > 0 && theadTop <= pin + baseH + 1 && tableBottom > pin + baseH + stripH + 8;
-}
-
-return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills, thStripOn };
+return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills };
 })();
 
 /* src/ui/deps.js */
@@ -3283,11 +3283,10 @@ function layoutMilestones(gbodies) {
  * @param opts.readonly  true なら編集用の部品・属性を出さない（レポート用）
  * @param opts.askDel    削除確認を出すタスク ID
  * @param opts.showActual false なら実績の線と凡例を出さない
- * @param opts.group     "all" か大項目の名前(その大項目の行だけを出す)
  * @param opts.addAt     名前入力を開いている見出し { pid, group, subgroup }（なければ null）
  */
 function renderGantt(data, projectIds, today, opts = {}) {
-  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, group = "all", addAt = null } = opts;
+  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, addAt = null } = opts;
   const all = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
   // 編集画面は、タスクが 0 件でも見出しの「＋」から追加できるように描く
   if (!all.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
@@ -3323,6 +3322,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
     + ticks.map((t) => `<i class="gl ${t.yearStart ? "yr" : ""}" style="left:${x(t.date)}"></i>`).join("");
   const todayLine = `<span class="todayline" style="left:${x(today)}"></span>`;
 
+  const scrollAttrs = ` data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"`; // 全プロジェクト共通(ドラッグ・今日へ移動が .gscroll から読む)
   const sections = ps.map((p) => {
     const g = geo.get(p.id);
     const prog = projectProgress(data, p.id);
@@ -3355,7 +3355,6 @@ function renderGantt(data, projectIds, today, opts = {}) {
     const sumRow = `<div class="g-row g-sumrow"><div class="g-label"><span class="id"></span><span class="muted">プロジェクト全体</span></div><div class="g-lane" ${laneStyle}><i class="gbar gsum"${sumAttr} style="left:${x(p.start)};width:${sumW}%;min-width:4px" title="${fmtMD(p.start)}〜${fmtMD(p.due)}${readonly ? "" : "(両端のドラッグで開始・期限を変更)"}"><u style="width:${pct}%"></u>${sumHandles}</i><span class="g-due mono" style="left:${x(addDays(p.due, 1))}">${fmtMD(p.due)}</span></div></div>`;
 
     const taskOf = (r) => data.tasks.find((o) => o.id === r.taskId);
-    const inGroup = (r) => group === "all" || (taskOf(r).group ?? "") === group;
     const shown = (r) => !(hideDone && taskOf(r).status === "Done");
     const rowHtml = (r) => {
       const t = data.tasks.find((o) => o.id === r.taskId);
@@ -3385,7 +3384,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
     };
     // (大項目, 中項目) ごとに見出し行を入れて並べる。編集画面は、追加の入口になるので、大項目がなくても「（なし）」の見出しを常に出す。
     // 見出しは完了を隠していても残す（そのグループへ追加できるように）。レポート用は、見える行があるグループだけを出す
-    const base = g.rows.filter(inGroup).filter((r) => !readonly || shown(r));
+    const base = g.rows.filter((r) => !readonly || shown(r));
     const grouped = !readonly || base.some((r) => taskOf(r).group || taskOf(r).subgroup);
     const heading = (sec) => {
       const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
@@ -3396,8 +3395,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
         : `<button class="plus" data-gopen="${esc(p.id)}" ${at} aria-label="${esc(name)} にタスクを追加">＋</button>`;
       return `<div class="g-row g-grp"><div class="g-label"${readonly ? "" : ` data-mvgrp="${esc(p.id)}" data-mvg="${esc(sec.group)}" data-mvsg="${esc(sec.subgroup)}"`}><span class="g-grp-t"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""}</span>${ctl}</div><div class="g-lane" ${laneStyle}></div></div>`;
     };
-    const secs = groupSections(base.map((r) => ({ ...taskOf(r), row: r })), { ensureNone: !readonly && group === "all" });
-    if (!readonly && group !== "all" && !secs.length) secs.push({ group, subgroup: "", tasks: [] }); // 絞り込んだ大項目のタスクがなくても、そこへ追加できるように
+    const secs = groupSections(base.map((r) => ({ ...taskOf(r), row: r })), { ensureNone: !readonly });
     const rows = grouped
       ? secs
         .map((sec) => ({ sec, vis: sec.tasks.filter((x) => shown(x.row)) }))
@@ -3407,10 +3405,16 @@ function renderGantt(data, projectIds, today, opts = {}) {
 
     const headRow = `<div class="g-row g-head"><div class="g-label"></div><div class="g-lane g-axis ${dayScale ? "day" : ""}" ${laneStyle}>${dayScale ? "" : `<span class="todaytag" style="left:${x(today)}">今日</span>`}${axis}</div></div>`;
 
-    return `<section class="pg" aria-label="${esc(p.name)}">${head}<div class="gbody" style="--lanew:${laneW}"><div class="gov under">${grid}</div><div class="gov over">${msLines}${todayLine}</div>${headRow}${msRow}${sumRow}${rows}</div></section>`;
+    const gbody = `<div class="gbody" style="--lanew:${laneW}"><div class="gov under">${grid}</div><div class="gov over">${msLines}${todayLine}</div>${headRow}${msRow}${sumRow}${rows}</div>`;
+    if (readonly) return `<section class="pg" aria-label="${esc(p.name)}">${head}${gbody}</section>`;
+    // 編集画面は、プロジェクトごとに、固定の見出し(.pgstick。画面の縦スクロールに sticky)と、横スクロールだけの枠(.gscroll)に分ける。
+    // 枠は横スクロールの枠なので、その中では sticky が画面の縦スクロールに効かない。見出しは枠の外に置く。日付軸の複製(.gstrip)は app.js が作る
+    return `<section class="pg" aria-label="${esc(p.name)}"><div class="pgstick">${head}</div><div class="gwrap"><div class="gstrip" aria-hidden="true"></div><div class="gscroll"${scrollAttrs}><div class="gwide">${gbody}</div></div></div></section>`;
   }).join("");
 
-  return `${top}<div class="gscroll" data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"><div class="gwide">${sections}</div></div>${readonly ? legend(showActual) : ""}`;
+  return readonly
+    ? `${top}<div class="gscroll"${scrollAttrs}><div class="gwide">${sections}</div></div>${legend(showActual)}`
+    : `${top}<div class="gprojects">${sections}</div>`;
 }
 
 return { assignLevels, layoutMilestones, renderGantt };
@@ -4051,7 +4055,6 @@ function renderList(data, p, today, opts) {
   const prog = projectProgress(data, p.id);
   const tasks = data.tasks.filter((t) => t.projectId === p.id);
   const labels = groupLabels(data.settings);
-  const shown = opts.group && opts.group !== "all" ? tasks.filter((t) => (t.group ?? "") === opts.group) : tasks;
   const rowOf = (t) => {
     const needParty = t.status === "Waiting" && !t.waitingOn?.party ? `<span class="pill wait">待ち先を入力</span>` : "";
     const dependents = data.tasks.filter((o) => (o.predecessors ?? []).includes(t.id)).map((o) => o.id);
@@ -4072,10 +4075,8 @@ function renderList(data, p, today, opts) {
       <td data-l="メモ"><input class="in" data-f="memo" data-id="${esc(t.id)}" value="${esc(t.memo ?? "")}" placeholder="メモ" aria-label="${esc(t.id)} のメモ"></td>
       <td data-l="実績" class="mono muted">${actText(data, t.id)}</td><td data-l="">${delCell}</td></tr>`;
   };
-  // (大項目, 中項目) ごとに見出し行を入れて並べる。「＋」はそのグループへ追加する入口なので、0 件でも「（なし）」を出す（絞り込み中は除く）
-  const filtered = opts.group && opts.group !== "all";
-  const secs = groupSections(shown, { ensureNone: !filtered });
-  if (filtered && !secs.length) secs.push({ group: opts.group, subgroup: "", tasks: [] }); // 絞り込んだ大項目のタスクがなくても、そこへ追加できるように
+  // (大項目, 中項目) ごとに見出し行を入れて並べる。「＋」はそのグループへ追加する入口なので、0 件でも「（なし）」を出す
+  const secs = groupSections(tasks, { ensureNone: true });
   const rows = secs.map((sec) => {
     const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
     return `<tr class="grp-tr" data-mvgrp="${esc(p.id)}" data-mvg="${esc(sec.group)}" data-mvsg="${esc(sec.subgroup)}"><td colspan="13"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""} <button class="plus" data-addat="${esc(p.id)}" data-ag="${esc(sec.group)}" data-asg="${esc(sec.subgroup)}" aria-label="${esc(name)} にタスクを追加">＋</button></td></tr>${sec.tasks.map(rowOf).join("")}`;
@@ -4098,7 +4099,7 @@ function renderList(data, p, today, opts) {
       <label>開始 <input class="in sm" type="date" data-pf="start" data-pid="${esc(p.id)}" value="${esc(p.start)}" aria-label="${esc(p.name)} の開始日"></label>
       <label>期限 <input class="in sm" type="date" data-pf="due" data-pid="${esc(p.id)}" value="${esc(p.due)}" aria-label="${esc(p.name)} の期限"></label>
       <span>進捗 <b class="mono">${prog.done}/${prog.total}</b> (${Math.round(prog.rate * 100)}%)</span><span class="mono hrs">${(() => { const hh = projectHours(data, p.id); return `稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）`; })()}</span></div></div><div>${flagPills(data, p.id, today, projectFlags(data, p.id, today))}</div></div>
-    </div><div class="tscroll tlist"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>前のタスク</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    </div><div class="twrap"><div class="thstrip" aria-hidden="true"></div><div class="tscroll tlist"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>前のタスク</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
     <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="note">変更はその場でファイルに保存されます。次のタスクの日程をまとめて見直すときは、画面の下端の「Claude Code に依頼する」に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>
     <div class="mslist">${ms}<div><button class="btn" data-msadd="${esc(p.id)}">＋ マイルストーンを追加</button> <span class="note">ガントに◆で表示されます。</span></div></div>
@@ -4110,7 +4111,6 @@ function renderList(data, p, today, opts) {
  * @param opts.filter  "all" か projectId
  * @param opts.view    "gantt" | "list"
  * @param opts.window  ガントの表示期間
- * @param opts.group   "all" か大項目の名前(その大項目のタスクだけを出す)
  * @param opts.tpop    ガントの編集の窓({ id, x, y })。なければ出さない
  * @param opts.showPrio / opts.showActual  今日の優先・ガントの実績を出すか(既定は出す)
  */
@@ -4122,22 +4122,19 @@ function renderProjects(data, today, opts = {}) {
   }
   const filter = opts.filter && data.projects.some((p) => p.id === opts.filter) ? opts.filter : "all";
   const ids = filter === "all" ? data.projects.map((p) => p.id) : [filter];
-  const chips = [["all", "すべて"], ...data.projects.map((p) => [p.id, p.name])]
+  // チップは、状態が「完了」のプロジェクトを出さない(選択中のあいだだけ出す)。完了のものも、プルダウンから選べる
+  const chips = [["all", "すべて"], ...data.projects.filter((p) => p.status !== "完了" || p.id === filter).map((p) => [p.id, p.name])]
     .map(([k, l]) => `<button class="chip-btn" data-filter="${esc(k)}" aria-pressed="${filter === k}">${esc(l)}</button>`).join("");
-  const names = groupNames(data.tasks.filter((t) => ids.includes(t.projectId)));
-  const group = names.includes(opts.group) ? opts.group : "all";
-  const labels = groupLabels(data.settings);
-  const gsel = names.length
-    ? `<label class="gfilter">${esc(labels.group)} <select class="in sm" data-groupfilter aria-label="${esc(labels.group)}で絞り込み"><option value="all"${group === "all" ? " selected" : ""}>すべて</option>${names.map((n) => `<option value="${esc(n)}"${n === group ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></label>`
-    : "";
+  const pick = `<label class="pfilter">プロジェクト <select class="in sm" data-projectpick aria-label="プロジェクト名で絞り込み"><option value="all"${filter === "all" ? " selected" : ""}>すべて</option>${data.projects.map((p) => `<option value="${esc(p.id)}"${p.id === filter ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>`;
   const todayIds = showPrio ? new Set(todayTaskIds(data, today)) : new Set();
   const body = view === "gantt"
-    ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual, group, addAt: opts.addAt })}</section>`
-    : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, group, todayIds })).join("")}</div>`;
+    ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual, addAt: opts.addAt })}</section>`
+    : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, todayIds })).join("")}</div>`;
   const pt = view === "gantt" && opts.tpop ? data.tasks.find((t) => t.id === opts.tpop.id) : null;
   const pop = pt ? renderTaskPop(data, opts.tpop, statusCellHtml(pt, { ...opts, todayIds }, taskFlags(pt, today, data.settings).includes("overdue"))) : "";
-  return `<div class="toolbar ptool"><div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="プロジェクトで絞り込み">${chips}${gsel}</div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${addBtn}</div></div>
+  // チップはプロジェクトの数だけ並ぶので、1 行に収めて横にスクロールする(折り返すと、固定の行が高くなり、表が見えなくなる)。プロジェクト名のプルダウンと追加ボタンは、スクロールの外
+  return `<div class="toolbar ptool"><div class="chips-row" role="group" aria-label="プロジェクトで絞り込み">${chips}</div>
+    <div class="ptool-end">${pick}${addBtn}</div></div>
     <div class="cols${showPrio ? "" : " one"}">${body}${renderSideToggle(showPrio)}${showPrio ? renderSide(data, today, { sched: false, pendingDone: opts.pendingDone }) : ""}</div>${pop}`;
 }
 
@@ -4296,7 +4293,7 @@ const S = {
   filter: "all", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
-  prefs: loadPrefs(), settingsClosed: loadSettingsClosed(), group: "all", tpop: null, addAt: null, last: null, ruleError: "",
+  prefs: loadPrefs(), settingsClosed: loadSettingsClosed(), tpop: null, addAt: null, last: null, ruleError: "",
   ib: { open: false, text: loadInboxDraft(), projectId: "", replies: {}, reasons: {}, causes: {} },
   wperiod: "week", wdate: clock().date,
   reportPanel: null,
@@ -4328,7 +4325,7 @@ function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
   if (S.screen === "gantt" || S.screen === "list") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.screen, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, addAt: S.addAt, tpop: S.screen === "gantt" ? S.tpop : null, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
+    return renderProjects(S.data, today, { filter: S.filter, view: S.screen, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, addAt: S.addAt, tpop: S.screen === "gantt" ? S.tpop : null, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
   if (S.screen === "settings") return renderSettings(S.data, today, { ruleError: S.ruleError, closed: S.settingsClosed });
   if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
@@ -4366,22 +4363,36 @@ function render() {
   $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
   renderBar();
-  // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
-  const prev = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollLeft);
-  const prevTop = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollTop);
+  // ガントの横スクロール位置(全プロジェクトで同じ)とページの縦の位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)。
+  // 描き直しの間、ページが縮んで scrollY が飛ばないよう、#view の高さを保つ
+  const prevCount = view.querySelectorAll(".gscroll").length;
+  const prevLeft = view.querySelector(".gscroll")?.scrollLeft ?? 0, prevY = window.scrollY, chipsLeft = view.querySelector(".chips-row")?.scrollLeft ?? 0;
+  view.style.minHeight = `${view.offsetHeight}px`;
   const keepFocus = focusSelector(document.activeElement);
   view.innerHTML = (S.data && S.reportPanel ? renderReportPanel(S.data, S.reportPanel, c.date) : "") + renderBody();
   if (keepFocus && !S.focusSel) { try { view.querySelector(keepFocus)?.focus(); } catch { /* 無視 */ } }
   const bars = [...view.querySelectorAll(".gscroll")];
-  if (S.resetScroll || !prev.length || prev.length !== bars.length) scrollToday(false);
-  else bars.forEach((c, i) => { c.scrollLeft = prev[i]; c.scrollTop = prevTop[i]; });
+  if (S.resetScroll || !prevCount || !bars.length) scrollToday(false); // 枠の数が変わっても(完了を隠すなど)、位置は保つ
+  else bars.forEach((c) => { c.scrollLeft = prevLeft; });
   S.resetScroll = false;
+  // チップの行(横スクロール)は、描き直しても位置を保つ。選択中のチップが見えなければ、行の中だけを動かす(scrollIntoView はページの縦も動かすので使わない)
+  const chips = view.querySelector(".chips-row");
+  if (chips) {
+    chips.scrollLeft = chipsLeft;
+    const on = chips.querySelector('[aria-pressed="true"]');
+    if (on) {
+      const rr = chips.getBoundingClientRect(), cr = on.getBoundingClientRect();
+      if (cr.left < rr.left) chips.scrollLeft -= rr.left - cr.left + 8;
+      else if (cr.right > rr.right) chips.scrollLeft += cr.right - rr.right + 8;
+    }
+  }
   if (S.focusSel) {
     let el = null;
     try { el = view.querySelector(S.focusSel); } catch { /* 不正なセレクタは無視 */ }
     S.focusSel = null;
     if (el) { el.focus(); el.select?.(); }
   }
+  window.scrollTo(0, prevY); view.style.minHeight = "";
   syncSticky();
   drawAllDeps();
   placeTaskPop();
@@ -4428,11 +4439,13 @@ function renderCal() {
 /** ガントを開いたとき、今日が左から約 120px の位置になるようスクロールする(レイアウト確定後 = rAF 2 回待ち) */
 function scrollToday(smooth) {
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    view.querySelectorAll(".gscroll").forEach((c) => {
+    // なめらかに動かすのは先頭の枠だけにする(全部に出すと、そろえる処理と互いに止め合って動かない)。ほかの枠は alignGScrolls が追う
+    const all = [...view.querySelectorAll(".gscroll")];
+    for (const c of smooth ? all.slice(0, 1) : all) {
       const lane = c.querySelector(".g-lane");
-      if (!lane) return;
+      if (!lane) continue;
       c.scrollTo({ left: Math.max(0, Math.round(lane.offsetWidth * +c.dataset.todayfrac - 120)), behavior: smooth ? "smooth" : "auto" });
-    });
+    }
   }));
 }
 
@@ -4733,8 +4746,8 @@ view.addEventListener("click", (e) => {
   const gw = q("[data-gwin]"); if (gw) { S.gwin = gw.dataset.gwin; S.resetScroll = true; render(); return; }
   if (q("[data-hidedone]")) { S.hideDone = !S.hideDone; render(); return; }
   if (q("[data-gotoday]")) { scrollToday(true); return; }
-  const f = q("[data-filter]"); if (f) { S.filter = f.dataset.filter; S.group = "all"; S.resetScroll = true; render(); return; }
-  const o = q("[data-open]"); if (o) { S.filter = o.dataset.open; S.group = "all"; S.screen = "list"; S.resetScroll = true; render(); return; }
+  const f = q("[data-filter]"); if (f) { S.filter = f.dataset.filter; S.resetScroll = true; render(); return; }
+  const o = q("[data-open]"); if (o) { S.filter = o.dataset.open; S.screen = "list"; S.resetScroll = true; render(); return; }
   if (q("[data-addproject]")) {
     const before = S.data.projects.map((p) => p.id);
     if (apply((d) => addProject(d, { name: "新しいプロジェクト", type: "その他" }, today), "プロジェクトを追加しました。名前・期間を入力してください")) {
@@ -4989,7 +5002,7 @@ function onChange(el) {
   }
   if (el.dataset.rkw !== undefined) { const old = el.dataset.rkw; ruleApply((d) => renameProjectRule(d, old, el.value), "キーワードを変更しました", { inPlace: true }); return; }
   if (el.dataset.rpj !== undefined) { const kw = el.dataset.rpj, pid = el.value; ruleApply((d) => setProjectRule(d, kw, pid), "プロジェクトを変更しました", { inPlace: true }); return; }
-  if (el.dataset.groupfilter !== undefined) { S.group = el.value; S.resetScroll = true; render(); return; }
+  if (el.dataset.projectpick !== undefined) { S.filter = el.value; S.resetScroll = true; render(); return; }
   if (el.dataset.pf) {
     const k = el.dataset.pf, pid = el.dataset.pid;
     apply((d) => updateProject(d, pid, { [k]: el.value }), "プロジェクトを更新しました");
@@ -5307,7 +5320,6 @@ function renderBar(force = false) {
   const keep = a && el.contains(a) ? { sel: barSelector(a), s: a.selectionStart, e: a.selectionEnd } : null;
   el.innerHTML = renderInboxBar(S.data, { ...S.ib, canWrite: store.hasFile, nowMs: Date.now() });
   barSig = barSignature();
-  if (syncIbh()) syncSticky();
   if (keep?.sel) {
     const n = el.querySelector(keep.sel);
     if (n) { n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch { /* 選択できない欄 */ } }
@@ -5398,6 +5410,66 @@ $("claudebar").addEventListener("keydown", (e) => {
   else if (e.target.matches("[data-ib-text]") && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendRequest(); }
 });
 
+/** ガントの横スクロール枠(プロジェクトごと)の横位置を、動かした枠にそろえる。差が 0.5px 以下なら代入しない */
+function alignGScrolls(src) {
+  for (const gs of view.querySelectorAll(".gscroll")) {
+    if (gs === src || Math.abs(gs.scrollLeft - src.scrollLeft) <= 0.5) continue;
+    const before = gs.scrollLeft;
+    gs.scrollLeft = src.scrollLeft;
+    if (gs.scrollLeft !== before) aligned.set(gs, gs.scrollLeft); // 代入で起きる scroll は、そろえ直さない(動いている最中の枠を、古い位置へ引き戻してしまうため)。右端で丸められて値が変わらないときは、scroll が起きないので、記録しない(古い値が、あとの本物のスクロールを飲み込む)
+  }
+  for (const gs of view.querySelectorAll(".gscroll")) updateGStrip(gs);
+}
+/** 日付軸の複製(.gstrip)の横位置を、枠の横スクロールにそろえる(縦は CSS の sticky。横だけ JS) */
+function updateGStrip(gs) {
+  const lane = gs.closest(".gwrap")?.querySelector(":scope > .gstrip > .gsv > .g-lane");
+  if (lane) lane.style.transform = `translateX(${-gs.scrollLeft}px)`;
+}
+/**
+ * ガントの日付軸の複製(.gstrip)を作り直す。枠(.gscroll)は横スクロールの枠なので、その中の日付軸は、画面の縦スクロールで留められない。
+ * 枠の外に、本物の日付軸の写し(左の空き .gsl + 窓 .gsv の中の目盛りの行)を sticky で置く。固定していないときは、本物の日付軸にぴったり重なる(出し分けは要らない)。
+ * 流れの高さは増やさない(複製は margin-bottom で、枠は padding-bottom と負の margin-bottom で、sticky の範囲を複製の高さだけ短くし、プロジェクトの下端を越えないようにする)
+ */
+function syncGStrips() {
+  for (const wrap of view.querySelectorAll(".gwrap")) {
+    const strip = wrap.querySelector(":scope > .gstrip"), gs = wrap.querySelector(":scope > .gscroll");
+    const axis = gs?.querySelector(".g-head"), lane = gs?.querySelector(".g-head .g-lane");
+    if (!strip || !axis || !lane) continue;
+    const l = document.createElement("div"); l.className = "gsl";
+    const v = document.createElement("div"); v.className = "gsv";
+    const copy = lane.cloneNode(true);
+    copy.removeAttribute("id"); copy.querySelectorAll("[id]").forEach((e) => e.removeAttribute("id"));
+    const gap = parseFloat(getComputedStyle(axis).columnGap) || 0; // 本物の行は、ラベルと目盛りの間にすきま(gap)がある。写しの窓はラベルの右端から始まるので、目盛りの行を gap だけ右へ置く
+    copy.style.marginLeft = `${gap}px`;
+    copy.style.width = `${lane.offsetWidth}px`; // 本物の幅は、枠の幅から決まる calc(cqw)。枠の外では決められないので、px で写す
+    v.appendChild(copy);
+    strip.replaceChildren(l, v);
+    wrap.style.setProperty("--sh", `${axis.getBoundingClientRect().height}px`);
+    wrap.style.setProperty("--sb", `${gs.offsetHeight - gs.clientHeight}px`); // 枠の横スクロールバーの高さ。複製がその上に重ならないよう、sticky の範囲から除く
+    strip.style.setProperty("--lw", getComputedStyle(gs).getPropertyValue("--lw").trim());
+    updateGStrip(gs);
+  }
+}
+
+
+const aligned = new WeakMap();
+// チップの行はスクロールバーを出さないので、マウスの縦のホイールで横に動かせるようにする(横スワイプ・Shift + ホイールは、ブラウザが横に動かす)
+view.addEventListener("wheel", (e) => {
+  const row = e.target.closest?.(".chips-row");
+  if (!row || row.scrollWidth <= row.clientWidth || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+  const atEnd = e.deltaY > 0 ? row.scrollLeft >= row.scrollWidth - row.clientWidth - 0.5 : row.scrollLeft <= 0;
+  if (atEnd) return; // 行の端に着いていたら、ページのスクロールに任せる
+  row.scrollLeft += e.deltaY;
+  e.preventDefault();
+}, { passive: false });
+// scroll はバブルしないので、キャプチャで受ける
+view.addEventListener("scroll", (e) => {
+  const gs = e.target;
+  if (!gs.classList?.contains("gscroll")) return;
+  if (aligned.get(gs) === gs.scrollLeft) { aligned.delete(gs); return; }
+  alignGScrolls(gs);
+}, true);
+
 // ヘッダーとフィルタ行は上端に固定する（theme.css）。その高さを --hh・--th に入れ、固定の帯・表の列見出し・「今日の優先」がその下に付くようにする
 const topbar = document.querySelector("header.top");
 function syncSticky() {
@@ -5405,25 +5477,29 @@ function syncSticky() {
   root.setProperty("--hh", `${topbar?.offsetHeight ?? 0}px`);
   const tool = view.querySelector(".ptool");
   root.setProperty("--th", `${tool ? tool.offsetHeight : 0}px`);
-  syncIbh();
-  // ガントの枠（縦スクロールバーの幅を、名前の行の幅から引く）と、プロジェクトごとの見出しの高さ（日付軸の固定位置）。スクロールには連動させない
-  for (const gs of view.querySelectorAll(".gscroll")) { gs.style.setProperty("--sbw", `${gs.offsetWidth - gs.clientWidth}px`); gs.style.setProperty("--gsy", `${gs.getBoundingClientRect().top + window.scrollY}px`); }
-  for (const pg of view.querySelectorAll("section.pg")) { const h = pg.querySelector(".pg-head"); if (h) pg.style.setProperty("--pgh", `${h.offsetHeight}px`); }
+  // ガントの操作の帯(.gtop)の高さ(プロジェクトの見出し .pgstick の固定位置)と、プロジェクトごとの見出しの高さ(日付軸の複製の固定位置)。スクロールには連動させない
+  root.setProperty("--gh", `${view.querySelector(".gtop")?.offsetHeight ?? 0}px`);
+  for (const pg of view.querySelectorAll("section.pg")) { const h = pg.querySelector(".pgstick"); if (h) pg.style.setProperty("--pgh", `${h.getBoundingClientRect().height}px`); }
+  syncGStrips();
   syncThStrips();
   pinTableHeads();
 }
 /**
- * リストの列見出しの複製（.thstrip）を、名前・状態の行（.pstick）の中に作り直す。表は横スクロールの枠の中にあり、列見出しの sticky が画面の縦スクロールに効かないため、
- * sticky の行の中に複製を置く（縦は CSS の sticky、横スクロールの位置だけ translateX でそろえる）。幅・余白・文字は、本物の thead を測って写す
+ * リストの列見出しの複製（.thstrip）を作り直す。表は横スクロールの枠の中にあり、列見出しの sticky が画面の縦スクロールに効かないため、
+ * 枠の外(表を包む .twrap の先頭)に、列見出しの写しを sticky で置く(縦は CSS の sticky、横スクロールの位置だけ translateX でそろえる)。
+ * 固定していないときは、本物の列見出しにぴったり重なる(出し分けは要らない)。流れの高さは増やさず、sticky の範囲を複製の高さだけ短くして、表の下端を越えないようにする。
+ * 幅・余白・文字は、本物の thead を測って写す
  */
 function syncThStrips() {
   for (const panel of view.querySelectorAll("section.panel")) {
-    const st = panel.querySelector(":scope > .pstick"), box = panel.querySelector(".tlist");
-    const ths = box ? [...box.querySelectorAll("thead th")] : [];
-    if (!st || !ths.length) continue;
-    let strip = st.querySelector(".thstrip");
-    if (!strip) {
-      strip = document.createElement("div"); strip.className = "thstrip"; strip.setAttribute("aria-hidden", "true"); st.appendChild(strip);
+    const st = panel.querySelector(":scope > .pstick"), wrap = panel.querySelector(":scope > .twrap");
+    const strip = wrap?.querySelector(":scope > .thstrip"), box = wrap?.querySelector(":scope > .tlist");
+    if (!st || !strip || !box) continue;
+    const ths = [...box.querySelectorAll("thead th")];
+    panel.style.setProperty("--ph", `${st.getBoundingClientRect().height}px`);
+    if (!ths.length || !ths[0].offsetHeight) { strip.replaceChildren(); wrap.style.setProperty("--sh", "0px"); wrap.style.setProperty("--sb", "0px"); continue; } // 狭い画面では、列見出しは出ない
+    if (!box.dataset.thsync) {
+      box.dataset.thsync = "1";
       box.addEventListener("scroll", () => { const inner = strip.firstElementChild; if (inner) inner.style.transform = `translateX(${-box.scrollLeft}px)`; }, { passive: true });
     }
     const inner = document.createElement("div"); inner.className = "thin";
@@ -5432,47 +5508,27 @@ function syncThStrips() {
       c.style.width = `${th.getBoundingClientRect().width}px`; c.style.padding = getComputedStyle(th).padding;
       inner.appendChild(c);
     }
-    strip.style.height = `${ths[0].offsetHeight}px`;
+    wrap.style.setProperty("--sh", `${ths[0].getBoundingClientRect().height}px`);
+    wrap.style.setProperty("--sb", `${box.offsetHeight - box.clientHeight}px`); // 表の横スクロールバーの高さ
     inner.style.transform = `translateX(${-box.scrollLeft}px)`;
     strip.replaceChildren(inner);
   }
-  updateThStrips();
 }
-/** 複製を出す・隠す（スクロールで切り替える。位置は動かさないので、遅れは見えない） */
-function updateThStrips() {
-  const cs = getComputedStyle(document.documentElement);
-  const pin = (parseFloat(cs.getPropertyValue("--hh")) || 0) + (parseFloat(cs.getPropertyValue("--th")) || 0);
-  for (const panel of view.querySelectorAll("section.panel")) {
-    const st = panel.querySelector(":scope > .pstick"), strip = st?.querySelector(".thstrip"), table = panel.querySelector(".tlist table");
-    if (!strip || !table) continue;
-    const thead = table.querySelector("thead"), stripH = parseFloat(strip.style.height) || 0;
-    // 複製は絶対配置で、名前・状態の行の流れの高さを増やさない（増やすと、出した途端に表がずれ、出す・隠すがちらつく）
-    strip.classList.toggle("on", thStripOn({ theadTop: thead.getBoundingClientRect().top, tableBottom: table.getBoundingClientRect().bottom, pin, baseH: st.offsetHeight, stripH, theadH: thead.offsetHeight }));
-  }
-}
-/** 下の固定の帯（.ib）の高さ。ガントの枠の高さの計算に使う。帯は renderBar のたびに作り直される */
-function syncIbh() {
-  const v = `${document.querySelector(".ib")?.offsetHeight ?? 0}px`, root = document.documentElement.style;
-  const changed = root.getPropertyValue("--ibh") !== v;
-  root.setProperty("--ibh", v);
-  return changed; // 変わったとき、枠の高さが変わり、縦スクロールバーが出入りするので、呼び出し側が syncSticky をやり直す
-}
-
-/** 横スクロールの枠の中で sticky が効かない表（設定・稼働の表）の列見出しを、スクロール中も、ヘッダーとフィルタ行の下に付ける（表の枠の中でセルをずらす。表の下端は越えない）。リストの表は、名前・状態の行の中の複製（syncThStrips） */
+/** 横スクロールの枠の中で sticky が効かない表（設定・稼働の表）の列見出しを、スクロール中も、ヘッダーとフィルタ行の下に付ける（表の枠の中でセルをずらす。表の下端は越えない）。リストの表は、表を包む枠の先頭の複製（syncThStrips） */
 function pinTableHeads() {
   const cs = getComputedStyle(document.documentElement);
   const top = (parseFloat(cs.getPropertyValue("--hh")) || 0) + (parseFloat(cs.getPropertyValue("--th")) || 0);
   for (const box of view.querySelectorAll(".tscroll")) {
     const ths = box.querySelectorAll("thead th");
     if (!ths.length) continue;
-    if (box.classList.contains("tlist")) continue; // リストの表は、名前・状態の行の中の複製（.thstrip）で固定する
+    if (box.classList.contains("tlist")) continue; // リストの表は、表を包む枠（.twrap）の先頭の複製（.thstrip）で固定する
     const r = box.getBoundingClientRect();
     const dy = Math.max(0, Math.min(top - r.top, r.height - ths[0].offsetHeight - 4));
     for (const th of ths) th.style.transform = dy ? `translateY(${dy}px)` : "";
   }
 }
 let pinQueued = false;
-window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); updateThStrips(); }); } }, { passive: true });
+window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); }); } }, { passive: true });
 if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(syncSticky).observe(topbar);
 let depsQueued = false;
 window.addEventListener("resize", () => {

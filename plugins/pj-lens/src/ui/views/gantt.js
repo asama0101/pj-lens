@@ -56,11 +56,10 @@ export function layoutMilestones(gbodies) {
  * @param opts.readonly  true なら編集用の部品・属性を出さない（レポート用）
  * @param opts.askDel    削除確認を出すタスク ID
  * @param opts.showActual false なら実績の線と凡例を出さない
- * @param opts.group     "all" か大項目の名前(その大項目の行だけを出す)
  * @param opts.addAt     名前入力を開いている見出し { pid, group, subgroup }（なければ null）
  */
 export function renderGantt(data, projectIds, today, opts = {}) {
-  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, group = "all", addAt = null } = opts;
+  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, addAt = null } = opts;
   const all = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
   // 編集画面は、タスクが 0 件でも見出しの「＋」から追加できるように描く
   if (!all.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
@@ -96,6 +95,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     + ticks.map((t) => `<i class="gl ${t.yearStart ? "yr" : ""}" style="left:${x(t.date)}"></i>`).join("");
   const todayLine = `<span class="todayline" style="left:${x(today)}"></span>`;
 
+  const scrollAttrs = ` data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"`; // 全プロジェクト共通(ドラッグ・今日へ移動が .gscroll から読む)
   const sections = ps.map((p) => {
     const g = geo.get(p.id);
     const prog = projectProgress(data, p.id);
@@ -128,7 +128,6 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     const sumRow = `<div class="g-row g-sumrow"><div class="g-label"><span class="id"></span><span class="muted">プロジェクト全体</span></div><div class="g-lane" ${laneStyle}><i class="gbar gsum"${sumAttr} style="left:${x(p.start)};width:${sumW}%;min-width:4px" title="${fmtMD(p.start)}〜${fmtMD(p.due)}${readonly ? "" : "(両端のドラッグで開始・期限を変更)"}"><u style="width:${pct}%"></u>${sumHandles}</i><span class="g-due mono" style="left:${x(addDays(p.due, 1))}">${fmtMD(p.due)}</span></div></div>`;
 
     const taskOf = (r) => data.tasks.find((o) => o.id === r.taskId);
-    const inGroup = (r) => group === "all" || (taskOf(r).group ?? "") === group;
     const shown = (r) => !(hideDone && taskOf(r).status === "Done");
     const rowHtml = (r) => {
       const t = data.tasks.find((o) => o.id === r.taskId);
@@ -158,7 +157,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     };
     // (大項目, 中項目) ごとに見出し行を入れて並べる。編集画面は、追加の入口になるので、大項目がなくても「（なし）」の見出しを常に出す。
     // 見出しは完了を隠していても残す（そのグループへ追加できるように）。レポート用は、見える行があるグループだけを出す
-    const base = g.rows.filter(inGroup).filter((r) => !readonly || shown(r));
+    const base = g.rows.filter((r) => !readonly || shown(r));
     const grouped = !readonly || base.some((r) => taskOf(r).group || taskOf(r).subgroup);
     const heading = (sec) => {
       const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
@@ -169,8 +168,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
         : `<button class="plus" data-gopen="${esc(p.id)}" ${at} aria-label="${esc(name)} にタスクを追加">＋</button>`;
       return `<div class="g-row g-grp"><div class="g-label"${readonly ? "" : ` data-mvgrp="${esc(p.id)}" data-mvg="${esc(sec.group)}" data-mvsg="${esc(sec.subgroup)}"`}><span class="g-grp-t"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""}</span>${ctl}</div><div class="g-lane" ${laneStyle}></div></div>`;
     };
-    const secs = groupSections(base.map((r) => ({ ...taskOf(r), row: r })), { ensureNone: !readonly && group === "all" });
-    if (!readonly && group !== "all" && !secs.length) secs.push({ group, subgroup: "", tasks: [] }); // 絞り込んだ大項目のタスクがなくても、そこへ追加できるように
+    const secs = groupSections(base.map((r) => ({ ...taskOf(r), row: r })), { ensureNone: !readonly });
     const rows = grouped
       ? secs
         .map((sec) => ({ sec, vis: sec.tasks.filter((x) => shown(x.row)) }))
@@ -180,8 +178,14 @@ export function renderGantt(data, projectIds, today, opts = {}) {
 
     const headRow = `<div class="g-row g-head"><div class="g-label"></div><div class="g-lane g-axis ${dayScale ? "day" : ""}" ${laneStyle}>${dayScale ? "" : `<span class="todaytag" style="left:${x(today)}">今日</span>`}${axis}</div></div>`;
 
-    return `<section class="pg" aria-label="${esc(p.name)}">${head}<div class="gbody" style="--lanew:${laneW}"><div class="gov under">${grid}</div><div class="gov over">${msLines}${todayLine}</div>${headRow}${msRow}${sumRow}${rows}</div></section>`;
+    const gbody = `<div class="gbody" style="--lanew:${laneW}"><div class="gov under">${grid}</div><div class="gov over">${msLines}${todayLine}</div>${headRow}${msRow}${sumRow}${rows}</div>`;
+    if (readonly) return `<section class="pg" aria-label="${esc(p.name)}">${head}${gbody}</section>`;
+    // 編集画面は、プロジェクトごとに、固定の見出し(.pgstick。画面の縦スクロールに sticky)と、横スクロールだけの枠(.gscroll)に分ける。
+    // 枠は横スクロールの枠なので、その中では sticky が画面の縦スクロールに効かない。見出しは枠の外に置く。日付軸の複製(.gstrip)は app.js が作る
+    return `<section class="pg" aria-label="${esc(p.name)}"><div class="pgstick">${head}</div><div class="gwrap"><div class="gstrip" aria-hidden="true"></div><div class="gscroll"${scrollAttrs}><div class="gwide">${gbody}</div></div></div></section>`;
   }).join("");
 
-  return `${top}<div class="gscroll" data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"><div class="gwide">${sections}</div></div>${readonly ? legend(showActual) : ""}`;
+  return readonly
+    ? `${top}<div class="gscroll"${scrollAttrs}><div class="gwide">${sections}</div></div>${legend(showActual)}`
+    : `${top}<div class="gprojects">${sections}</div>`;
 }
