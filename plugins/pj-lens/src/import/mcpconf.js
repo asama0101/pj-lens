@@ -10,8 +10,8 @@ export const SCHEMA_VERSION = 1;
 
 /** 役割ごとの必須項目: 予定表は期間の取得 */
 export const ROLES = { calendar: ["server", "listTool"] };
-/** 役割ごとの任意項目（空でない文字列の配列）: 予定表は、自分のメールアドレスと、会議室の名前のキーワード（取り込みで、自分だけ・自分と会議室だけの予定を除く） */
-export const OPTIONAL = { calendar: ["selfEmails", "roomKeywords"] };
+/** 役割ごとの任意項目（空でない文字列の配列）: 予定表は、自分のメールアドレスと名前、会議室の名前のキーワード（取り込みで、自分だけ・自分と会議室だけの予定を除く） */
+export const OPTIONAL = { calendar: ["selfEmails", "selfNames", "roomKeywords"] };
 
 /** 指定の誤り（空なら正常）。役割は calendar のみ、各役割の必須項目は非空の文字列 */
 export function validateMcpConfig(cfg) {
