@@ -384,7 +384,7 @@ test("theme.css: .gstrip は sticky で、top に --pgh を含み、複製の窓
 });
 
 // ---- 絞り込みチップ: 1 行に収めて、横にスクロールする ----
-test("theme.css: チップの行は折り返さず横にスクロールし、大項目の選択・追加ボタンは固定のまま", () => {
+test("theme.css: チップの行は折り返さず横にスクロールし、プロジェクト名のプルダウン・追加ボタンは固定のまま", () => {
   assert.match(css, /#view \.ptool\{[^}]*display:flex[^}]*flex-wrap:nowrap/);
   assert.match(css, /#view \.ptool \.chips-row\{[^}]*display:flex[^}]*flex-wrap:nowrap[^}]*overflow-x:auto[^}]*min-width:0/);
   assert.match(css, /#view \.ptool \.chips-row \.chip-btn\{[^}]*flex:none/);
@@ -423,4 +423,9 @@ test("app.js: チップの行のホイールは、行の端に着いていたら
   const w = src.slice(src.indexOf('closest?.(".chips-row")') - 100, src.indexOf('closest?.(".chips-row")') + 700);
   assert.match(w, /scrollWidth - row\.clientWidth/);
   assert.match(w, /row\.scrollLeft <= 0/);
+});
+
+test("app.js: プロジェクト名のプルダウン（data-projectpick）で絞り込む。大項目の絞り込み（S.group・data-groupfilter）はもう持たない", () => {
+  assert.match(src, /el\.dataset\.projectpick !== undefined\) \{ S\.filter = el\.value; S\.resetScroll = true; render\(\); return; \}/);
+  assert.ok(!src.includes("S.group") && !src.includes("groupfilter") && !src.includes("group: \"all\""), "大項目の絞り込みの状態を持たない");
 });

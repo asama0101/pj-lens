@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { groupLabels, groupSections, groupNames } from "../plugins/pj-lens/src/core/groups.js";
+import { groupLabels, groupSections } from "../plugins/pj-lens/src/core/groups.js";
 
 const t = (id, group, subgroup) => ({ id, group, subgroup });
 
@@ -27,9 +27,4 @@ test("groupSections: ensureNone は空の「なし」を末尾に足し、すで
   assert.deepEqual(groupSections([], { ensureNone: true }), [{ group: "", subgroup: "", tasks: [] }]);
   assert.deepEqual(shape(groupSections([t("1", "A", "")], { ensureNone: true })), [["A", "", ["1"]], ["", "", []]]);
   assert.deepEqual(shape(groupSections([t("1", null, null)], { ensureNone: true })), [["", "", ["1"]]]);
-});
-
-test("groupNames: 空でない group を重複なしで登場順に", () => {
-  assert.deepEqual(groupNames([t("1", "設計"), t("2", ""), t("3", "構築"), t("4", "設計"), t("5", null)]), ["設計", "構築"]);
-  assert.deepEqual(groupNames([]), []);
 });

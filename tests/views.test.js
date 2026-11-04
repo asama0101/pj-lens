@@ -140,12 +140,10 @@ test("ガント: 保存順が X/a, Y/b, X/c でも、X の2件が続けて並ぶ
   assert.deepEqual(gotoOrder(gantt(d, ["C"])), ["C1", "C3", "C2"]);
 });
 
-test("ガント: 大項目の絞り込み・完了を隠す中でも、グループの見出しが残る", () => {
+test("ガント: 完了を隠す中でも、グループの見出しが残る", () => {
   const d = setC(load(), [["C1", "X", "a"], ["C2", "Y", "b", "Done"], ["C3", "X", "c"]]);
   const html = gantt(d, ["C"], { hideDone: true });
   assert.ok(html.includes('data-ag="Y"') && !html.includes('data-gedit="C2"'));
-  const only = gantt(d, ["C"], { group: "X" });
-  assert.ok(only.includes('data-ag="X"') && !only.includes('data-ag="Y"') && !only.includes('data-gopen="C" data-ag="" '));
 });
 
 test("ガント: addAt のある見出しに名前入力が出る。大項目名の特殊文字は escape される", () => {
@@ -337,19 +335,6 @@ test("リスト: 大項目・中項目の入力欄と、設定したラベル名
   assert.ok(h2.includes("<th>フェーズ</th><th>作業群</th>"));
 });
 
-test("絞り込み: group を選ぶと該当しない行が消え、select が出る（group が無いデータでは select が出ない）", () => {
-  const d = load();
-  const g = renderProjects(d, TODAY, { filter: "A", view: "gantt", window: "m6", group: "調達" });
-  assert.ok(g.includes("data-groupfilter") && g.includes("<option value=\"調達\" selected>"));
-  assert.ok(g.includes('data-gt="A2"') && g.includes('data-gt="A3"') && !g.includes('data-gt="A5"'));
-  const l = renderProjects(d, TODAY, { filter: "A", view: "list", group: "構築" });
-  assert.ok(l.includes('data-row="A5"') && !l.includes('data-row="A2"'));
-  const all = renderProjects(d, TODAY, { filter: "A", view: "list", group: "all" });
-  assert.ok(all.includes('data-row="A2"') && all.includes('data-row="A5"'));
-  assert.ok(!renderProjects(noGroups(), TODAY, { filter: "A", view: "gantt", window: "m6" }).includes("data-groupfilter"));
-  assert.ok(renderProjects(d, TODAY, { filter: "A", view: "list", group: "存在しない" }).includes('data-row="A2"'), "存在しない group は絞り込まない");
-});
-
 test("renderGantt: g-grp の区切り行が group ごとに出る。編集画面は「（なし）」も常に出し、readonly は group が無いデータでは出ない", () => {
   const d = load();
   const html = gantt(d, ["A"]);
@@ -389,22 +374,6 @@ test("リスト: 大項目名の特殊文字は escape され、「＋」の属�
   const html = listOf(setC(load(), [["C1", g, "a"]]), "C");
   assert.ok(html.includes('data-ag="A&quot;&lt;b&gt;|"'));
   assert.ok(!html.includes(g));
-});
-
-test("リスト: 大項目の絞り込み中は、その大項目の見出しだけが出て「（なし）」は出ない", () => {
-  const d = setC(load(), [["C1", "X", "a"], ["C2", "Y", "b"], ["C3", null, null]]);
-  const html = listOf(d, "C", { group: "X" });
-  assert.equal(count(html, /class="grp-tr"/g), 1);
-  assert.ok(html.includes('data-ag="X"') && !html.includes("（なし）"));
-});
-
-test("大項目で絞り込んでも、その大項目を持たないプロジェクトに、その大項目の「＋」が出る（リスト・ガント）", () => {
-  const d = setC(load(), [["C1", "X", "a"], ["C2", "X", "a"], ["C3", "X", "a"]]);
-  const list = renderProjects(d, TODAY, { filter: "all", view: "list", group: "X" });
-  assert.ok(list.includes('data-addat="B" data-ag="X" data-asg=""'), "リスト");
-  const g = gantt(d, ["B"], { group: "X" });
-  assert.ok(g.includes('data-gopen="B" data-ag="X" data-asg=""'), "ガント");
-  assert.equal(count(g, /data-gedit="/g), 0);
 });
 
 test("ガント: 編集画面の凡例は上端（固定の帯）にあり、レポート用（readonly）は従来どおり下にある", () => {
@@ -1336,7 +1305,7 @@ test("renderGantt（レポート用 readonly）: 従来どおり .gscroll は 1 
   assert.ok(html.includes('<div class="gwide"><section class="pg"'), "枠の中に全プロジェクトが入る");
 });
 
-test("renderProjects: チップは .chips-row に入り、大項目の選択と「＋ プロジェクトを追加」は .ptool-end に入る（30 プロジェクトでも同じ形）", () => {
+test("renderProjects: チップは .chips-row に入り、プロジェクト名のプルダウンと「＋ プロジェクトを追加」は .ptool-end に入る（30 プロジェクトでも同じ形）", () => {
   const d = load();
   for (let i = 0; i < 27; i++) d.projects.push({ ...d.projects[1], id: `Z${i}`, name: `追加 ${i}` });
   for (const view of ["gantt", "list"]) {
@@ -1345,12 +1314,28 @@ test("renderProjects: チップは .chips-row に入り、大項目の選択と�
     const row = tool.slice(tool.indexOf('<div class="chips-row"'), tool.indexOf('<div class="ptool-end">'));
     assert.equal(count(tool, /class="chips-row"/g), 1, view);
     assert.equal(count(row, /data-filter="/g), 31, `${view}: すべて + 30 プロジェクトのチップが全部 .chips-row の中`);
-    assert.ok(!row.includes("data-addproject") && !row.includes("data-groupfilter"), `${view}: 追加ボタンと大項目の選択は、スクロールする行の外`);
+    assert.ok(!row.includes("data-addproject") && !row.includes("data-projectpick"), `${view}: 追加ボタンとプルダウンは、スクロールする行の外`);
     const end = tool.slice(tool.indexOf('<div class="ptool-end">'));
-    assert.ok(end.includes("data-addproject"), view);
+    assert.ok(end.includes("data-addproject") && end.includes("data-projectpick"), view);
+    assert.ok(!html.includes("data-groupfilter"), `${view}: 大項目の絞り込みはない`);
   }
-  const g = renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6" });
-  assert.ok(g.slice(g.indexOf('<div class="ptool-end">'), g.indexOf('<div class="cols')).includes("data-groupfilter"), "大項目があれば、選択は .ptool-end の中");
+});
+
+test("絞り込みのチップは、状態が「完了」のプロジェクトを出さない（選択中のあいだだけ出す）。プルダウンには、完了も含む全プロジェクトが出る", () => {
+  const d = load();
+  d.projects[1].status = "完了"; // B
+  const chipIds = (html) => [...html.slice(html.indexOf('<div class="chips-row"'), html.indexOf('<div class="ptool-end">')).matchAll(/data-filter="([^"]+)"/g)].map((m) => m[1]);
+  const opts = (html) => [...html.slice(html.indexOf("data-projectpick"), html.indexOf("</select>", html.indexOf("data-projectpick"))).matchAll(/<option value="([^"]+)"( selected)?>/g)].map((m) => [m[1], !!m[2]]);
+  for (const view of ["gantt", "list"]) {
+    const all = renderProjects(d, TODAY, { filter: "all", view, window: "m6" });
+    assert.deepEqual(chipIds(all), ["all", "A", "C"], `${view}: 完了の B はチップに出ない`);
+    assert.deepEqual(opts(all).map((o) => o[0]), ["all", "A", "B", "C"], `${view}: プルダウンには B も出る`);
+    assert.deepEqual(opts(all).filter((o) => o[1]), [["all", true]], `${view}: すべてが選択中`);
+    const b = renderProjects(d, TODAY, { filter: "B", view, window: "m6" });
+    assert.deepEqual(chipIds(b), ["all", "A", "B", "C"], `${view}: 完了の B を選んでいるあいだは、B のチップが出る`);
+    assert.deepEqual(opts(b).filter((o) => o[1]), [["B", true]], `${view}: プルダウンも B が選択中`);
+  }
+  assert.deepEqual(chipIds(renderProjects(load(), TODAY, { filter: "all", view: "list" })), ["all", "A", "B", "C"], "完了がなければ、全部出る");
 });
 
 test("renderList: .twrap は表（.tlist）だけを含み、メモ・マイルストーン・履歴は .twrap の外", () => {

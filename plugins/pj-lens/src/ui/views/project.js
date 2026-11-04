@@ -4,7 +4,7 @@ import { taskActual } from "../../core/sessions.js";
 import { projectHours } from "../../core/workload.js";
 import { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE } from "../../core/schema.js";
 import { esc, fmtMD, flagPills } from "../common.js";
-import { groupLabels, groupNames, groupSections } from "../../core/groups.js";
+import { groupLabels, groupSections } from "../../core/groups.js";
 import { renderGantt } from "./gantt.js";
 import { renderSide, renderSideToggle, todayTaskIds, doneAskHtml } from "./prio.js";
 import { renderTaskPop, predEditHtml, startInputHtml } from "./taskpop.js";
@@ -28,7 +28,6 @@ function renderList(data, p, today, opts) {
   const prog = projectProgress(data, p.id);
   const tasks = data.tasks.filter((t) => t.projectId === p.id);
   const labels = groupLabels(data.settings);
-  const shown = opts.group && opts.group !== "all" ? tasks.filter((t) => (t.group ?? "") === opts.group) : tasks;
   const rowOf = (t) => {
     const needParty = t.status === "Waiting" && !t.waitingOn?.party ? `<span class="pill wait">待ち先を入力</span>` : "";
     const dependents = data.tasks.filter((o) => (o.predecessors ?? []).includes(t.id)).map((o) => o.id);
@@ -49,10 +48,8 @@ function renderList(data, p, today, opts) {
       <td data-l="メモ"><input class="in" data-f="memo" data-id="${esc(t.id)}" value="${esc(t.memo ?? "")}" placeholder="メモ" aria-label="${esc(t.id)} のメモ"></td>
       <td data-l="実績" class="mono muted">${actText(data, t.id)}</td><td data-l="">${delCell}</td></tr>`;
   };
-  // (大項目, 中項目) ごとに見出し行を入れて並べる。「＋」はそのグループへ追加する入口なので、0 件でも「（なし）」を出す（絞り込み中は除く）
-  const filtered = opts.group && opts.group !== "all";
-  const secs = groupSections(shown, { ensureNone: !filtered });
-  if (filtered && !secs.length) secs.push({ group: opts.group, subgroup: "", tasks: [] }); // 絞り込んだ大項目のタスクがなくても、そこへ追加できるように
+  // (大項目, 中項目) ごとに見出し行を入れて並べる。「＋」はそのグループへ追加する入口なので、0 件でも「（なし）」を出す
+  const secs = groupSections(tasks, { ensureNone: true });
   const rows = secs.map((sec) => {
     const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
     return `<tr class="grp-tr" data-mvgrp="${esc(p.id)}" data-mvg="${esc(sec.group)}" data-mvsg="${esc(sec.subgroup)}"><td colspan="13"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""} <button class="plus" data-addat="${esc(p.id)}" data-ag="${esc(sec.group)}" data-asg="${esc(sec.subgroup)}" aria-label="${esc(name)} にタスクを追加">＋</button></td></tr>${sec.tasks.map(rowOf).join("")}`;
@@ -87,7 +84,6 @@ function renderList(data, p, today, opts) {
  * @param opts.filter  "all" か projectId
  * @param opts.view    "gantt" | "list"
  * @param opts.window  ガントの表示期間
- * @param opts.group   "all" か大項目の名前(その大項目のタスクだけを出す)
  * @param opts.tpop    ガントの編集の窓({ id, x, y })。なければ出さない
  * @param opts.showPrio / opts.showActual  今日の優先・ガントの実績を出すか(既定は出す)
  */
@@ -99,22 +95,18 @@ export function renderProjects(data, today, opts = {}) {
   }
   const filter = opts.filter && data.projects.some((p) => p.id === opts.filter) ? opts.filter : "all";
   const ids = filter === "all" ? data.projects.map((p) => p.id) : [filter];
-  const chips = [["all", "すべて"], ...data.projects.map((p) => [p.id, p.name])]
+  // チップは、状態が「完了」のプロジェクトを出さない(選択中のあいだだけ出す)。完了のものも、プルダウンから選べる
+  const chips = [["all", "すべて"], ...data.projects.filter((p) => p.status !== "完了" || p.id === filter).map((p) => [p.id, p.name])]
     .map(([k, l]) => `<button class="chip-btn" data-filter="${esc(k)}" aria-pressed="${filter === k}">${esc(l)}</button>`).join("");
-  const names = groupNames(data.tasks.filter((t) => ids.includes(t.projectId)));
-  const group = names.includes(opts.group) ? opts.group : "all";
-  const labels = groupLabels(data.settings);
-  const gsel = names.length
-    ? `<label class="gfilter">${esc(labels.group)} <select class="in sm" data-groupfilter aria-label="${esc(labels.group)}で絞り込み"><option value="all"${group === "all" ? " selected" : ""}>すべて</option>${names.map((n) => `<option value="${esc(n)}"${n === group ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></label>`
-    : "";
+  const pick = `<label class="pfilter">プロジェクト <select class="in sm" data-projectpick aria-label="プロジェクト名で絞り込み"><option value="all"${filter === "all" ? " selected" : ""}>すべて</option>${data.projects.map((p) => `<option value="${esc(p.id)}"${p.id === filter ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>`;
   const todayIds = showPrio ? new Set(todayTaskIds(data, today)) : new Set();
   const body = view === "gantt"
-    ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual, group, addAt: opts.addAt })}</section>`
-    : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, group, todayIds })).join("")}</div>`;
+    ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual, addAt: opts.addAt })}</section>`
+    : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, todayIds })).join("")}</div>`;
   const pt = view === "gantt" && opts.tpop ? data.tasks.find((t) => t.id === opts.tpop.id) : null;
   const pop = pt ? renderTaskPop(data, opts.tpop, statusCellHtml(pt, { ...opts, todayIds }, taskFlags(pt, today, data.settings).includes("overdue"))) : "";
-  // チップはプロジェクトの数だけ並ぶので、1 行に収めて横にスクロールする(折り返すと、固定の行が高くなり、表が見えなくなる)。大項目の選択と追加ボタンは、スクロールの外
+  // チップはプロジェクトの数だけ並ぶので、1 行に収めて横にスクロールする(折り返すと、固定の行が高くなり、表が見えなくなる)。プロジェクト名のプルダウンと追加ボタンは、スクロールの外
   return `<div class="toolbar ptool"><div class="chips-row" role="group" aria-label="プロジェクトで絞り込み">${chips}</div>
-    <div class="ptool-end">${gsel}${addBtn}</div></div>
+    <div class="ptool-end">${pick}${addBtn}</div></div>
     <div class="cols${showPrio ? "" : " one"}">${body}${renderSideToggle(showPrio)}${showPrio ? renderSide(data, today, { sched: false, pendingDone: opts.pendingDone }) : ""}</div>${pop}`;
 }

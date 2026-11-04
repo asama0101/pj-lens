@@ -1,4 +1,4 @@
-// 大項目（group）・中項目（subgroup）の扱い（純関数）。階層の集計はせず、見出しと絞り込みに使う文字列として持つ。
+// 大項目（group）・中項目（subgroup）の扱い（純関数）。階層の集計はせず、見出しに使う文字列として持つ。
 
 const DEFAULT_LABELS = { group: "大項目", subgroup: "中項目" };
 
@@ -28,9 +28,4 @@ export function groupSections(tasks, { ensureNone = false } = {}) {
   out.sort((a, b) => (a.group === "") - (b.group === "") || first.get(a.group) - first.get(b.group));
   if (ensureNone && !out.some((s) => s.group === "" && s.subgroup === "")) out.push({ group: "", subgroup: "", tasks: [] });
   return out;
-}
-
-/** 空でない大項目の名前を、重複なしで登場順に */
-export function groupNames(tasks) {
-  return [...new Set(tasks.map((t) => t.group).filter(Boolean))];
 }

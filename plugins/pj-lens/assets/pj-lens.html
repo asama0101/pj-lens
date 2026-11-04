@@ -404,7 +404,7 @@ tr.hl td{transition:background .3s}
 .plus{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--surface);color:var(--accent);border-radius:6px;padding:1px 9px;cursor:pointer;flex:none}
 .plus:hover{border-color:var(--accent)}
 .tbl .grp-tr td{background:var(--line-soft);font-size:12px;padding:5px 10px;vertical-align:middle}
-.gfilter{display:inline-flex;align-items:center;gap:6px;margin-left:8px;font-size:12px;color:var(--muted)}
+.pfilter{display:inline-flex;align-items:center;gap:6px;margin-left:8px;font-size:12px;color:var(--muted)}
 .banner{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:13px}
 code{font-family:var(--f-mono);font-size:12px;background:var(--line-soft);padding:0 4px;border-radius:3px}
 
@@ -1688,8 +1688,8 @@ return { PERIOD_KINDS, reportPeriod, reportFileName, periodReport, progressAsOf 
 })();
 
 /* src/core/groups.js */
-const { groupLabels, groupSections, groupNames } = (() => {
-// 大項目（group）・中項目（subgroup）の扱い（純関数）。階層の集計はせず、見出しと絞り込みに使う文字列として持つ。
+const { groupLabels, groupSections } = (() => {
+// 大項目（group）・中項目（subgroup）の扱い（純関数）。階層の集計はせず、見出しに使う文字列として持つ。
 
 const DEFAULT_LABELS = { group: "大項目", subgroup: "中項目" };
 
@@ -1721,12 +1721,7 @@ function groupSections(tasks, { ensureNone = false } = {}) {
   return out;
 }
 
-/** 空でない大項目の名前を、重複なしで登場順に */
-function groupNames(tasks) {
-  return [...new Set(tasks.map((t) => t.group).filter(Boolean))];
-}
-
-return { groupLabels, groupSections, groupNames };
+return { groupLabels, groupSections };
 })();
 
 /* src/core/inbox.js */
@@ -3288,11 +3283,10 @@ function layoutMilestones(gbodies) {
  * @param opts.readonly  true なら編集用の部品・属性を出さない（レポート用）
  * @param opts.askDel    削除確認を出すタスク ID
  * @param opts.showActual false なら実績の線と凡例を出さない
- * @param opts.group     "all" か大項目の名前(その大項目の行だけを出す)
  * @param opts.addAt     名前入力を開いている見出し { pid, group, subgroup }（なければ null）
  */
 function renderGantt(data, projectIds, today, opts = {}) {
-  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, group = "all", addAt = null } = opts;
+  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, addAt = null } = opts;
   const all = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
   // 編集画面は、タスクが 0 件でも見出しの「＋」から追加できるように描く
   if (!all.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
@@ -3361,7 +3355,6 @@ function renderGantt(data, projectIds, today, opts = {}) {
     const sumRow = `<div class="g-row g-sumrow"><div class="g-label"><span class="id"></span><span class="muted">プロジェクト全体</span></div><div class="g-lane" ${laneStyle}><i class="gbar gsum"${sumAttr} style="left:${x(p.start)};width:${sumW}%;min-width:4px" title="${fmtMD(p.start)}〜${fmtMD(p.due)}${readonly ? "" : "(両端のドラッグで開始・期限を変更)"}"><u style="width:${pct}%"></u>${sumHandles}</i><span class="g-due mono" style="left:${x(addDays(p.due, 1))}">${fmtMD(p.due)}</span></div></div>`;
 
     const taskOf = (r) => data.tasks.find((o) => o.id === r.taskId);
-    const inGroup = (r) => group === "all" || (taskOf(r).group ?? "") === group;
     const shown = (r) => !(hideDone && taskOf(r).status === "Done");
     const rowHtml = (r) => {
       const t = data.tasks.find((o) => o.id === r.taskId);
@@ -3391,7 +3384,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
     };
     // (大項目, 中項目) ごとに見出し行を入れて並べる。編集画面は、追加の入口になるので、大項目がなくても「（なし）」の見出しを常に出す。
     // 見出しは完了を隠していても残す（そのグループへ追加できるように）。レポート用は、見える行があるグループだけを出す
-    const base = g.rows.filter(inGroup).filter((r) => !readonly || shown(r));
+    const base = g.rows.filter((r) => !readonly || shown(r));
     const grouped = !readonly || base.some((r) => taskOf(r).group || taskOf(r).subgroup);
     const heading = (sec) => {
       const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
@@ -3402,8 +3395,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
         : `<button class="plus" data-gopen="${esc(p.id)}" ${at} aria-label="${esc(name)} にタスクを追加">＋</button>`;
       return `<div class="g-row g-grp"><div class="g-label"${readonly ? "" : ` data-mvgrp="${esc(p.id)}" data-mvg="${esc(sec.group)}" data-mvsg="${esc(sec.subgroup)}"`}><span class="g-grp-t"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""}</span>${ctl}</div><div class="g-lane" ${laneStyle}></div></div>`;
     };
-    const secs = groupSections(base.map((r) => ({ ...taskOf(r), row: r })), { ensureNone: !readonly && group === "all" });
-    if (!readonly && group !== "all" && !secs.length) secs.push({ group, subgroup: "", tasks: [] }); // 絞り込んだ大項目のタスクがなくても、そこへ追加できるように
+    const secs = groupSections(base.map((r) => ({ ...taskOf(r), row: r })), { ensureNone: !readonly });
     const rows = grouped
       ? secs
         .map((sec) => ({ sec, vis: sec.tasks.filter((x) => shown(x.row)) }))
@@ -4063,7 +4055,6 @@ function renderList(data, p, today, opts) {
   const prog = projectProgress(data, p.id);
   const tasks = data.tasks.filter((t) => t.projectId === p.id);
   const labels = groupLabels(data.settings);
-  const shown = opts.group && opts.group !== "all" ? tasks.filter((t) => (t.group ?? "") === opts.group) : tasks;
   const rowOf = (t) => {
     const needParty = t.status === "Waiting" && !t.waitingOn?.party ? `<span class="pill wait">待ち先を入力</span>` : "";
     const dependents = data.tasks.filter((o) => (o.predecessors ?? []).includes(t.id)).map((o) => o.id);
@@ -4084,10 +4075,8 @@ function renderList(data, p, today, opts) {
       <td data-l="メモ"><input class="in" data-f="memo" data-id="${esc(t.id)}" value="${esc(t.memo ?? "")}" placeholder="メモ" aria-label="${esc(t.id)} のメモ"></td>
       <td data-l="実績" class="mono muted">${actText(data, t.id)}</td><td data-l="">${delCell}</td></tr>`;
   };
-  // (大項目, 中項目) ごとに見出し行を入れて並べる。「＋」はそのグループへ追加する入口なので、0 件でも「（なし）」を出す（絞り込み中は除く）
-  const filtered = opts.group && opts.group !== "all";
-  const secs = groupSections(shown, { ensureNone: !filtered });
-  if (filtered && !secs.length) secs.push({ group: opts.group, subgroup: "", tasks: [] }); // 絞り込んだ大項目のタスクがなくても、そこへ追加できるように
+  // (大項目, 中項目) ごとに見出し行を入れて並べる。「＋」はそのグループへ追加する入口なので、0 件でも「（なし）」を出す
+  const secs = groupSections(tasks, { ensureNone: true });
   const rows = secs.map((sec) => {
     const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
     return `<tr class="grp-tr" data-mvgrp="${esc(p.id)}" data-mvg="${esc(sec.group)}" data-mvsg="${esc(sec.subgroup)}"><td colspan="13"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""} <button class="plus" data-addat="${esc(p.id)}" data-ag="${esc(sec.group)}" data-asg="${esc(sec.subgroup)}" aria-label="${esc(name)} にタスクを追加">＋</button></td></tr>${sec.tasks.map(rowOf).join("")}`;
@@ -4122,7 +4111,6 @@ function renderList(data, p, today, opts) {
  * @param opts.filter  "all" か projectId
  * @param opts.view    "gantt" | "list"
  * @param opts.window  ガントの表示期間
- * @param opts.group   "all" か大項目の名前(その大項目のタスクだけを出す)
  * @param opts.tpop    ガントの編集の窓({ id, x, y })。なければ出さない
  * @param opts.showPrio / opts.showActual  今日の優先・ガントの実績を出すか(既定は出す)
  */
@@ -4134,23 +4122,19 @@ function renderProjects(data, today, opts = {}) {
   }
   const filter = opts.filter && data.projects.some((p) => p.id === opts.filter) ? opts.filter : "all";
   const ids = filter === "all" ? data.projects.map((p) => p.id) : [filter];
-  const chips = [["all", "すべて"], ...data.projects.map((p) => [p.id, p.name])]
+  // チップは、状態が「完了」のプロジェクトを出さない(選択中のあいだだけ出す)。完了のものも、プルダウンから選べる
+  const chips = [["all", "すべて"], ...data.projects.filter((p) => p.status !== "完了" || p.id === filter).map((p) => [p.id, p.name])]
     .map(([k, l]) => `<button class="chip-btn" data-filter="${esc(k)}" aria-pressed="${filter === k}">${esc(l)}</button>`).join("");
-  const names = groupNames(data.tasks.filter((t) => ids.includes(t.projectId)));
-  const group = names.includes(opts.group) ? opts.group : "all";
-  const labels = groupLabels(data.settings);
-  const gsel = names.length
-    ? `<label class="gfilter">${esc(labels.group)} <select class="in sm" data-groupfilter aria-label="${esc(labels.group)}で絞り込み"><option value="all"${group === "all" ? " selected" : ""}>すべて</option>${names.map((n) => `<option value="${esc(n)}"${n === group ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></label>`
-    : "";
+  const pick = `<label class="pfilter">プロジェクト <select class="in sm" data-projectpick aria-label="プロジェクト名で絞り込み"><option value="all"${filter === "all" ? " selected" : ""}>すべて</option>${data.projects.map((p) => `<option value="${esc(p.id)}"${p.id === filter ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>`;
   const todayIds = showPrio ? new Set(todayTaskIds(data, today)) : new Set();
   const body = view === "gantt"
-    ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual, group, addAt: opts.addAt })}</section>`
-    : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, group, todayIds })).join("")}</div>`;
+    ? `<section class="panel"><h2 class="sr">ガントチャート</h2>${renderGantt(data, ids, today, { window: opts.window, hideDone, askDel: opts.askDel, showActual, addAt: opts.addAt })}</section>`
+    : `<div style="display:flex;flex-direction:column;gap:16px">${ids.map((id) => renderList(data, data.projects.find((p) => p.id === id), today, { ...opts, todayIds })).join("")}</div>`;
   const pt = view === "gantt" && opts.tpop ? data.tasks.find((t) => t.id === opts.tpop.id) : null;
   const pop = pt ? renderTaskPop(data, opts.tpop, statusCellHtml(pt, { ...opts, todayIds }, taskFlags(pt, today, data.settings).includes("overdue"))) : "";
-  // チップはプロジェクトの数だけ並ぶので、1 行に収めて横にスクロールする(折り返すと、固定の行が高くなり、表が見えなくなる)。大項目の選択と追加ボタンは、スクロールの外
+  // チップはプロジェクトの数だけ並ぶので、1 行に収めて横にスクロールする(折り返すと、固定の行が高くなり、表が見えなくなる)。プロジェクト名のプルダウンと追加ボタンは、スクロールの外
   return `<div class="toolbar ptool"><div class="chips-row" role="group" aria-label="プロジェクトで絞り込み">${chips}</div>
-    <div class="ptool-end">${gsel}${addBtn}</div></div>
+    <div class="ptool-end">${pick}${addBtn}</div></div>
     <div class="cols${showPrio ? "" : " one"}">${body}${renderSideToggle(showPrio)}${showPrio ? renderSide(data, today, { sched: false, pendingDone: opts.pendingDone }) : ""}</div>${pop}`;
 }
 
@@ -4309,7 +4293,7 @@ const S = {
   filter: "all", gwin: "m6", hideDone: false,
   askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
-  prefs: loadPrefs(), settingsClosed: loadSettingsClosed(), group: "all", tpop: null, addAt: null, last: null, ruleError: "",
+  prefs: loadPrefs(), settingsClosed: loadSettingsClosed(), tpop: null, addAt: null, last: null, ruleError: "",
   ib: { open: false, text: loadInboxDraft(), projectId: "", replies: {}, reasons: {}, causes: {} },
   wperiod: "week", wdate: clock().date,
   reportPanel: null,
@@ -4341,7 +4325,7 @@ function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
   if (S.screen === "gantt" || S.screen === "list") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.screen, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, group: S.group, addAt: S.addAt, tpop: S.screen === "gantt" ? S.tpop : null, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
+    return renderProjects(S.data, today, { filter: S.filter, view: S.screen, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, addAt: S.addAt, tpop: S.screen === "gantt" ? S.tpop : null, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
   if (S.screen === "settings") return renderSettings(S.data, today, { ruleError: S.ruleError, closed: S.settingsClosed });
   if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
@@ -4762,8 +4746,8 @@ view.addEventListener("click", (e) => {
   const gw = q("[data-gwin]"); if (gw) { S.gwin = gw.dataset.gwin; S.resetScroll = true; render(); return; }
   if (q("[data-hidedone]")) { S.hideDone = !S.hideDone; render(); return; }
   if (q("[data-gotoday]")) { scrollToday(true); return; }
-  const f = q("[data-filter]"); if (f) { S.filter = f.dataset.filter; S.group = "all"; S.resetScroll = true; render(); return; }
-  const o = q("[data-open]"); if (o) { S.filter = o.dataset.open; S.group = "all"; S.screen = "list"; S.resetScroll = true; render(); return; }
+  const f = q("[data-filter]"); if (f) { S.filter = f.dataset.filter; S.resetScroll = true; render(); return; }
+  const o = q("[data-open]"); if (o) { S.filter = o.dataset.open; S.screen = "list"; S.resetScroll = true; render(); return; }
   if (q("[data-addproject]")) {
     const before = S.data.projects.map((p) => p.id);
     if (apply((d) => addProject(d, { name: "新しいプロジェクト", type: "その他" }, today), "プロジェクトを追加しました。名前・期間を入力してください")) {
@@ -5018,7 +5002,7 @@ function onChange(el) {
   }
   if (el.dataset.rkw !== undefined) { const old = el.dataset.rkw; ruleApply((d) => renameProjectRule(d, old, el.value), "キーワードを変更しました", { inPlace: true }); return; }
   if (el.dataset.rpj !== undefined) { const kw = el.dataset.rpj, pid = el.value; ruleApply((d) => setProjectRule(d, kw, pid), "プロジェクトを変更しました", { inPlace: true }); return; }
-  if (el.dataset.groupfilter !== undefined) { S.group = el.value; S.resetScroll = true; render(); return; }
+  if (el.dataset.projectpick !== undefined) { S.filter = el.value; S.resetScroll = true; render(); return; }
   if (el.dataset.pf) {
     const k = el.dataset.pf, pid = el.dataset.pid;
     apply((d) => updateProject(d, pid, { [k]: el.value }), "プロジェクトを更新しました");

@@ -56,11 +56,10 @@ export function layoutMilestones(gbodies) {
  * @param opts.readonly  true なら編集用の部品・属性を出さない（レポート用）
  * @param opts.askDel    削除確認を出すタスク ID
  * @param opts.showActual false なら実績の線と凡例を出さない
- * @param opts.group     "all" か大項目の名前(その大項目の行だけを出す)
  * @param opts.addAt     名前入力を開いている見出し { pid, group, subgroup }（なければ null）
  */
 export function renderGantt(data, projectIds, today, opts = {}) {
-  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, group = "all", addAt = null } = opts;
+  const { window: win = "m6", hideDone = false, readonly = false, askDel = null, showActual = true, addAt = null } = opts;
   const all = projectIds.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean);
   // 編集画面は、タスクが 0 件でも見出しの「＋」から追加できるように描く
   if (!all.length || (readonly && !data.tasks.some((t) => projectIds.includes(t.projectId)))) {
@@ -129,7 +128,6 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     const sumRow = `<div class="g-row g-sumrow"><div class="g-label"><span class="id"></span><span class="muted">プロジェクト全体</span></div><div class="g-lane" ${laneStyle}><i class="gbar gsum"${sumAttr} style="left:${x(p.start)};width:${sumW}%;min-width:4px" title="${fmtMD(p.start)}〜${fmtMD(p.due)}${readonly ? "" : "(両端のドラッグで開始・期限を変更)"}"><u style="width:${pct}%"></u>${sumHandles}</i><span class="g-due mono" style="left:${x(addDays(p.due, 1))}">${fmtMD(p.due)}</span></div></div>`;
 
     const taskOf = (r) => data.tasks.find((o) => o.id === r.taskId);
-    const inGroup = (r) => group === "all" || (taskOf(r).group ?? "") === group;
     const shown = (r) => !(hideDone && taskOf(r).status === "Done");
     const rowHtml = (r) => {
       const t = data.tasks.find((o) => o.id === r.taskId);
@@ -159,7 +157,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     };
     // (大項目, 中項目) ごとに見出し行を入れて並べる。編集画面は、追加の入口になるので、大項目がなくても「（なし）」の見出しを常に出す。
     // 見出しは完了を隠していても残す（そのグループへ追加できるように）。レポート用は、見える行があるグループだけを出す
-    const base = g.rows.filter(inGroup).filter((r) => !readonly || shown(r));
+    const base = g.rows.filter((r) => !readonly || shown(r));
     const grouped = !readonly || base.some((r) => taskOf(r).group || taskOf(r).subgroup);
     const heading = (sec) => {
       const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
@@ -170,8 +168,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
         : `<button class="plus" data-gopen="${esc(p.id)}" ${at} aria-label="${esc(name)} にタスクを追加">＋</button>`;
       return `<div class="g-row g-grp"><div class="g-label"${readonly ? "" : ` data-mvgrp="${esc(p.id)}" data-mvg="${esc(sec.group)}" data-mvsg="${esc(sec.subgroup)}"`}><span class="g-grp-t"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""}</span>${ctl}</div><div class="g-lane" ${laneStyle}></div></div>`;
     };
-    const secs = groupSections(base.map((r) => ({ ...taskOf(r), row: r })), { ensureNone: !readonly && group === "all" });
-    if (!readonly && group !== "all" && !secs.length) secs.push({ group, subgroup: "", tasks: [] }); // 絞り込んだ大項目のタスクがなくても、そこへ追加できるように
+    const secs = groupSections(base.map((r) => ({ ...taskOf(r), row: r })), { ensureNone: !readonly });
     const rows = grouped
       ? secs
         .map((sec) => ({ sec, vis: sec.tasks.filter((x) => shown(x.row)) }))
