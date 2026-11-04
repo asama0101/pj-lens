@@ -496,7 +496,9 @@ body{padding-block:16px 76px}
 body:has(.ptool){padding-block-start:8px}
 .wrap:has(.ptool){gap:0}
 #banner:not(:empty){margin-block:8px}
-#view section.panel:has(> .gtop):first-of-type,#view section.panel:has(> .pstick):first-of-type{padding-top:0;border-top-width:0;border-top-left-radius:0;border-top-right-radius:0}
+#view section.panel:has(> .gtop),#view section.panel:has(> .pstick){padding-top:0} /* カードの上の余白は、固定の行の中に持たせる（先頭でも固定したときと同じ位置にしつつ、カードの上端の線・角丸・余白は残す） */
+#view section.panel > .pstick{padding-top:20px}
+#view section.panel > .gtop{padding-top:22px}
 #view .cols>.side,#view .side-toggle{margin-top:8px}
 </style>
 </head>

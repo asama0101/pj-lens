@@ -335,11 +335,14 @@ test("theme.css: ガント・リスト（.ptool がある画面）では、上�
     "body:has(.ptool){padding-block-start:8px}",
     ".wrap:has(.ptool){gap:0}",
     "#banner:not(:empty){margin-block:8px}",
-    "#view section.panel:has(> .gtop):first-of-type,#view section.panel:has(> .pstick):first-of-type{padding-top:0;border-top-width:0;border-top-left-radius:0;border-top-right-radius:0}",
+    "#view section.panel:has(> .gtop),#view section.panel:has(> .pstick){padding-top:0}",
+    "#view section.panel > .pstick{padding-top:20px}",
+    "#view section.panel > .gtop{padding-top:22px}",
     "#view .cols>.side,#view .side-toggle{margin-top:8px}",
   ]) assert.ok(css.includes(rule), rule);
   // 新しい規則は、レポートに効かない（レポートには .ptool も #banner も #view もない）
   const section = css.slice(css.indexOf("/* ページの先頭でも"));
   assert.ok(section.length > 100, "節がある");
+  assert.ok(!section.includes("border-top-width:0") && !section.includes("border-top-left-radius:0"), "カードの上端の線と角丸は消さない");
   for (const line of section.split(/\r?\n/).filter((l) => l.includes("{") && !l.startsWith("/*"))) assert.match(line, /^(body:has\(\.ptool\)|\.wrap:has\(\.ptool\)|#banner|#view)/, line);
 });
