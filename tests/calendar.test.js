@@ -59,6 +59,25 @@ test("excludeSolo: 自分だけ、自分と会議室だけは対象外。他の�
   }
 });
 
+test("excludeSolo: 予定表が email を表示名に置き換えて返すとき、selfNames（前後の空白と大文字小文字は区別しない完全一致）で自分と判定する。メールアドレスと併用できる", () => {
+  const named = (name, extra = {}) => ({ type: "person", email: name, name, ...extra }); // email の欄にも表示名が入って返る
+  const byName = { selfNames: ["山田 太郎", "Taro Yamada"] };
+  const cases = [
+    ["名前だけ（自分だけ）", [named("山田 太郎")], byName, true],
+    ["前後の空白と大文字小文字は区別しない", [named("  taro yamada ")], byName, true],
+    ["自分と会議室", [named("山田 太郎"), room()], byName, true],
+    ["名前の一部だけ一致（完全一致ではない）は、自分ではない", [named("山田")], byName, false],
+    ["自分と他の人", [named("山田 太郎"), named("鈴木 花子")], byName, false],
+    ["名前だけを設定したとき、email が SELF でも、名前が違えば自分ではない", [who(SELF, { name: "別の表示名" })], byName, false],
+    ["メールと名前を併用（片方はメール、片方は名前で一致）", [who(SELF, { name: "別の表示名" }), named("山田 太郎")], { selfEmails: [SELF], ...byName }, true],
+  ];
+  for (const [name, attendees, c, excluded] of cases) {
+    const r = excludeSolo([f("e1", name, { attendees })], c);
+    assert.deepEqual([name, r.excluded.length, r.kept.length], [name, excluded ? 1 : 0, excluded ? 0 : 1]);
+  }
+  assert.deepEqual(excludeSolo([f("e1", "x", { attendees: [named("山田 太郎")] })], byName).warnings, [], "selfNames だけでも、未設定の警告は出ない");
+});
+
 test("excludeSolo: 参加者の項目がない予定（不明）は残す。roomKeywords で会議室の名前を足せる。元の配列は変えない", () => {
   const input = [f("e1", "不明"), f("e2", "会議室 Z だけ", { attendees: [who(SELF), { type: "person", email: "z@example.com", name: "Z ルーム" }] })];
   const before = JSON.stringify(input);
@@ -75,6 +94,15 @@ test("excludeSolo: 自分のメールアドレス（selfEmails）が未設定な
     assert.match(r.warnings[0], /selfEmails/);
   }
   assert.deepEqual(excludeSolo([f("e1", "x")], {}).warnings, []);
+});
+
+test("excludeSolo: selfEmails も selfNames も空なら、何も除かず警告する（selfNames だけの空配列でも同じ）", () => {
+  const withAtt = [f("e1", "x", { attendees: [who(SELF)] })];
+  for (const c of [{ selfNames: [] }, { selfEmails: [], selfNames: ["", " "] }]) {
+    const r = excludeSolo(withAtt, c);
+    assert.deepEqual([r.kept.length, r.excluded.length], [1, 0]);
+    assert.match(r.warnings[0], /selfEmails.*selfNames/);
+  }
 });
 
 test("planCalendarSync: 対象外の予定は追加されない。取り込み済みの該当予定は削除に出て、確認済み（confirmed）かどうかが分かる。手入力の会議は変わらない", () => {

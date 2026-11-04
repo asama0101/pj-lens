@@ -279,7 +279,7 @@ test("renderSchedule: 凡例（会議・予定・実績・未確認、日は空�
 test("renderSchedule: 手入力の会議だけドラッグ可、参加しない会議は skip 表示、MCP 会議は編集不可の注意", () => {
   const d = load();
   d.events.find((e) => e.id === "m1").skip = true;
-  const html = sched(d, { selMtg: "m1" });
+  const html = sched(d, { selMtg: "m1", showSkipped: true });
   assert.ok(/data-mtg="m2"[^>]*draggable="true"/.test(html));
   assert.ok(!/data-mtg="m1"[^>]*draggable/.test(html));
   assert.ok(html.includes("blk mtg skip"));
@@ -478,8 +478,29 @@ test("会議ブロック: 過ぎて未確認なら unconf と『実績にする�
   const wk = renderSchedule(d, TODAY, { view: "week", date: TODAY, now: NOW15 });
   assert.ok(!wk.includes("data-confirmmtg"), "週表示にはボタンを出さない");
   d.events.find((e) => e.id === "m2").skip = true;
-  const sk = renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW15 });
+  const sk = renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW15, showSkipped: true });
   assert.ok(sk.includes("blk mtg skip") && !sk.includes('data-confirmmtg="m2"'));
+});
+
+test("renderSchedule: 参加しない会議は、showSkipped が true のときだけ描く。凡例・ボタンの状態もそれに合わせ、空き時間は変わらない", () => {
+  const d = load();
+  d.events.find((e) => e.id === "m2").skip = true;
+  for (const view of ["day", "week"]) {
+    const hide = renderSchedule(d, TODAY, { view, date: TODAY, now: NOW });
+    const show = renderSchedule(d, TODAY, { view, date: TODAY, now: NOW, showSkipped: true });
+    assert.ok(!hide.includes("blk mtg skip") && !hide.includes('data-mtg="m2"'), `${view}: 既定は描かない`);
+    assert.ok(hide.includes('data-mtg="m1"'), `${view}: 参加する会議は描く`);
+    assert.ok(!hide.includes("skipsw") && /data-sskip aria-pressed="false"/.test(hide), `${view}: 凡例を出さず、ボタンは押していない`);
+    assert.ok(show.includes("blk mtg skip") && show.includes("skipsw") && /data-sskip aria-pressed="true"/.test(show), `${view}: 出すとき`);
+  }
+  const freeOf = (data, o) => (renderSchedule(data, TODAY, { view: "day", date: TODAY, now: NOW, ...o }).match(/data-free="\d+"/g) ?? []).join();
+  const joined = load(); // 同じ会議を「参加する」にしたとき（空き時間はこちらが狭い）
+  assert.notEqual(freeOf(d, {}), "", "空き時間が出る日で確かめている");
+  assert.notEqual(freeOf(d, {}), freeOf(joined, {}), "参加しない会議は、空き時間として扱う（参加する会議だと空きが変わる）");
+  assert.equal(freeOf(d, {}), freeOf(d, { showSkipped: true }), "空き時間は表示の切り替えで変わらない");
+  const sel = renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW, selMtg: "m2" });
+  assert.ok(sel.includes('data-mtg="m2"') && sel.includes("sel"), "選択中の参加しない会議は、隠していても出す（見えない会議を削除・編集しないため）");
+  assert.ok(!renderSchedule(d, TODAY, { view: "day", date: TODAY, now: NOW, selMtg: "m1" }).includes('data-mtg="m2"'), "ほかの会議を選んでいるときは、隠したまま");
 });
 
 test("会議ブロック: プロジェクト名と（規則|手動）を日表示に出す。未設定は『プロジェクト未設定』", () => {

@@ -1,8 +1,8 @@
-// 画面の表示の好み（今日の優先・ガントの実績を隠す）。データではないので、ブラウザ（localStorage）に保存する。
+// 画面の表示の好み（今日の優先・ガントの実績・スケジュールの参加しない会議を出す／隠す）。データではないので、ブラウザ（localStorage）に保存する。
 // localStorage が使えない・壊れているときは、既定のまま動く。
 
 const KEY = "pj-lens.prefs";
-export const DEFAULT_PREFS = { showPrio: true, showActual: true };
+export const DEFAULT_PREFS = { showPrio: true, showActual: true, showSkipped: false };
 
 const browserStorage = () => {
   try { return typeof window !== "undefined" ? window.localStorage : null; } catch { return null; }
