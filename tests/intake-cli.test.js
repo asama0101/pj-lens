@@ -163,6 +163,14 @@ test("calendar-plan・calendar-apply: 設定の selfEmails（PJ_LENS_HOME か --
   assert.deepEqual(w.json().events.filter((e) => e.source === "mcp" && e.externalId.startsWith("solo")), []);
 });
 
+test("calendar-plan: 設定の selfNames だけ（selfEmails なし）でも、名前が一致する自分だけの予定を除く", () => {
+  const w = work();
+  const fetched = w.put("fetched.json", fetchedSolo());
+  const p = runEnv({ PJ_LENS_HOME: homeWith({ selfNames: ["me"] }) }, "calendar-plan", w.data, fetched, "2026-10-19", "2026-10-25");
+  assert.equal(p.status, 0, p.err);
+  assert.deepEqual([p.out.added.map((e) => e.externalId), p.out.excluded.map((e) => e.externalId), p.out.warnings], [["mtg1"], ["solo1", "solo2"], []]);
+});
+
 test("calendar-plan: 設定がない（置き場がない・selfEmails が未設定）ときは、何も除かず、warnings に出す", () => {
   const w = work();
   const fetched = w.put("fetched.json", fetchedSolo());

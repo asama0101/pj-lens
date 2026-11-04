@@ -122,6 +122,19 @@ test("validateMcpConfig: 任意の項目 selfEmails・roomKeywords は、あれ�
   assert.ok(validateMcpConfig({ calendar: { ...base, roomKeywords: [1] } }).length > 0);
 });
 
+test("selfNames: 任意の項目として、空でない文字列の配列を検証し、カンマ区切りで保存し、既存の項目を保つ", () => {
+  const base = { server: "s", listTool: "l" };
+  assert.deepEqual(validateMcpConfig({ calendar: { ...base, selfNames: ["山田 太郎"] } }), []);
+  assert.ok(validateMcpConfig({ calendar: { ...base, selfNames: "山田 太郎" } }).length > 0);
+  assert.ok(validateMcpConfig({ calendar: { ...base, selfNames: ["山田 太郎", " "] } }).length > 0);
+  const d = dir();
+  setMcpRole(d, "calendar", { server: "s", listTool: "l", selfEmails: "me@x.com" });
+  const a = setMcpRole(d, "calendar", { selfNames: " 山田 太郎, Taro Yamada ,," });
+  assert.deepEqual(a.calendar, { server: "s", listTool: "l", selfEmails: ["me@x.com"], selfNames: ["山田 太郎", "Taro Yamada"] });
+  const b = setMcpRole(d, "calendar", { selfNames: "" });
+  assert.deepEqual(b.calendar, { server: "s", listTool: "l", selfEmails: ["me@x.com"] });
+});
+
 test("setMcpRole: 任意の項目はカンマ区切りで保存し、既存の値に合成する（必須の 2 項目を毎回指定しなくてよい）。空にすると消える", () => {
   const d = dir();
   setMcpRole(d, "calendar", { server: "s", listTool: "l" });

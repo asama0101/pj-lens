@@ -205,26 +205,26 @@
   <div class="cell s"><span class="tag write">書き込み</span><code>set calendar server=… listTool=…</code> を <code>pj-lens-mcp.json</code> に保存する（他の項目は保つ。保存日を付ける）。<small class="src">src/import/mcpconf.js setMcpRole</small></div>
 
   <div class="branch"><p class="bt">保存の検証</p><div class="flow">
-    <div class="case">項目名の打ち間違い（<code>server</code>・<code>listTool</code>・<code>selfEmails</code>・<code>roomKeywords</code> 以外） → 例外、何も書かない（黙って無視すると、除外が効かないことに気づけないため）</div>
+    <div class="case">項目名の打ち間違い（<code>server</code>・<code>listTool</code>・<code>selfEmails</code>・<code>selfNames</code>・<code>roomKeywords</code> 以外） → 例外、何も書かない（黙って無視すると、除外が効かないことに気づけないため）</div>
     <div class="case"><code>key=value</code> の形でない → 例外、何も書かない</div>
     <div class="case"><code>server</code> か <code>listTool</code> が空 → 例外、何も書かない</div>
   </div></div>
 
   <div class="n">5</div>
-  <div class="cell u">自分のメールアドレス（複数可）と、会議室の名前に含まれる言葉（複数可）を答える。どちらも任意で、答えなくてよい。<b>保存済みなら聞かれない</b>（変えたいと伝えたときだけ聞き直す）。</div>
-  <div class="cell c">「自分だけ・自分と会議室だけの予定（作業ブロックなど）を会議として取り込まない」ための 2 つを聞く。答えがなければ保存しない。手順 1 の表示で自分のメールアドレスが保存済みなら、聞かずに保存済みの値を伝えて手順 6 へ進む。会議室の言葉を保存しないときは「会議室」が使われる。<small class="src">skills/mcp/SKILL.md 手順 4</small></div>
-  <div class="cell s"><span class="tag write">書き込み</span><code>set calendar selfEmails=… roomKeywords=…</code>。保存済みの server・listTool はそのまま残る。<code>selfEmails=</code>（空）にすると、その項目を消す。<small class="src">tools/mcpconf.js / src/import/mcpconf.js</small></div>
+  <div class="cell u">自分のメールアドレス（複数可）と、自分の名前（複数可。同じ表示名の別人に心当たりがないかを確かめられる）と、会議室の名前に含まれる言葉（複数可）を答える。どれも任意で、答えなくてよい。<b>保存済みなら聞かれない</b>（変えたいと伝えたときだけ聞き直す）。</div>
+  <div class="cell c">「自分だけ・自分と会議室だけの予定（作業ブロックなど）を会議として取り込まない」ための 3 つを聞く。答えがなければ保存しない。手順 1 の表示で自分のメールアドレスか名前が保存済みなら、聞かずに保存済みの値を伝えて手順 6 へ進む。名前にカンマを含む・同じ表示名の別人に心当たりがあるときは、その名前を保存せず、メールアドレスだけにする。会議室の言葉を保存しないときは「会議室」が使われる。<small class="src">skills/mcp/SKILL.md 手順 4</small></div>
+  <div class="cell s"><span class="tag write">書き込み</span><code>set calendar selfEmails=… selfNames=… roomKeywords=…</code>。保存済みの server・listTool はそのまま残る。<code>selfEmails=</code>（空）にすると、その項目を消す。<small class="src">tools/mcpconf.js / src/import/mcpconf.js</small></div>
 
   <div class="n">6</div>
   <div class="cell empty"></div>
-  <div class="cell c">試しに、指定したツールで今日の予定を取得する。使ったサーバー名・ツール名、取れた件数、1 件の件名、参加者（メールアドレス・人か会議室か）が取れるかを伝える。参加者が取れないと、自分だけの予定を除外できない。<small class="src">skills/mcp/SKILL.md 手順 5</small></div>
+  <div class="cell c">試しに、指定したツールで今日の予定を取得する。使ったサーバー名・ツール名、取れた件数、1 件の件名、参加者（メールアドレス・表示名・人か会議室か）が取れるかを伝える。名前が保存済みのときは、取れた参加者の表示名を見せ、保存した名前と同じものがあるかを利用者に確かめてもらう（完全一致でないと、警告なしで除外されないため）。同じものがない・確かめられないときは、手順 4 に戻って名前を入れ直すかを聞く（入れ直すときは、保存済みでも名前を聞き直す）。参加者が取れないと、自分だけの予定を除外できない。<small class="src">skills/mcp/SKILL.md 手順 5</small></div>
   <div class="cell empty"></div>
 
   <div class="branch"><p class="bt">試しの取得に失敗した</p><div class="flow">
     <div class="n"></div>
     <div class="cell u">指定を残すか、消すかを答える。</div>
     <div class="cell c">理由を伝え、指定を残すか消すかを聞く。<small class="src">skills/mcp/SKILL.md 手順 5</small></div>
-    <div class="cell s">消すとき: <span class="tag write">書き込み</span><code>clear calendar</code> で予定表の指定を丸ごと消す（手順 5 で保存した自分のメールアドレス・会議室の言葉も一緒に消える）。<small class="src">src/import/mcpconf.js clearMcpRole</small></div>
+    <div class="cell s">消すとき: <span class="tag write">書き込み</span><code>clear calendar</code> で予定表の指定を丸ごと消す（手順 5 で保存した自分のメールアドレス・名前・会議室の言葉も一緒に消える）。<small class="src">src/import/mcpconf.js clearMcpRole</small></div>
   </div></div>
 
   <div class="n">7</div>
@@ -341,9 +341,9 @@
   <div class="cell s"><span class="tag write">書き込み</span><code>calendar-auto</code>: ①自分だけ・自分と会議室だけの予定を除く → ②期間内の予定表由来の会議だけを追加・更新・削除に分ける → ③キーワード規則でプロジェクトを付ける → ④終わった会議・確認済みの会議の更新と削除を取り除いて「保留」に出す（実績は変わらない）→ ⑤取得が 0 件か全件が対象外で、削除の対象があるときは削除せず「止めた理由」を出す。残りを書く（検証に通ったときだけ）。手入力の会議、「参加しない」の設定、手動で付けたプロジェクトは変えない。参加者のメールアドレスは出力に出さない。<small class="src">src/import/calendar.js planAutoSync・excludeSolo / tools/intake.js calendar-auto</small></div>
 
   <div class="branch"><p class="bt">対象外（自分だけの予定）の判定</p><div class="flow">
-    <div class="case">自分 = メールアドレスが <code>/pj-lens:mcp</code> で設定したものと一致。会議室 = 種別が会議室・備品、または名前に設定した言葉（既定「会議室」）を含む。自分と会議室を除いて参加者が 0 人なら対象外</div>
+    <div class="case">自分 = メールアドレスか名前（前後の空白と大文字小文字を区別しない完全一致）が <code>/pj-lens:mcp</code> で設定したものと一致。会議室 = 種別が会議室・備品、または名前に設定した言葉（既定「会議室」）を含む。自分と会議室を除いて参加者が 0 人なら対象外</div>
     <div class="case">参加者の項目がない予定 → 不明なので取り込む。参加者の形が崩れている（null・文字列）→ 不明として取り込む</div>
-    <div class="case">自分のメールアドレスが未設定 → 何も除かない。参加者つきの予定があれば<span class="tag warn">注意</span>「<code>/pj-lens:mcp</code> で設定してください」</div>
+    <div class="case">自分のメールアドレスも名前も未設定 → 何も除かない。参加者つきの予定があれば<span class="tag warn">注意</span>「<code>/pj-lens:mcp</code> で設定してください」</div>
     <div class="case">設定済みでも、どの予定にも参加者がない → <span class="tag warn">注意</span>「予定表の MCP が参加者を返すか確認してください」</div>
     <div class="case">設定ファイルの指定が正しくない（<code>selfEmails</code> が配列でない、など） → <span class="tag stop">止まる</span>理由を出す<small class="src">tools/intake.js / src/import/mcpconf.js validateMcpConfig</small></div>
     <div class="case">設定フォルダが決まらない（環境変数も <code>--data</code> もない） → 流れ 2 と違って止まらない。自分だけの予定を除かずに続け、参加者つきの予定があれば<span class="tag warn">注意</span>「設定を読めていない」の警告を出す<small class="src">tools/intake.js（pickHome） / src/import/calendar.js excludeSolo</small></div>
