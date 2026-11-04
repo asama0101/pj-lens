@@ -288,24 +288,20 @@ test("app.js: 描き直しで、ガントの縦のスクロール位置（scroll
   assert.match(fn, /c\.scrollTop = prevTop\[i\]/);
 });
 
-// ---- 固定表示（リスト）: 名前・状態の固定行と列見出し ----
-test("app.js: リストの表は、横スクロールが要るとき（.is-scroll）だけ JS で列見出しを固定し、その高さに名前・状態の固定行を足す", () => {
-  const sync = src.slice(src.indexOf("function syncSticky"), src.indexOf("function syncIbh"));
-  assert.match(sync, /classList\.toggle\("is-scroll"/);
-  assert.ok(sync.includes('setProperty("--pst"'), "--pst を入れる");
+// ---- 固定表示（リスト）: 名前・状態の行の中の、列見出しの複製 ----
+test("app.js: リストの列見出しは、名前・状態の行（.pstick）の中の複製（.thstrip）で固定する。複製は aria-hidden、横スクロールは translateX でそろえる。.is-scroll と --pst は使わない", () => {
+  assert.ok(src.includes('className = "thstrip"'), "複製を作る");
+  assert.ok(src.includes('setAttribute("aria-hidden", "true")'), "複製は、読み上げの対象にしない");
+  assert.match(src, /translateX\(\$\{-box\.scrollLeft\}px\)/);
+  assert.ok(src.includes("thStripOn("), "出す・隠すの判断は thStripOn（common.js）");
+  assert.ok(!src.includes("is-scroll") && !src.includes("--pst"), "表を横スクロールの枠にする案の名残がない");
   const pin = src.slice(src.indexOf("function pinTableHeads"), src.indexOf("let pinQueued"));
-  assert.match(pin, /classList\.contains\("tlist"\)/);
-  assert.match(pin, /classList\.contains\("is-scroll"\)/);
-  assert.match(pin, /\.pstick/);
+  assert.match(pin, /classList\.contains\("tlist"\)\) continue/, "リストの表は pinTableHeads の対象外");
 });
 
-test("theme.css: リストの固定行と列見出しの規則は #view の中だけ", () => {
-  for (const rule of [
-    "#view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px))",
-    "#view .tscroll.tlist{overflow-x:visible}",
-    "#view .tscroll.tlist.is-scroll{overflow-x:auto}",
-    "#view .tlist:not(.is-scroll) .tbl.edit thead th{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + var(--pst,0px))",
-  ]) assert.ok(css.includes(rule), rule);
+test("theme.css: 列見出しの複製の規則は #view の中だけ。リストの表を sticky・横スクロールの枠にする規則は持たない", () => {
+  for (const rule of ["#view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px))", "#view .thstrip{display:none;", "#view .thstrip.on{display:block}", "#view .thstrip .thin{display:flex"]) assert.ok(css.includes(rule), rule);
+  assert.ok(!css.includes("is-scroll") && !css.includes(".tscroll.tlist"), "表を枠にする規則の名残がない");
 });
 
 // ---- 固定表示の見直し（ブランチ全体のレビューの指摘） ----

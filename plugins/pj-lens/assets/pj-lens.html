@@ -190,7 +190,7 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .in.sm{width:auto}
 .in.gi{width:7em}
 .tscroll{overflow-x:auto}
-/* 列見出しは、スクロール中も上端に付ける。リストは、表が枠に収まるとき CSS の sticky（下の「固定表示」の節）。横スクロールが要る表と、設定・稼働の表は、sticky が効かないので、app.js の pinTableHeads が見出しのセルをずらす */
+/* 列見出しは、スクロール中も上端に付ける。リストは、名前・状態の行の中の複製で固定する（下の「固定表示」の節）。設定・稼働の表は、sticky が効かないので、app.js の pinTableHeads が見出しのセルをずらす */
 .tbl.edit thead th{position:relative;z-index:2;background:var(--surface);box-shadow:inset 0 -1px 0 var(--line)}
 .hrs{background:var(--accent-soft);color:var(--ink);border-radius:4px;padding:0 8px}
 .wl-tbl .num{text-align:right;white-space:nowrap}
@@ -486,9 +486,10 @@ body{padding-block:16px 76px}
 #view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px));z-index:6;background:var(--surface);display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:4px 0 6px}
 #view .pstick h2{margin:0;font-size:17px}
 #view .pstick label{font-size:13px;color:var(--muted)}
-#view .tscroll.tlist{overflow-x:visible}
-#view .tscroll.tlist.is-scroll{overflow-x:auto}
-#view .tlist:not(.is-scroll) .tbl.edit thead th{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + var(--pst,0px))} /* 表が広い画面に収まるときだけ。横スクロールが要る狭い画面は、app.js の pinTableHeads が付ける */
+#view .thstrip{display:none;flex:1 1 100%;overflow:hidden;box-sizing:border-box;border-bottom:1px solid var(--line);background:var(--surface)} /* リストの列見出しの複製。app.js の syncThStrips が作り、updateThStrips が .on で出す */
+#view .thstrip.on{display:block}
+#view .thstrip .thin{display:flex;white-space:nowrap}
+#view .thstrip .thc{flex:none;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--muted);text-align:left}
 </style>
 </head>
 <body>
@@ -2155,7 +2156,7 @@ return { saveHtmlFile };
 })();
 
 /* src/ui/common.js */
-const { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills } = (() => {
+const { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills, thStripOn } = (() => {
 // 画面共通の小さな道具（HTML エスケープ、日付・時刻の表示、状態の見た目）。DOM には触れない。
 
 
@@ -2196,7 +2197,16 @@ function flagPills(data, projectId, today, flags) {
   return out.join("");
 }
 
-return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills };
+/**
+ * リストの列見出しの複製（.thstrip）を出すか。本物の thead が、名前・状態の行の本物の部分（baseH）の下端より上に隠れ、
+ * かつ表の下端が、複製の高さ（stripH）と余裕（8px）を足した位置より下にあるときだけ出す（マイルストーン・履歴の部分では出さない）。
+ * 引数は画面上の位置と高さ（px）。pin はヘッダーとフィルタ行の高さの和
+ */
+function thStripOn({ theadBottom, tableBottom, pin, baseH, stripH }) {
+  return theadBottom <= pin + baseH + 1 && tableBottom > pin + baseH + stripH + 8;
+}
+
+return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills, thStripOn };
 })();
 
 /* src/ui/deps.js */
@@ -5385,9 +5395,45 @@ function syncSticky() {
   // ガントの枠（縦スクロールバーの幅を、名前の行の幅から引く）と、プロジェクトごとの見出しの高さ（日付軸の固定位置）。スクロールには連動させない
   for (const gs of view.querySelectorAll(".gscroll")) { gs.style.setProperty("--sbw", `${gs.offsetWidth - gs.clientWidth}px`); gs.style.setProperty("--gsy", `${gs.getBoundingClientRect().top + window.scrollY}px`); }
   for (const pg of view.querySelectorAll("section.pg")) { const h = pg.querySelector(".pg-head"); if (h) pg.style.setProperty("--pgh", `${h.offsetHeight}px`); }
-  for (const panel of view.querySelectorAll("section.panel")) { const st = panel.querySelector(":scope > .pstick"); if (st) panel.style.setProperty("--pst", `${st.offsetHeight}px`); }
-  for (const box of view.querySelectorAll(".tlist")) { const t = box.querySelector("table"); if (t) box.classList.toggle("is-scroll", t.offsetWidth > box.clientWidth); } // 表が枠より広いとき（横スクロールが要るとき）だけ
+  syncThStrips();
   pinTableHeads();
+}
+/**
+ * リストの列見出しの複製（.thstrip）を、名前・状態の行（.pstick）の中に作り直す。表は横スクロールの枠の中にあり、列見出しの sticky が画面の縦スクロールに効かないため、
+ * sticky の行の中に複製を置く（縦は CSS の sticky、横スクロールの位置だけ translateX でそろえる）。幅・余白・文字は、本物の thead を測って写す
+ */
+function syncThStrips() {
+  for (const panel of view.querySelectorAll("section.panel")) {
+    const st = panel.querySelector(":scope > .pstick"), box = panel.querySelector(".tlist");
+    const ths = box ? [...box.querySelectorAll("thead th")] : [];
+    if (!st || !ths.length) continue;
+    let strip = st.querySelector(".thstrip");
+    if (!strip) {
+      strip = document.createElement("div"); strip.className = "thstrip"; strip.setAttribute("aria-hidden", "true"); st.appendChild(strip);
+      box.addEventListener("scroll", () => { const inner = strip.firstElementChild; if (inner) inner.style.transform = `translateX(${-box.scrollLeft}px)`; }, { passive: true });
+    }
+    const inner = document.createElement("div"); inner.className = "thin";
+    for (const th of ths) {
+      const c = document.createElement("div"); c.className = "thc"; c.textContent = th.textContent;
+      c.style.width = `${th.getBoundingClientRect().width}px`; c.style.padding = getComputedStyle(th).padding;
+      inner.appendChild(c);
+    }
+    strip.style.height = `${ths[0].offsetHeight}px`;
+    inner.style.transform = `translateX(${-box.scrollLeft}px)`;
+    strip.replaceChildren(inner);
+  }
+  updateThStrips();
+}
+/** 複製を出す・隠す（スクロールで切り替える。位置は動かさないので、遅れは見えない） */
+function updateThStrips() {
+  const cs = getComputedStyle(document.documentElement);
+  const pin = (parseFloat(cs.getPropertyValue("--hh")) || 0) + (parseFloat(cs.getPropertyValue("--th")) || 0);
+  for (const panel of view.querySelectorAll("section.panel")) {
+    const st = panel.querySelector(":scope > .pstick"), strip = st?.querySelector(".thstrip"), table = panel.querySelector(".tlist table");
+    if (!strip || !table) continue;
+    const stripH = strip.offsetHeight || parseFloat(strip.style.height) || 0, on = strip.classList.contains("on");
+    strip.classList.toggle("on", thStripOn({ theadBottom: table.querySelector("thead").getBoundingClientRect().bottom, tableBottom: table.getBoundingClientRect().bottom, pin, baseH: st.offsetHeight - (on ? stripH : 0), stripH }));
+  }
 }
 /** 下の固定の帯（.ib）の高さ。ガントの枠の高さの計算に使う。帯は renderBar のたびに作り直される */
 function syncIbh() {
@@ -5397,22 +5443,21 @@ function syncIbh() {
   return changed; // 変わったとき、枠の高さが変わり、縦スクロールバーが出入りするので、呼び出し側が syncSticky をやり直す
 }
 
-/** 横スクロールの枠の中で sticky が効かない表（横スクロールが要る狭い画面のリストと、設定・稼働の表）の列見出しを、スクロール中も、ヘッダーとフィルタ行（リストは名前・状態の行も）の下に付ける（表の枠の中でセルをずらす。表の下端は越えない）。表が枠に収まるリストは、CSS の sticky */
+/** 横スクロールの枠の中で sticky が効かない表（設定・稼働の表）の列見出しを、スクロール中も、ヘッダーとフィルタ行の下に付ける（表の枠の中でセルをずらす。表の下端は越えない）。リストの表は、名前・状態の行の中の複製（syncThStrips） */
 function pinTableHeads() {
   const cs = getComputedStyle(document.documentElement);
   const top = (parseFloat(cs.getPropertyValue("--hh")) || 0) + (parseFloat(cs.getPropertyValue("--th")) || 0);
   for (const box of view.querySelectorAll(".tscroll")) {
     const ths = box.querySelectorAll("thead th");
     if (!ths.length) continue;
-    if (box.classList.contains("tlist") && !box.classList.contains("is-scroll")) { for (const th of ths) th.style.transform = ""; continue; } // 広い画面のリストは、CSS の sticky
+    if (box.classList.contains("tlist")) continue; // リストの表は、名前・状態の行の中の複製（.thstrip）で固定する
     const r = box.getBoundingClientRect();
-    const pst = box.classList.contains("tlist") ? box.closest("section.panel")?.querySelector(":scope > .pstick")?.offsetHeight ?? 0 : 0; // 狭い画面のリスト: 名前・状態の固定行の下に付ける
-    const dy = Math.max(0, Math.min(top + pst - r.top, r.height - ths[0].offsetHeight - 4));
+    const dy = Math.max(0, Math.min(top - r.top, r.height - ths[0].offsetHeight - 4));
     for (const th of ths) th.style.transform = dy ? `translateY(${dy}px)` : "";
   }
 }
 let pinQueued = false;
-window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); }); } }, { passive: true });
+window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); updateThStrips(); }); } }, { passive: true });
 if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(syncSticky).observe(topbar);
 let depsQueued = false;
 window.addEventListener("resize", () => {

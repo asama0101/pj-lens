@@ -183,7 +183,7 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .in.sm{width:auto}
 .in.gi{width:7em}
 .tscroll{overflow-x:auto}
-/* 列見出しは、スクロール中も上端に付ける。リストは、表が枠に収まるとき CSS の sticky（下の「固定表示」の節）。横スクロールが要る表と、設定・稼働の表は、sticky が効かないので、app.js の pinTableHeads が見出しのセルをずらす */
+/* 列見出しは、スクロール中も上端に付ける。リストは、名前・状態の行の中の複製で固定する（下の「固定表示」の節）。設定・稼働の表は、sticky が効かないので、app.js の pinTableHeads が見出しのセルをずらす */
 .tbl.edit thead th{position:relative;z-index:2;background:var(--surface);box-shadow:inset 0 -1px 0 var(--line)}
 .hrs{background:var(--accent-soft);color:var(--ink);border-radius:4px;padding:0 8px}
 .wl-tbl .num{text-align:right;white-space:nowrap}
@@ -479,6 +479,7 @@ body{padding-block:16px 76px}
 #view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px));z-index:6;background:var(--surface);display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:4px 0 6px}
 #view .pstick h2{margin:0;font-size:17px}
 #view .pstick label{font-size:13px;color:var(--muted)}
-#view .tscroll.tlist{overflow-x:visible}
-#view .tscroll.tlist.is-scroll{overflow-x:auto}
-#view .tlist:not(.is-scroll) .tbl.edit thead th{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + var(--pst,0px))} /* 表が広い画面に収まるときだけ。横スクロールが要る狭い画面は、app.js の pinTableHeads が付ける */
+#view .thstrip{display:none;flex:1 1 100%;overflow:hidden;box-sizing:border-box;border-bottom:1px solid var(--line);background:var(--surface)} /* リストの列見出しの複製。app.js の syncThStrips が作り、updateThStrips が .on で出す */
+#view .thstrip.on{display:block}
+#view .thstrip .thin{display:flex;white-space:nowrap}
+#view .thstrip .thc{flex:none;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--muted);text-align:left}

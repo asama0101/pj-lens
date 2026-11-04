@@ -1123,9 +1123,45 @@ function syncSticky() {
   // ガントの枠（縦スクロールバーの幅を、名前の行の幅から引く）と、プロジェクトごとの見出しの高さ（日付軸の固定位置）。スクロールには連動させない
   for (const gs of view.querySelectorAll(".gscroll")) { gs.style.setProperty("--sbw", `${gs.offsetWidth - gs.clientWidth}px`); gs.style.setProperty("--gsy", `${gs.getBoundingClientRect().top + window.scrollY}px`); }
   for (const pg of view.querySelectorAll("section.pg")) { const h = pg.querySelector(".pg-head"); if (h) pg.style.setProperty("--pgh", `${h.offsetHeight}px`); }
-  for (const panel of view.querySelectorAll("section.panel")) { const st = panel.querySelector(":scope > .pstick"); if (st) panel.style.setProperty("--pst", `${st.offsetHeight}px`); }
-  for (const box of view.querySelectorAll(".tlist")) { const t = box.querySelector("table"); if (t) box.classList.toggle("is-scroll", t.offsetWidth > box.clientWidth); } // 表が枠より広いとき（横スクロールが要るとき）だけ
+  syncThStrips();
   pinTableHeads();
+}
+/**
+ * リストの列見出しの複製（.thstrip）を、名前・状態の行（.pstick）の中に作り直す。表は横スクロールの枠の中にあり、列見出しの sticky が画面の縦スクロールに効かないため、
+ * sticky の行の中に複製を置く（縦は CSS の sticky、横スクロールの位置だけ translateX でそろえる）。幅・余白・文字は、本物の thead を測って写す
+ */
+function syncThStrips() {
+  for (const panel of view.querySelectorAll("section.panel")) {
+    const st = panel.querySelector(":scope > .pstick"), box = panel.querySelector(".tlist");
+    const ths = box ? [...box.querySelectorAll("thead th")] : [];
+    if (!st || !ths.length) continue;
+    let strip = st.querySelector(".thstrip");
+    if (!strip) {
+      strip = document.createElement("div"); strip.className = "thstrip"; strip.setAttribute("aria-hidden", "true"); st.appendChild(strip);
+      box.addEventListener("scroll", () => { const inner = strip.firstElementChild; if (inner) inner.style.transform = `translateX(${-box.scrollLeft}px)`; }, { passive: true });
+    }
+    const inner = document.createElement("div"); inner.className = "thin";
+    for (const th of ths) {
+      const c = document.createElement("div"); c.className = "thc"; c.textContent = th.textContent;
+      c.style.width = `${th.getBoundingClientRect().width}px`; c.style.padding = getComputedStyle(th).padding;
+      inner.appendChild(c);
+    }
+    strip.style.height = `${ths[0].offsetHeight}px`;
+    inner.style.transform = `translateX(${-box.scrollLeft}px)`;
+    strip.replaceChildren(inner);
+  }
+  updateThStrips();
+}
+/** 複製を出す・隠す（スクロールで切り替える。位置は動かさないので、遅れは見えない） */
+function updateThStrips() {
+  const cs = getComputedStyle(document.documentElement);
+  const pin = (parseFloat(cs.getPropertyValue("--hh")) || 0) + (parseFloat(cs.getPropertyValue("--th")) || 0);
+  for (const panel of view.querySelectorAll("section.panel")) {
+    const st = panel.querySelector(":scope > .pstick"), strip = st?.querySelector(".thstrip"), table = panel.querySelector(".tlist table");
+    if (!strip || !table) continue;
+    const stripH = strip.offsetHeight || parseFloat(strip.style.height) || 0, on = strip.classList.contains("on");
+    strip.classList.toggle("on", thStripOn({ theadBottom: table.querySelector("thead").getBoundingClientRect().bottom, tableBottom: table.getBoundingClientRect().bottom, pin, baseH: st.offsetHeight - (on ? stripH : 0), stripH }));
+  }
 }
 /** 下の固定の帯（.ib）の高さ。ガントの枠の高さの計算に使う。帯は renderBar のたびに作り直される */
 function syncIbh() {
@@ -1135,22 +1171,21 @@ function syncIbh() {
   return changed; // 変わったとき、枠の高さが変わり、縦スクロールバーが出入りするので、呼び出し側が syncSticky をやり直す
 }
 
-/** 横スクロールの枠の中で sticky が効かない表（横スクロールが要る狭い画面のリストと、設定・稼働の表）の列見出しを、スクロール中も、ヘッダーとフィルタ行（リストは名前・状態の行も）の下に付ける（表の枠の中でセルをずらす。表の下端は越えない）。表が枠に収まるリストは、CSS の sticky */
+/** 横スクロールの枠の中で sticky が効かない表（設定・稼働の表）の列見出しを、スクロール中も、ヘッダーとフィルタ行の下に付ける（表の枠の中でセルをずらす。表の下端は越えない）。リストの表は、名前・状態の行の中の複製（syncThStrips） */
 function pinTableHeads() {
   const cs = getComputedStyle(document.documentElement);
   const top = (parseFloat(cs.getPropertyValue("--hh")) || 0) + (parseFloat(cs.getPropertyValue("--th")) || 0);
   for (const box of view.querySelectorAll(".tscroll")) {
     const ths = box.querySelectorAll("thead th");
     if (!ths.length) continue;
-    if (box.classList.contains("tlist") && !box.classList.contains("is-scroll")) { for (const th of ths) th.style.transform = ""; continue; } // 広い画面のリストは、CSS の sticky
+    if (box.classList.contains("tlist")) continue; // リストの表は、名前・状態の行の中の複製（.thstrip）で固定する
     const r = box.getBoundingClientRect();
-    const pst = box.classList.contains("tlist") ? box.closest("section.panel")?.querySelector(":scope > .pstick")?.offsetHeight ?? 0 : 0; // 狭い画面のリスト: 名前・状態の固定行の下に付ける
-    const dy = Math.max(0, Math.min(top + pst - r.top, r.height - ths[0].offsetHeight - 4));
+    const dy = Math.max(0, Math.min(top - r.top, r.height - ths[0].offsetHeight - 4));
     for (const th of ths) th.style.transform = dy ? `translateY(${dy}px)` : "";
   }
 }
 let pinQueued = false;
-window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); }); } }, { passive: true });
+window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); updateThStrips(); }); } }, { passive: true });
 if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(syncSticky).observe(topbar);
 let depsQueued = false;
 window.addEventListener("resize", () => {

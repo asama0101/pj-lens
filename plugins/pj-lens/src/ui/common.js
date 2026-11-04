@@ -37,3 +37,12 @@ export function flagPills(data, projectId, today, flags) {
   if (flags.includes("past-due")) out.push(`<span class="pill late">プロジェクト期限超過</span>`);
   return out.join("");
 }
+
+/**
+ * リストの列見出しの複製（.thstrip）を出すか。本物の thead が、名前・状態の行の本物の部分（baseH）の下端より上に隠れ、
+ * かつ表の下端が、複製の高さ（stripH）と余裕（8px）を足した位置より下にあるときだけ出す（マイルストーン・履歴の部分では出さない）。
+ * 引数は画面上の位置と高さ（px）。pin はヘッダーとフィルタ行の高さの和
+ */
+export function thStripOn({ theadBottom, tableBottom, pin, baseH, stripH }) {
+  return theadBottom <= pin + baseH + 1 && tableBottom > pin + baseH + stripH + 8;
+}
