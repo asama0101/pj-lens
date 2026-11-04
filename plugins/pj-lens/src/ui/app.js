@@ -81,22 +81,36 @@ function render() {
   $("filebar").innerHTML = S.data ? `<button class="chip-btn pref" data-pref="actual" aria-pressed="${S.prefs.showActual}" title="ガントの実績の線を出したり隠したりします">ガント実績</button><span class="fsep" aria-hidden="true"></span><button class="btn" data-refresh title="ファイルを読み直します(Claude Code などが更新した内容を反映)">更新</button><button class="btn" data-openfile>別のファイルを開く</button><button class="btn" data-report="html" title="プロジェクトと期間を選んで、進捗レポートを HTML ファイルとして保存します">レポート</button>${typeof window.showOpenFilePicker === "function" ? "" : `<button class="btn" data-download>JSON を書き出す</button>`}` : "";
   document.body.classList.toggle("picking", !!S.picked && S.screen === "schedule" && S.sview === "day");
   renderBar();
-  // ガントの横スクロール位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)
-  const prev = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollLeft);
-  const prevTop = [...view.querySelectorAll(".gscroll")].map((c) => c.scrollTop);
+  // ガントの横スクロール位置(全プロジェクトで同じ)とページの縦の位置は、編集で描き直しても保つ(表示期間・絞り込みなどを変えたときだけ今日の位置へ戻す)。
+  // 描き直しの間、ページが縮んで scrollY が飛ばないよう、#view の高さを保つ
+  const prevCount = view.querySelectorAll(".gscroll").length;
+  const prevLeft = view.querySelector(".gscroll")?.scrollLeft ?? 0, prevY = window.scrollY, chipsLeft = view.querySelector(".chips-row")?.scrollLeft ?? 0;
+  view.style.minHeight = `${view.offsetHeight}px`;
   const keepFocus = focusSelector(document.activeElement);
   view.innerHTML = (S.data && S.reportPanel ? renderReportPanel(S.data, S.reportPanel, c.date) : "") + renderBody();
   if (keepFocus && !S.focusSel) { try { view.querySelector(keepFocus)?.focus(); } catch { /* 無視 */ } }
   const bars = [...view.querySelectorAll(".gscroll")];
-  if (S.resetScroll || !prev.length || prev.length !== bars.length) scrollToday(false);
-  else bars.forEach((c, i) => { c.scrollLeft = prev[i]; c.scrollTop = prevTop[i]; });
+  if (S.resetScroll || !prevCount || !bars.length) scrollToday(false); // 枠の数が変わっても(完了を隠すなど)、位置は保つ
+  else bars.forEach((c) => { c.scrollLeft = prevLeft; });
   S.resetScroll = false;
+  // チップの行(横スクロール)は、描き直しても位置を保つ。選択中のチップが見えなければ、行の中だけを動かす(scrollIntoView はページの縦も動かすので使わない)
+  const chips = view.querySelector(".chips-row");
+  if (chips) {
+    chips.scrollLeft = chipsLeft;
+    const on = chips.querySelector('[aria-pressed="true"]');
+    if (on) {
+      const rr = chips.getBoundingClientRect(), cr = on.getBoundingClientRect();
+      if (cr.left < rr.left) chips.scrollLeft -= rr.left - cr.left + 8;
+      else if (cr.right > rr.right) chips.scrollLeft += cr.right - rr.right + 8;
+    }
+  }
   if (S.focusSel) {
     let el = null;
     try { el = view.querySelector(S.focusSel); } catch { /* 不正なセレクタは無視 */ }
     S.focusSel = null;
     if (el) { el.focus(); el.select?.(); }
   }
+  window.scrollTo(0, prevY); view.style.minHeight = "";
   syncSticky();
   drawAllDeps();
   placeTaskPop();
@@ -143,11 +157,13 @@ function renderCal() {
 /** ガントを開いたとき、今日が左から約 120px の位置になるようスクロールする(レイアウト確定後 = rAF 2 回待ち) */
 function scrollToday(smooth) {
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    view.querySelectorAll(".gscroll").forEach((c) => {
+    // なめらかに動かすのは先頭の枠だけにする(全部に出すと、そろえる処理と互いに止め合って動かない)。ほかの枠は alignGScrolls が追う
+    const all = [...view.querySelectorAll(".gscroll")];
+    for (const c of smooth ? all.slice(0, 1) : all) {
       const lane = c.querySelector(".g-lane");
-      if (!lane) return;
+      if (!lane) continue;
       c.scrollTo({ left: Math.max(0, Math.round(lane.offsetWidth * +c.dataset.todayfrac - 120)), behavior: smooth ? "smooth" : "auto" });
-    });
+    }
   }));
 }
 
@@ -1022,7 +1038,6 @@ function renderBar(force = false) {
   const keep = a && el.contains(a) ? { sel: barSelector(a), s: a.selectionStart, e: a.selectionEnd } : null;
   el.innerHTML = renderInboxBar(S.data, { ...S.ib, canWrite: store.hasFile, nowMs: Date.now() });
   barSig = barSignature();
-  if (syncIbh()) syncSticky();
   if (keep?.sel) {
     const n = el.querySelector(keep.sel);
     if (n) { n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch { /* 選択できない欄 */ } }
@@ -1113,6 +1128,66 @@ $("claudebar").addEventListener("keydown", (e) => {
   else if (e.target.matches("[data-ib-text]") && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendRequest(); }
 });
 
+/** ガントの横スクロール枠(プロジェクトごと)の横位置を、動かした枠にそろえる。差が 0.5px 以下なら代入しない */
+function alignGScrolls(src) {
+  for (const gs of view.querySelectorAll(".gscroll")) {
+    if (gs === src || Math.abs(gs.scrollLeft - src.scrollLeft) <= 0.5) continue;
+    const before = gs.scrollLeft;
+    gs.scrollLeft = src.scrollLeft;
+    if (gs.scrollLeft !== before) aligned.set(gs, gs.scrollLeft); // 代入で起きる scroll は、そろえ直さない(動いている最中の枠を、古い位置へ引き戻してしまうため)。右端で丸められて値が変わらないときは、scroll が起きないので、記録しない(古い値が、あとの本物のスクロールを飲み込む)
+  }
+  for (const gs of view.querySelectorAll(".gscroll")) updateGStrip(gs);
+}
+/** 日付軸の複製(.gstrip)の横位置を、枠の横スクロールにそろえる(縦は CSS の sticky。横だけ JS) */
+function updateGStrip(gs) {
+  const lane = gs.closest(".gwrap")?.querySelector(":scope > .gstrip > .gsv > .g-lane");
+  if (lane) lane.style.transform = `translateX(${-gs.scrollLeft}px)`;
+}
+/**
+ * ガントの日付軸の複製(.gstrip)を作り直す。枠(.gscroll)は横スクロールの枠なので、その中の日付軸は、画面の縦スクロールで留められない。
+ * 枠の外に、本物の日付軸の写し(左の空き .gsl + 窓 .gsv の中の目盛りの行)を sticky で置く。固定していないときは、本物の日付軸にぴったり重なる(出し分けは要らない)。
+ * 流れの高さは増やさない(複製は margin-bottom で、枠は padding-bottom と負の margin-bottom で、sticky の範囲を複製の高さだけ短くし、プロジェクトの下端を越えないようにする)
+ */
+function syncGStrips() {
+  for (const wrap of view.querySelectorAll(".gwrap")) {
+    const strip = wrap.querySelector(":scope > .gstrip"), gs = wrap.querySelector(":scope > .gscroll");
+    const axis = gs?.querySelector(".g-head"), lane = gs?.querySelector(".g-head .g-lane");
+    if (!strip || !axis || !lane) continue;
+    const l = document.createElement("div"); l.className = "gsl";
+    const v = document.createElement("div"); v.className = "gsv";
+    const copy = lane.cloneNode(true);
+    copy.removeAttribute("id"); copy.querySelectorAll("[id]").forEach((e) => e.removeAttribute("id"));
+    const gap = parseFloat(getComputedStyle(axis).columnGap) || 0; // 本物の行は、ラベルと目盛りの間にすきま(gap)がある。写しの窓はラベルの右端から始まるので、目盛りの行を gap だけ右へ置く
+    copy.style.marginLeft = `${gap}px`;
+    copy.style.width = `${lane.offsetWidth}px`; // 本物の幅は、枠の幅から決まる calc(cqw)。枠の外では決められないので、px で写す
+    v.appendChild(copy);
+    strip.replaceChildren(l, v);
+    wrap.style.setProperty("--sh", `${axis.getBoundingClientRect().height}px`);
+    wrap.style.setProperty("--sb", `${gs.offsetHeight - gs.clientHeight}px`); // 枠の横スクロールバーの高さ。複製がその上に重ならないよう、sticky の範囲から除く
+    strip.style.setProperty("--lw", getComputedStyle(gs).getPropertyValue("--lw").trim());
+    updateGStrip(gs);
+  }
+}
+
+
+const aligned = new WeakMap();
+// チップの行はスクロールバーを出さないので、マウスの縦のホイールで横に動かせるようにする(横スワイプ・Shift + ホイールは、ブラウザが横に動かす)
+view.addEventListener("wheel", (e) => {
+  const row = e.target.closest?.(".chips-row");
+  if (!row || row.scrollWidth <= row.clientWidth || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+  const atEnd = e.deltaY > 0 ? row.scrollLeft >= row.scrollWidth - row.clientWidth - 0.5 : row.scrollLeft <= 0;
+  if (atEnd) return; // 行の端に着いていたら、ページのスクロールに任せる
+  row.scrollLeft += e.deltaY;
+  e.preventDefault();
+}, { passive: false });
+// scroll はバブルしないので、キャプチャで受ける
+view.addEventListener("scroll", (e) => {
+  const gs = e.target;
+  if (!gs.classList?.contains("gscroll")) return;
+  if (aligned.get(gs) === gs.scrollLeft) { aligned.delete(gs); return; }
+  alignGScrolls(gs);
+}, true);
+
 // ヘッダーとフィルタ行は上端に固定する（theme.css）。その高さを --hh・--th に入れ、固定の帯・表の列見出し・「今日の優先」がその下に付くようにする
 const topbar = document.querySelector("header.top");
 function syncSticky() {
@@ -1120,25 +1195,29 @@ function syncSticky() {
   root.setProperty("--hh", `${topbar?.offsetHeight ?? 0}px`);
   const tool = view.querySelector(".ptool");
   root.setProperty("--th", `${tool ? tool.offsetHeight : 0}px`);
-  syncIbh();
-  // ガントの枠（縦スクロールバーの幅を、名前の行の幅から引く）と、プロジェクトごとの見出しの高さ（日付軸の固定位置）。スクロールには連動させない
-  for (const gs of view.querySelectorAll(".gscroll")) { gs.style.setProperty("--sbw", `${gs.offsetWidth - gs.clientWidth}px`); gs.style.setProperty("--gsy", `${gs.getBoundingClientRect().top + window.scrollY}px`); }
-  for (const pg of view.querySelectorAll("section.pg")) { const h = pg.querySelector(".pg-head"); if (h) pg.style.setProperty("--pgh", `${h.offsetHeight}px`); }
+  // ガントの操作の帯(.gtop)の高さ(プロジェクトの見出し .pgstick の固定位置)と、プロジェクトごとの見出しの高さ(日付軸の複製の固定位置)。スクロールには連動させない
+  root.setProperty("--gh", `${view.querySelector(".gtop")?.offsetHeight ?? 0}px`);
+  for (const pg of view.querySelectorAll("section.pg")) { const h = pg.querySelector(".pgstick"); if (h) pg.style.setProperty("--pgh", `${h.getBoundingClientRect().height}px`); }
+  syncGStrips();
   syncThStrips();
   pinTableHeads();
 }
 /**
- * リストの列見出しの複製（.thstrip）を、名前・状態の行（.pstick）の中に作り直す。表は横スクロールの枠の中にあり、列見出しの sticky が画面の縦スクロールに効かないため、
- * sticky の行の中に複製を置く（縦は CSS の sticky、横スクロールの位置だけ translateX でそろえる）。幅・余白・文字は、本物の thead を測って写す
+ * リストの列見出しの複製（.thstrip）を作り直す。表は横スクロールの枠の中にあり、列見出しの sticky が画面の縦スクロールに効かないため、
+ * 枠の外(表を包む .twrap の先頭)に、列見出しの写しを sticky で置く(縦は CSS の sticky、横スクロールの位置だけ translateX でそろえる)。
+ * 固定していないときは、本物の列見出しにぴったり重なる(出し分けは要らない)。流れの高さは増やさず、sticky の範囲を複製の高さだけ短くして、表の下端を越えないようにする。
+ * 幅・余白・文字は、本物の thead を測って写す
  */
 function syncThStrips() {
   for (const panel of view.querySelectorAll("section.panel")) {
-    const st = panel.querySelector(":scope > .pstick"), box = panel.querySelector(".tlist");
-    const ths = box ? [...box.querySelectorAll("thead th")] : [];
-    if (!st || !ths.length) continue;
-    let strip = st.querySelector(".thstrip");
-    if (!strip) {
-      strip = document.createElement("div"); strip.className = "thstrip"; strip.setAttribute("aria-hidden", "true"); st.appendChild(strip);
+    const st = panel.querySelector(":scope > .pstick"), wrap = panel.querySelector(":scope > .twrap");
+    const strip = wrap?.querySelector(":scope > .thstrip"), box = wrap?.querySelector(":scope > .tlist");
+    if (!st || !strip || !box) continue;
+    const ths = [...box.querySelectorAll("thead th")];
+    panel.style.setProperty("--ph", `${st.getBoundingClientRect().height}px`);
+    if (!ths.length || !ths[0].offsetHeight) { strip.replaceChildren(); wrap.style.setProperty("--sh", "0px"); wrap.style.setProperty("--sb", "0px"); continue; } // 狭い画面では、列見出しは出ない
+    if (!box.dataset.thsync) {
+      box.dataset.thsync = "1";
       box.addEventListener("scroll", () => { const inner = strip.firstElementChild; if (inner) inner.style.transform = `translateX(${-box.scrollLeft}px)`; }, { passive: true });
     }
     const inner = document.createElement("div"); inner.className = "thin";
@@ -1147,47 +1226,27 @@ function syncThStrips() {
       c.style.width = `${th.getBoundingClientRect().width}px`; c.style.padding = getComputedStyle(th).padding;
       inner.appendChild(c);
     }
-    strip.style.height = `${ths[0].offsetHeight}px`;
+    wrap.style.setProperty("--sh", `${ths[0].getBoundingClientRect().height}px`);
+    wrap.style.setProperty("--sb", `${box.offsetHeight - box.clientHeight}px`); // 表の横スクロールバーの高さ
     inner.style.transform = `translateX(${-box.scrollLeft}px)`;
     strip.replaceChildren(inner);
   }
-  updateThStrips();
 }
-/** 複製を出す・隠す（スクロールで切り替える。位置は動かさないので、遅れは見えない） */
-function updateThStrips() {
-  const cs = getComputedStyle(document.documentElement);
-  const pin = (parseFloat(cs.getPropertyValue("--hh")) || 0) + (parseFloat(cs.getPropertyValue("--th")) || 0);
-  for (const panel of view.querySelectorAll("section.panel")) {
-    const st = panel.querySelector(":scope > .pstick"), strip = st?.querySelector(".thstrip"), table = panel.querySelector(".tlist table");
-    if (!strip || !table) continue;
-    const thead = table.querySelector("thead"), stripH = parseFloat(strip.style.height) || 0;
-    // 複製は絶対配置で、名前・状態の行の流れの高さを増やさない（増やすと、出した途端に表がずれ、出す・隠すがちらつく）
-    strip.classList.toggle("on", thStripOn({ theadTop: thead.getBoundingClientRect().top, tableBottom: table.getBoundingClientRect().bottom, pin, baseH: st.offsetHeight, stripH, theadH: thead.offsetHeight }));
-  }
-}
-/** 下の固定の帯（.ib）の高さ。ガントの枠の高さの計算に使う。帯は renderBar のたびに作り直される */
-function syncIbh() {
-  const v = `${document.querySelector(".ib")?.offsetHeight ?? 0}px`, root = document.documentElement.style;
-  const changed = root.getPropertyValue("--ibh") !== v;
-  root.setProperty("--ibh", v);
-  return changed; // 変わったとき、枠の高さが変わり、縦スクロールバーが出入りするので、呼び出し側が syncSticky をやり直す
-}
-
-/** 横スクロールの枠の中で sticky が効かない表（設定・稼働の表）の列見出しを、スクロール中も、ヘッダーとフィルタ行の下に付ける（表の枠の中でセルをずらす。表の下端は越えない）。リストの表は、名前・状態の行の中の複製（syncThStrips） */
+/** 横スクロールの枠の中で sticky が効かない表（設定・稼働の表）の列見出しを、スクロール中も、ヘッダーとフィルタ行の下に付ける（表の枠の中でセルをずらす。表の下端は越えない）。リストの表は、表を包む枠の先頭の複製（syncThStrips） */
 function pinTableHeads() {
   const cs = getComputedStyle(document.documentElement);
   const top = (parseFloat(cs.getPropertyValue("--hh")) || 0) + (parseFloat(cs.getPropertyValue("--th")) || 0);
   for (const box of view.querySelectorAll(".tscroll")) {
     const ths = box.querySelectorAll("thead th");
     if (!ths.length) continue;
-    if (box.classList.contains("tlist")) continue; // リストの表は、名前・状態の行の中の複製（.thstrip）で固定する
+    if (box.classList.contains("tlist")) continue; // リストの表は、表を包む枠（.twrap）の先頭の複製（.thstrip）で固定する
     const r = box.getBoundingClientRect();
     const dy = Math.max(0, Math.min(top - r.top, r.height - ths[0].offsetHeight - 4));
     for (const th of ths) th.style.transform = dy ? `translateY(${dy}px)` : "";
   }
 }
 let pinQueued = false;
-window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); updateThStrips(); }); } }, { passive: true });
+window.addEventListener("scroll", () => { if (!pinQueued) { pinQueued = true; requestAnimationFrame(() => { pinQueued = false; pinTableHeads(); }); } }, { passive: true });
 if (topbar && typeof ResizeObserver !== "undefined") new ResizeObserver(syncSticky).observe(topbar);
 let depsQueued = false;
 window.addEventListener("resize", () => {

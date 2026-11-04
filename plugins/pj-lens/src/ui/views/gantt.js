@@ -96,6 +96,7 @@ export function renderGantt(data, projectIds, today, opts = {}) {
     + ticks.map((t) => `<i class="gl ${t.yearStart ? "yr" : ""}" style="left:${x(t.date)}"></i>`).join("");
   const todayLine = `<span class="todayline" style="left:${x(today)}"></span>`;
 
+  const scrollAttrs = ` data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"`; // 全プロジェクト共通(ドラッグ・今日へ移動が .gscroll から読む)
   const sections = ps.map((p) => {
     const g = geo.get(p.id);
     const prog = projectProgress(data, p.id);
@@ -180,8 +181,14 @@ export function renderGantt(data, projectIds, today, opts = {}) {
 
     const headRow = `<div class="g-row g-head"><div class="g-label"></div><div class="g-lane g-axis ${dayScale ? "day" : ""}" ${laneStyle}>${dayScale ? "" : `<span class="todaytag" style="left:${x(today)}">今日</span>`}${axis}</div></div>`;
 
-    return `<section class="pg" aria-label="${esc(p.name)}">${head}<div class="gbody" style="--lanew:${laneW}"><div class="gov under">${grid}</div><div class="gov over">${msLines}${todayLine}</div>${headRow}${msRow}${sumRow}${rows}</div></section>`;
+    const gbody = `<div class="gbody" style="--lanew:${laneW}"><div class="gov under">${grid}</div><div class="gov over">${msLines}${todayLine}</div>${headRow}${msRow}${sumRow}${rows}</div>`;
+    if (readonly) return `<section class="pg" aria-label="${esc(p.name)}">${head}${gbody}</section>`;
+    // 編集画面は、プロジェクトごとに、固定の見出し(.pgstick。画面の縦スクロールに sticky)と、横スクロールだけの枠(.gscroll)に分ける。
+    // 枠は横スクロールの枠なので、その中では sticky が画面の縦スクロールに効かない。見出しは枠の外に置く。日付軸の複製(.gstrip)は app.js が作る
+    return `<section class="pg" aria-label="${esc(p.name)}"><div class="pgstick">${head}</div><div class="gwrap"><div class="gstrip" aria-hidden="true"></div><div class="gscroll"${scrollAttrs}><div class="gwide">${gbody}</div></div></div></section>`;
   }).join("");
 
-  return `${top}<div class="gscroll" data-todayfrac="${(diffDays(today, s0) / total).toFixed(5)}" data-s0="${s0}" data-span="${total}"><div class="gwide">${sections}</div></div>${readonly ? legend(showActual) : ""}`;
+  return readonly
+    ? `${top}<div class="gscroll"${scrollAttrs}><div class="gwide">${sections}</div></div>${legend(showActual)}`
+    : `${top}<div class="gprojects">${sections}</div>`;
 }

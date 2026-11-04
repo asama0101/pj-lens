@@ -1289,7 +1289,7 @@ test("renderProjects（リスト）: 名前と状態は .pstick にあり、種�
   for (const [name, d] of Object.entries(cases)) {
     const html = renderProjects(d, TODAY, { filter: "A", view: "list" });
     const stick = html.slice(html.indexOf('<div class="pstick">'), html.indexOf('<div class="phead">'));
-    const head = html.slice(html.indexOf('<div class="phead">'), html.indexOf('<div class="tscroll tlist">'));
+    const head = html.slice(html.indexOf('<div class="phead">'), html.indexOf('<div class="twrap">'));
     assert.ok(html.includes('<div class="pstick">') && html.includes('<div class="tscroll tlist">'), `${name}: 構造がある`);
     assert.equal((stick.match(/data-pf="name"/g) ?? []).length, 1, `${name}: 名前の入力欄は .pstick に 1 つ`);
     assert.equal((stick.match(/data-pf="status"/g) ?? []).length, 1, `${name}: 状態の選択欄は .pstick に 1 つ`);
@@ -1310,5 +1310,57 @@ test("renderProjects（リスト）: .phead（種別・開始・期限・進捗�
   assert.ok(stick.indexOf('data-pf="name"') < stick.indexOf('<div class="phead">') && stick.indexOf('data-pf="status"') < stick.indexOf('<div class="phead">'), "名前・状態は .phead の前");
   for (const f of ["type", "start", "due"]) assert.ok(stick.includes(`data-pf="${f}"`), `.pstick の中に ${f}`);
   assert.ok(stick.includes("class=\"hrs\"") || stick.includes("mono hrs"), "稼働も .pstick の中");
-  assert.ok(html.slice(end).trimStart().startsWith('<div class="tscroll tlist">'), ".pstick の直後が表の枠");
+  assert.ok(html.slice(end).trimStart().startsWith('<div class="twrap"><div class="thstrip" aria-hidden="true"></div><div class="tscroll tlist">'), ".pstick の直後が、列見出しの複製(.thstrip)と表の枠を包む .twrap");
+});
+
+test("renderGantt（編集画面）: プロジェクトごとに .pgstick と .gwrap（.gstrip + .gscroll）に分かれ、.pg-head は .pgstick の中にある", () => {
+  const html = gantt(load(), ["A", "B", "C"]);
+  assert.equal(count(html, /<section class="pg"/g), 3);
+  assert.equal(count(html, /<div class="pgstick"><div class="pg-head">/g), 3);
+  assert.equal(count(html, /<div class="gwrap"><div class="gstrip" aria-hidden="true"><\/div><div class="gscroll"/g), 3);
+  assert.equal(count(html, /class="gscroll"/g), 3);
+  const attrs = [...html.matchAll(/class="gscroll" (data-todayfrac="[^"]*" data-s0="[^"]*" data-span="[^"]*")/g)].map((m) => m[1]);
+  assert.equal(attrs.length, 3);
+  assert.equal(new Set(attrs).size, 1, "全プロジェクトで同じ値（ドラッグが各 .gscroll から読む）");
+  for (const sec of html.split('<section class="pg"').slice(1)) {
+    assert.equal(count(sec, /class="gbody"/g), 1);
+    assert.ok(sec.indexOf('<div class="g-row g-head">') > sec.indexOf('class="gbody"'), "日付軸は .gbody の中");
+    assert.ok(sec.indexOf('class="pg-head"') < sec.indexOf('class="gwrap"'), "見出しは枠の外（前）");
+  }
+});
+
+test("renderGantt（レポート用 readonly）: 従来どおり .gscroll は 1 つで、.pgstick・.gwrap・.gstrip を含まない", () => {
+  const html = gantt(load(), ["A", "B"], { readonly: true });
+  assert.equal(count(html, /class="gscroll"/g), 1);
+  assert.ok(!html.includes("pgstick") && !html.includes("gwrap") && !html.includes("gstrip"));
+  assert.ok(html.includes('<div class="gwide"><section class="pg"'), "枠の中に全プロジェクトが入る");
+});
+
+test("renderProjects: チップは .chips-row に入り、大項目の選択と「＋ プロジェクトを追加」は .ptool-end に入る（30 プロジェクトでも同じ形）", () => {
+  const d = load();
+  for (let i = 0; i < 27; i++) d.projects.push({ ...d.projects[1], id: `Z${i}`, name: `追加 ${i}` });
+  for (const view of ["gantt", "list"]) {
+    const html = renderProjects(d, TODAY, { filter: "all", view, window: "m6" });
+    const tool = html.slice(html.indexOf('<div class="toolbar ptool">'), html.indexOf('<div class="cols'));
+    const row = tool.slice(tool.indexOf('<div class="chips-row"'), tool.indexOf('<div class="ptool-end">'));
+    assert.equal(count(tool, /class="chips-row"/g), 1, view);
+    assert.equal(count(row, /data-filter="/g), 31, `${view}: すべて + 30 プロジェクトのチップが全部 .chips-row の中`);
+    assert.ok(!row.includes("data-addproject") && !row.includes("data-groupfilter"), `${view}: 追加ボタンと大項目の選択は、スクロールする行の外`);
+    const end = tool.slice(tool.indexOf('<div class="ptool-end">'));
+    assert.ok(end.includes("data-addproject"), view);
+  }
+  const g = renderProjects(d, TODAY, { filter: "all", view: "gantt", window: "m6" });
+  assert.ok(g.slice(g.indexOf('<div class="ptool-end">'), g.indexOf('<div class="cols')).includes("data-groupfilter"), "大項目があれば、選択は .ptool-end の中");
+});
+
+test("renderList: .twrap は表（.tlist）だけを含み、メモ・マイルストーン・履歴は .twrap の外", () => {
+  const html = renderProjects(load(), TODAY, { filter: "A", view: "list" });
+  const a = html.indexOf('<div class="twrap">');
+  assert.ok(a > 0);
+  let depth = 0, end = -1;
+  for (const m of html.slice(a).matchAll(/<div\b|<\/div>/g)) { depth += m[0] === "</div>" ? -1 : 1; if (depth === 0) { end = a + m.index + 6; break; } }
+  const wrap = html.slice(a, end);
+  assert.equal(count(wrap, /<table\b/g), 1);
+  assert.ok(!wrap.includes("マイルストーン") && !wrap.includes("日程変更の履歴") && !wrap.includes("変更はその場でファイルに保存"), "表の外のものを含まない");
+  assert.ok(html.indexOf("マイルストーン", end) > end, "マイルストーンは .twrap の後");
 });

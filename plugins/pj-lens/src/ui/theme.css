@@ -183,7 +183,7 @@ body.picking button.free:hover{background:var(--accent-soft);border-color:var(--
 .in.sm{width:auto}
 .in.gi{width:7em}
 .tscroll{overflow-x:auto}
-/* 列見出しは、スクロール中も上端に付ける。リストは、名前・状態の行の中の複製で固定する（下の「固定表示」の節）。設定・稼働の表は、sticky が効かないので、app.js の pinTableHeads が見出しのセルをずらす */
+/* 列見出しは、スクロール中も上端に付ける。リストは、表を包む枠の先頭の複製で固定する（下の「固定表示」の節）。設定・稼働の表は、sticky が効かないので、app.js の pinTableHeads が見出しのセルをずらす */
 .tbl.edit thead th{position:relative;z-index:2;background:var(--surface);box-shadow:inset 0 -1px 0 var(--line)}
 .hrs{background:var(--accent-soft);color:var(--ink);border-radius:4px;padding:0 8px}
 .wl-tbl .num{text-align:right;white-space:nowrap}
@@ -233,7 +233,7 @@ tr.drop-after>td,.g-row.drop-after>.g-label,.g-row.drop-after>.g-lane{box-shadow
 .g-row:has(>.g-label.imp-high){background:var(--bad-soft)} /* :has() 非対応のブラウザでも、上の規則（ラベル）が捨てられないよう、分ける */
 .imp-key{display:inline-block;height:12px;margin-right:6px;vertical-align:middle}
 .imp-key.hi{width:5px;background:var(--bad)}
-.g-head{border-bottom:1px solid var(--line);position:relative;z-index:6;background:var(--surface)} /* 日付軸は、下の「固定表示」の節で、枠の中の sticky で上端に固定する */
+.g-head{border-bottom:1px solid var(--line);position:relative;z-index:6;background:var(--surface)} /* 日付軸は、下の「固定表示」の節で、枠の外の複製（.gstrip）を sticky にして固定する */
 .g-axis{height:24px;position:relative}
 .g-axis span.yr{font-weight:700;color:var(--ink);border-left-color:var(--ink)}
 .gl.yr{border-left:1px solid var(--muted)}
@@ -473,16 +473,32 @@ body{padding-block:16px 76px}
 .tpop .tp-a{display:flex;gap:8px;justify-content:space-between}
 
 /* 固定表示（ガント・リスト）: 画面のスクロールに対して、CSS の sticky で付ける。レポートは #view の外なので、影響しない */
-#view .gscroll{overflow:auto;max-height:calc(100vh - var(--gsy,0px) - var(--ibh,0px) - 16px)} /* --gsy は枠の上端のページ上の位置。ページの先頭で、枠の下端が下の固定の帯（--ibh）の上に収まる */
-#view .pg-head{top:0;background:var(--surface);z-index:7;padding:2px 0 6px;margin-bottom:0;width:calc(100cqw - var(--sbw,0px))} /* すきまを作らない（padding-bottom）。縦スクロールバーの幅を引くのは、右端で sticky に押し戻されて先頭の文字が欠けるのを防ぐため */
-#view .g-head{position:sticky;top:var(--pgh,0px);z-index:6}
+#view{overflow-anchor:none} /* 描き直しのたびに、ブラウザのスクロール位置の補正(スクロールアンカー)で縦の位置が数 px ずれるのを防ぐ。位置は render が戻す */
+#view .gprojects{display:block}
+#view .ptool{display:flex;flex-wrap:nowrap;align-items:center;gap:8px}
+#view .ptool .chips-row{display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;flex:1 1 auto;min-width:0;scrollbar-width:none} /* 1 行に収めて横にスクロールする(プロジェクトが何件でも、固定の行の高さが変わらない) */
+#view .ptool .chips-row::-webkit-scrollbar{display:none} /* スクロールバーを出すと、固定の行が 15px 高くなる(プロジェクトの数で高さが変わる)。縦のホイール・横スワイプ・Tab で動かす */
+#view .ptool .chips-row .chip-btn{flex:none;white-space:nowrap}
+#view .ptool .ptool-end{display:flex;flex:none;align-items:center;gap:8px}
+#view .pgstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + var(--gh,0px));z-index:7;background:var(--surface)} /* プロジェクトの見出し。枠(.gscroll)の外に置くので、画面の縦スクロールで留まり、次のプロジェクトに入ると入れ替わる。--gh は操作の帯(.gtop)の高さ */
+#view .pg-head{position:static;width:auto;background:var(--surface);padding:2px 0 6px;margin-bottom:0} /* 見出しは枠の外なので、横の sticky も幅の指定も要らない。すきまを作らない(padding-bottom) */
+#view .gscroll{overflow-x:auto;overflow-y:hidden} /* 枠は横だけにスクロールする。縦はページが動く */
+#view .g-head{position:relative;z-index:5} /* 日付軸の複製(.gstrip、z-index:6)より下に描く。同じ値だと、境目で本物が複製の上に描かれ、目盛りが見出しの下へ滑り込む */
+#view .gwrap{padding-bottom:calc(var(--sh,0px) + var(--sb,0px))} /* 複製の高さ(--sh)だけ、sticky の範囲を短くする。枠はその分はみ出して、全体の高さは変わらない */
+#view .gwrap > .gscroll{margin-bottom:calc(-1 * (var(--sh,0px) + var(--sb,0px)))}
+#view .gstrip{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + var(--gh,0px) + var(--pgh,0px));z-index:6;display:flex;overflow:hidden;box-sizing:border-box;height:var(--sh,0px);margin-bottom:calc(-1 * var(--sh,0px));border-bottom:1px solid var(--line);background:var(--surface)} /* 日付軸の複製。app.js の syncGStrips が作る。固定していないときは、本物の日付軸に重なる */
+#view .gstrip:empty{display:none}
+#view .gstrip .gsl{flex:none;width:var(--lw);background:var(--surface)}
+#view .gstrip .gsv{flex:1 1 auto;min-width:0;overflow:hidden}
 #view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px));z-index:6;background:var(--surface);padding:4px 0 6px} /* プロジェクトの見出し全体（名前・状態の行 + 種別〜稼働・注意の印の行）。列見出しの複製は、この下端に重なる */
 #view .pstick .prow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 #view .pstick .phead{margin:6px 0 0}
 #view .pstick h2{margin:0;font-size:17px}
 #view .pstick label{font-size:13px;color:var(--muted)}
-#view .thstrip{display:none;position:absolute;top:100%;left:0;right:0;overflow:hidden;box-sizing:border-box;border-bottom:1px solid var(--line);background:var(--surface)} /* リストの列見出しの複製。app.js の syncThStrips が作り、updateThStrips が .on で出す */
-#view .thstrip.on{display:block}
+#view .twrap{padding-bottom:calc(var(--sh,0px) + var(--sb,0px))} /* 複製の高さ(--sh)だけ、sticky の範囲を短くする。表はその分はみ出して、全体の高さは変わらない */
+#view .twrap > .tscroll{margin-bottom:calc(-1 * (var(--sh,0px) + var(--sb,0px)))}
+#view .thstrip{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + var(--ph,0px));z-index:5;overflow:hidden;box-sizing:border-box;height:var(--sh,0px);margin-bottom:calc(-1 * var(--sh,0px));border-bottom:1px solid var(--line);background:var(--surface)} /* リストの列見出しの複製。app.js の syncThStrips が作る。固定していないときは、本物の列見出しに重なる。--ph は名前・状態の行(.pstick)の高さ */
+#view .thstrip:empty{display:none}
 #view .thstrip .thin{display:flex;white-space:nowrap}
 #view .thstrip .thc{flex:none;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--muted);text-align:left}
 /* ページの先頭でも、固定の行が、固定したときと同じ位置にあるようにする（スクロールの始めに、固定の行が数 px 動かない）。ガント・リスト（.ptool がある画面）とアプリだけ。レポート・ほかの画面は変えない */
