@@ -1262,3 +1262,17 @@ test("レポート: プロジェクト別の詳細表のタスクは、配列の
   assert.deepEqual(seq, ["A2", "A3", "A4", "A5", "A6", "A7", "A1"].filter((id) => seq.includes(id)));
   assert.ok(seq.length >= 5, `詳細表に A のタスクが出る: ${seq}`);
 });
+
+test("renderProjects（リスト）: 名前と状態は .pstick にあり、種別・開始・期限・進捗は .phead に残る。入力欄の data-pf は変わらない", () => {
+  const cases = { タスクあり: load(), タスク0件: (() => { const d = load(); d.tasks = []; return d; })() };
+  for (const [name, d] of Object.entries(cases)) {
+    const html = renderProjects(d, TODAY, { filter: "A", view: "list" });
+    const stick = html.slice(html.indexOf('<div class="pstick">'), html.indexOf('<div class="phead">'));
+    const head = html.slice(html.indexOf('<div class="phead">'), html.indexOf('<div class="tscroll tlist">'));
+    assert.ok(html.includes('<div class="pstick">') && html.includes('<div class="tscroll tlist">'), `${name}: 構造がある`);
+    assert.equal((stick.match(/data-pf="name"/g) ?? []).length, 1, `${name}: 名前の入力欄は .pstick に 1 つ`);
+    assert.equal((stick.match(/data-pf="status"/g) ?? []).length, 1, `${name}: 状態の選択欄は .pstick に 1 つ`);
+    assert.ok(!head.includes('data-pf="name"') && !head.includes('data-pf="status"'), `${name}: .phead には名前・状態がない`);
+    for (const f of ["type", "start", "due"]) assert.ok(head.includes(`data-pf="${f}"`), `${name}: .phead に ${f}`);
+  }
+});

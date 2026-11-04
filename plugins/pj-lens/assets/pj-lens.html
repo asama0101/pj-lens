@@ -483,6 +483,12 @@ body{padding-block:16px 76px}
 #view .gscroll{overflow:auto;max-height:calc(100vh - var(--hh,0px) - var(--th,0px) - var(--gt,0px) - var(--ibh,0px) - 24px)}
 #view .pg-head{top:0;background:var(--surface);z-index:7;padding:2px 0 6px;margin-bottom:0;width:calc(100cqw - var(--sbw,0px))} /* すきまを作らない（padding-bottom）。縦スクロールバーの幅を引くのは、右端で sticky に押し戻されて先頭の文字が欠けるのを防ぐため */
 #view .g-head{position:sticky;top:var(--pgh,0px);z-index:6}
+#view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px));z-index:6;background:var(--surface);display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:4px 0 6px}
+#view .pstick h2{margin:0;font-size:17px}
+#view .pstick label{font-size:13px;color:var(--muted)}
+#view .tscroll.tlist{overflow-x:visible}
+#view .tscroll.tlist.is-scroll{overflow-x:auto}
+#view .tlist:not(.is-scroll) .tbl.edit thead th{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + var(--pst,0px))} /* 表が広い画面に収まるときだけ。横スクロールが要る狭い画面は、app.js の pinTableHeads が付ける */
 </style>
 </head>
 <body>
@@ -4064,13 +4070,12 @@ function renderList(data, p, today, opts) {
     ? `<span class="ask" style="max-width:none">プロジェクトと配下のタスク ${tasks.length} 件を削除します。 <button class="btn danger" data-pdelyes="${esc(p.id)}">削除する</button> <button class="btn" data-pdelno>やめる</button></span>`
     : `<button class="btn" data-pdel="${esc(p.id)}">プロジェクトを削除</button>`;
 
-  return `<section class="panel" aria-label="${esc(p.name)}"><div class="phead"><div><h2><input class="in" data-pf="name" data-pid="${esc(p.id)}" value="${esc(p.name)}" style="font-size:17px;font-weight:700" aria-label="プロジェクト名"></h2><div class="kv" style="align-items:center">
+  return `<section class="panel" aria-label="${esc(p.name)}"><div class="pstick"><h2><input class="in" data-pf="name" data-pid="${esc(p.id)}" value="${esc(p.name)}" style="font-size:17px;font-weight:700" aria-label="プロジェクト名"></h2><label>状態 <select class="in sm" data-pf="status" data-pid="${esc(p.id)}" aria-label="${esc(p.name)} の状態">${PROJECT_STATUS.map((o) => `<option ${o === p.status ? "selected" : ""}>${o}</option>`).join("")}</select></label></div><div class="phead"><div><div class="kv" style="align-items:center">
       <label>種別 <select class="in sm" data-pf="type" data-pid="${esc(p.id)}" aria-label="種別">${PROJECT_TYPE.map((o) => `<option ${o === p.type ? "selected" : ""}>${o}</option>`).join("")}</select></label>
-      <label>状態 <select class="in sm" data-pf="status" data-pid="${esc(p.id)}" aria-label="${esc(p.name)} の状態">${PROJECT_STATUS.map((o) => `<option ${o === p.status ? "selected" : ""}>${o}</option>`).join("")}</select></label>
       <label>開始 <input class="in sm" type="date" data-pf="start" data-pid="${esc(p.id)}" value="${esc(p.start)}" aria-label="${esc(p.name)} の開始日"></label>
       <label>期限 <input class="in sm" type="date" data-pf="due" data-pid="${esc(p.id)}" value="${esc(p.due)}" aria-label="${esc(p.name)} の期限"></label>
       <span>進捗 <b class="mono">${prog.done}/${prog.total}</b> (${Math.round(prog.rate * 100)}%)</span><span class="mono hrs">${(() => { const hh = projectHours(data, p.id); return `稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）`; })()}</span></div></div><div>${flagPills(data, p.id, today, projectFlags(data, p.id, today))}</div></div>
-    <div class="tscroll"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>前のタスク</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tscroll tlist"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>前のタスク</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="note">変更はその場でファイルに保存されます。次のタスクの日程をまとめて見直すときは、画面の下端の「Claude Code に依頼する」に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>
     <div class="mslist">${ms}<div><button class="btn" data-msadd="${esc(p.id)}">＋ マイルストーンを追加</button> <span class="note">ガントに◆で表示されます。</span></div></div>
@@ -5381,6 +5386,8 @@ function syncSticky() {
   // ガントの枠（縦スクロールバーの幅を、名前の行の幅から引く）と、プロジェクトごとの見出しの高さ（日付軸の固定位置）。スクロールには連動させない
   for (const gs of view.querySelectorAll(".gscroll")) gs.style.setProperty("--sbw", `${gs.offsetWidth - gs.clientWidth}px`);
   for (const pg of view.querySelectorAll("section.pg")) { const h = pg.querySelector(".pg-head"); if (h) pg.style.setProperty("--pgh", `${h.offsetHeight}px`); }
+  for (const panel of view.querySelectorAll("section.panel")) { const st = panel.querySelector(":scope > .pstick"); if (st) panel.style.setProperty("--pst", `${st.offsetHeight}px`); }
+  for (const box of view.querySelectorAll(".tlist")) { const t = box.querySelector("table"); if (t) box.classList.toggle("is-scroll", t.offsetWidth > box.clientWidth); } // 表が枠より広いとき（横スクロールが要るとき）だけ
   pinTableHeads();
 }
 /** 下の固定の帯（.ib）の高さ。ガントの枠の高さの計算に使う。帯は renderBar のたびに作り直される */
@@ -5393,8 +5400,10 @@ function pinTableHeads() {
   for (const box of view.querySelectorAll(".tscroll")) {
     const ths = box.querySelectorAll("thead th");
     if (!ths.length) continue;
+    if (box.classList.contains("tlist") && !box.classList.contains("is-scroll")) { for (const th of ths) th.style.transform = ""; continue; } // 広い画面のリストは、CSS の sticky
     const r = box.getBoundingClientRect();
-    const dy = Math.max(0, Math.min(top - r.top, r.height - ths[0].offsetHeight - 4));
+    const pst = box.classList.contains("tlist") ? box.closest("section.panel")?.querySelector(":scope > .pstick")?.offsetHeight ?? 0 : 0; // 狭い画面のリスト: 名前・状態の固定行の下に付ける
+    const dy = Math.max(0, Math.min(top + pst - r.top, r.height - ths[0].offsetHeight - 4));
     for (const th of ths) th.style.transform = dy ? `translateY(${dy}px)` : "";
   }
 }

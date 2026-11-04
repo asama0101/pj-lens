@@ -476,3 +476,9 @@ body{padding-block:16px 76px}
 #view .gscroll{overflow:auto;max-height:calc(100vh - var(--hh,0px) - var(--th,0px) - var(--gt,0px) - var(--ibh,0px) - 24px)}
 #view .pg-head{top:0;background:var(--surface);z-index:7;padding:2px 0 6px;margin-bottom:0;width:calc(100cqw - var(--sbw,0px))} /* すきまを作らない（padding-bottom）。縦スクロールバーの幅を引くのは、右端で sticky に押し戻されて先頭の文字が欠けるのを防ぐため */
 #view .g-head{position:sticky;top:var(--pgh,0px);z-index:6}
+#view .pstick{position:sticky;top:calc(var(--hh,0px) + var(--th,0px));z-index:6;background:var(--surface);display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:4px 0 6px}
+#view .pstick h2{margin:0;font-size:17px}
+#view .pstick label{font-size:13px;color:var(--muted)}
+#view .tscroll.tlist{overflow-x:visible}
+#view .tscroll.tlist.is-scroll{overflow-x:auto}
+#view .tlist:not(.is-scroll) .tbl.edit thead th{position:sticky;top:calc(var(--hh,0px) + var(--th,0px) + var(--pst,0px))} /* 表が広い画面に収まるときだけ。横スクロールが要る狭い画面は、app.js の pinTableHeads が付ける */

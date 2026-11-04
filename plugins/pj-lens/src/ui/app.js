@@ -1124,6 +1124,8 @@ function syncSticky() {
   // ガントの枠（縦スクロールバーの幅を、名前の行の幅から引く）と、プロジェクトごとの見出しの高さ（日付軸の固定位置）。スクロールには連動させない
   for (const gs of view.querySelectorAll(".gscroll")) gs.style.setProperty("--sbw", `${gs.offsetWidth - gs.clientWidth}px`);
   for (const pg of view.querySelectorAll("section.pg")) { const h = pg.querySelector(".pg-head"); if (h) pg.style.setProperty("--pgh", `${h.offsetHeight}px`); }
+  for (const panel of view.querySelectorAll("section.panel")) { const st = panel.querySelector(":scope > .pstick"); if (st) panel.style.setProperty("--pst", `${st.offsetHeight}px`); }
+  for (const box of view.querySelectorAll(".tlist")) { const t = box.querySelector("table"); if (t) box.classList.toggle("is-scroll", t.offsetWidth > box.clientWidth); } // 表が枠より広いとき（横スクロールが要るとき）だけ
   pinTableHeads();
 }
 /** 下の固定の帯（.ib）の高さ。ガントの枠の高さの計算に使う。帯は renderBar のたびに作り直される */
@@ -1136,8 +1138,10 @@ function pinTableHeads() {
   for (const box of view.querySelectorAll(".tscroll")) {
     const ths = box.querySelectorAll("thead th");
     if (!ths.length) continue;
+    if (box.classList.contains("tlist") && !box.classList.contains("is-scroll")) { for (const th of ths) th.style.transform = ""; continue; } // 広い画面のリストは、CSS の sticky
     const r = box.getBoundingClientRect();
-    const dy = Math.max(0, Math.min(top - r.top, r.height - ths[0].offsetHeight - 4));
+    const pst = box.classList.contains("tlist") ? box.closest("section.panel")?.querySelector(":scope > .pstick")?.offsetHeight ?? 0 : 0; // 狭い画面のリスト: 名前・状態の固定行の下に付ける
+    const dy = Math.max(0, Math.min(top + pst - r.top, r.height - ths[0].offsetHeight - 4));
     for (const th of ths) th.style.transform = dy ? `translateY(${dy}px)` : "";
   }
 }
