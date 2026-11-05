@@ -548,6 +548,10 @@ body:has(.ptool){padding-block-start:8px}
 #view .tpop .ckedit{margin-block:2px}
 #view .ck-row.drop-before{box-shadow:inset 0 2px 0 var(--accent)}
 #view .ck-row.drop-after{box-shadow:inset 0 -2px 0 var(--accent)}
+/* Done にするときのチェックリストの警告 */
+#view .ask.warn-ck{background:var(--warn-soft);border:1px solid var(--warn);border-radius:8px;padding:10px 12px}
+#view .ask.warn-ck b{color:var(--warn)}
+#view .ask.warn-ck ul{margin:6px 0;padding-left:18px}
 </style>
 </head>
 <body>
@@ -2819,6 +2823,26 @@ function deleteProject(data, projectId) {
 return { predecessorCandidates, updateTask, addChecklistItem, updateChecklistItem, removeChecklistItem, moveChecklistItem, checkAllChecklist, newChecklist, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, addPredecessor, moveTask, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject };
 })();
 
+/* src/ui/donecheck.js */
+const { planDone } = (() => {
+// タスクを Done・Cancelled にするとき、確認が要るものを調べる（データは変えない）。changeStatus が使う。
+
+
+
+/**
+ * open: Done にするとき、未チェックの項目の文言（Cancelled など他の状態では空）
+ * future: Done・Cancelled にすると解除される、未来の予定枠の ID
+ */
+function planDone(data, id, status, now) {
+  const t = data.tasks.find((x) => x.id === id);
+  const open = status === "Done" ? checklistOf(t).filter((c) => !c.done).map((c) => c.text) : [];
+  const future = status === "Done" || status === "Cancelled" ? futurePlanned(data, id, now) : [];
+  return { open, future };
+}
+
+return { planDone };
+})();
+
 /* src/ui/inboxedits.js */
 const { EDITS } = (() => {
 // 受信箱の依頼の操作のうち、1 つの対象（タスク・プロジェクト・マイルストーン）を直す操作。inboxops.js の simulate が、当てる順に呼ぶ。
@@ -3299,9 +3323,15 @@ function statusButtons(t) {
   return start || done ? `<span class="bb">${start}${done}</span>` : "";
 }
 
-/** 未来の予定の枠を解除して Done・Cancelled にする確認（今日のタスクの行と、リストの状態の欄が使う） */
+/** Done・Cancelled にする前の確認（今日のタスクの行と、リストの状態の欄が使う）。
+ *  stage が "check" なら、未完了のチェック項目の警告（残りをチェックして Done／そのまま Done／やめる）。
+ *  それ以外（"future"、または stage なし）は、未来の予定の枠を解除する確認 */
 function doneAskHtml(pd) {
-  return `<div class="ask" style="max-width:none">${esc(pd.id)} の未来の予定の枠 ${pd.n} 件を解除して ${esc(pd.status)} にします。<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-doneok="${esc(pd.id)}">解除して ${esc(pd.status)} にする</button><button class="btn" data-doneno>やめる</button></div></div>`;
+  const id = esc(pd.id);
+  if (pd.stage === "check") {
+    return `<div class="ask warn-ck" role="alert" style="max-width:none"><b>チェックリストに、未完了の項目が ${pd.open.length} 件あります。</b><ul>${pd.open.map((x) => `<li>${esc(x)}</li>`).join("")}</ul><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"><button class="btn" data-ckall="${id}">残りをすべてチェックして ${esc(pd.status)} にする</button><button class="btn" data-ckkeep="${id}">未完了のまま ${esc(pd.status)} にする</button><button class="btn" data-doneno>やめる</button></div></div>`;
+  }
+  return `<div class="ask" style="max-width:none">${id} の未来の予定の枠 ${pd.n} 件を解除して ${esc(pd.status)} にします。<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-doneok="${id}">解除して ${esc(pd.status)} にする</button><button class="btn" data-doneno>やめる</button></div></div>`;
 }
 
 /** 今日の日付に作業枠（予定・実績・未確認）があるタスクを [{ t, slots }] で返す。未完了を最初の枠の開始順に、Done・Cancelled を末尾に */
@@ -4974,10 +5004,18 @@ view.addEventListener("click", (e) => {
   if (wk) { submitWait(wk.dataset.waitok); return; }
   if (q("[data-waitno]")) { S.pendingWait = null; render(); return; }
   if (q("[data-doneno]")) { S.pendingDone = null; render(); return; }
+  const ck = q("[data-ckall],[data-ckkeep]"); // チェックの警告の「残りをチェックして Done」「そのまま Done」
+  if (ck && S.pendingDone) {
+    const pd = S.pendingDone, checkAll = ck.matches("[data-ckall]");
+    if (pd.future.length) { S.pendingDone = { ...pd, stage: "future", checkAll }; render(); return; } // 続けて予定枠の確認
+    S.pendingDone = null;
+    setStatus(pd.id, pd.status, [], checkAll);
+    return;
+  }
   const dk = q("[data-doneok]");
   if (dk) {
     const pd = S.pendingDone; S.pendingDone = null;
-    setStatus(pd.id, pd.status, pd.future.filter((sid) => futurePlanned(S.data, pd.id, clock()).includes(sid))); // 確認を出してから始まった枠は消さない
+    setStatus(pd.id, pd.status, pd.future.filter((sid) => futurePlanned(S.data, pd.id, clock()).includes(sid)), !!pd.checkAll); // 確認を出してから始まった枠は消さない
     return;
   }
 
@@ -5047,16 +5085,18 @@ view.addEventListener("click", (e) => {
 function changeStatus(id, status) {
   const t = S.data.tasks.find((x) => x.id === id);
   if (status === "Waiting" && !t.waitingOn?.party) { S.pendingWait = id; S.focusSel = `[data-waitparty="${id}"]`; render(); return; }
-  const future = status === "Done" || status === "Cancelled" ? futurePlanned(S.data, id, clock()) : [];
-  if (future.length) { S.pendingDone = { id, status, n: future.length, future }; render(); return; } // 未来の予定枠を消すので確認する
+  const { open, future } = planDone(S.data, id, status, clock());
+  // 未チェックの項目がある（Done のとき）、または未来の予定枠を消す（Done・Cancelled のとき）なら、確認する。先にチェックの警告、次に予定枠
+  if (open.length || future.length) { S.pendingDone = { id, status, n: future.length, future, open, stage: open.length ? "check" : "future", checkAll: false }; render(); return; }
   setStatus(id, status, []);
 }
 
-function setStatus(id, status, future) {
+function setStatus(id, status, future, checkAll = false) {
   const kept = status === "Done" || status === "Cancelled" ? runningPlanned(S.data, id, clock()).length : 0; // 完了にしても進行中の枠は残る
   const keptMsg = kept ? `。進行中の枠 ${kept} 件は残しました（終わったら「実績にする」で確定します）` : "";
   apply((d) => {
     let next = updateTask(d, id, { status }, clock().date);
+    if (checkAll) next = checkAllChecklist(next, id);
     for (const sid of future) next = removeSession(next, sid);
     return next;
   }, future.length ? `${id} の状態を ${status} にしました。未来の予定の枠 ${future.length} 件を解除しました${keptMsg}` : `変更を保存しました${keptMsg}`);

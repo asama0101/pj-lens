@@ -515,10 +515,18 @@ view.addEventListener("click", (e) => {
   if (wk) { submitWait(wk.dataset.waitok); return; }
   if (q("[data-waitno]")) { S.pendingWait = null; render(); return; }
   if (q("[data-doneno]")) { S.pendingDone = null; render(); return; }
+  const ck = q("[data-ckall],[data-ckkeep]"); // チェックの警告の「残りをチェックして Done」「そのまま Done」
+  if (ck && S.pendingDone) {
+    const pd = S.pendingDone, checkAll = ck.matches("[data-ckall]");
+    if (pd.future.length) { S.pendingDone = { ...pd, stage: "future", checkAll }; render(); return; } // 続けて予定枠の確認
+    S.pendingDone = null;
+    setStatus(pd.id, pd.status, [], checkAll);
+    return;
+  }
   const dk = q("[data-doneok]");
   if (dk) {
     const pd = S.pendingDone; S.pendingDone = null;
-    setStatus(pd.id, pd.status, pd.future.filter((sid) => futurePlanned(S.data, pd.id, clock()).includes(sid))); // 確認を出してから始まった枠は消さない
+    setStatus(pd.id, pd.status, pd.future.filter((sid) => futurePlanned(S.data, pd.id, clock()).includes(sid)), !!pd.checkAll); // 確認を出してから始まった枠は消さない
     return;
   }
 
@@ -588,16 +596,18 @@ view.addEventListener("click", (e) => {
 function changeStatus(id, status) {
   const t = S.data.tasks.find((x) => x.id === id);
   if (status === "Waiting" && !t.waitingOn?.party) { S.pendingWait = id; S.focusSel = `[data-waitparty="${id}"]`; render(); return; }
-  const future = status === "Done" || status === "Cancelled" ? futurePlanned(S.data, id, clock()) : [];
-  if (future.length) { S.pendingDone = { id, status, n: future.length, future }; render(); return; } // 未来の予定枠を消すので確認する
+  const { open, future } = planDone(S.data, id, status, clock());
+  // 未チェックの項目がある（Done のとき）、または未来の予定枠を消す（Done・Cancelled のとき）なら、確認する。先にチェックの警告、次に予定枠
+  if (open.length || future.length) { S.pendingDone = { id, status, n: future.length, future, open, stage: open.length ? "check" : "future", checkAll: false }; render(); return; }
   setStatus(id, status, []);
 }
 
-function setStatus(id, status, future) {
+function setStatus(id, status, future, checkAll = false) {
   const kept = status === "Done" || status === "Cancelled" ? runningPlanned(S.data, id, clock()).length : 0; // 完了にしても進行中の枠は残る
   const keptMsg = kept ? `。進行中の枠 ${kept} 件は残しました（終わったら「実績にする」で確定します）` : "";
   apply((d) => {
     let next = updateTask(d, id, { status }, clock().date);
+    if (checkAll) next = checkAllChecklist(next, id);
     for (const sid of future) next = removeSession(next, sid);
     return next;
   }, future.length ? `${id} の状態を ${status} にしました。未来の予定の枠 ${future.length} 件を解除しました${keptMsg}` : `変更を保存しました${keptMsg}`);

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { addDays, diffDays } from "../plugins/pj-lens/src/core/dates.js";
 import { renderProjects } from "../plugins/pj-lens/src/ui/views/project.js";
 import { renderGantt, assignLevels, layoutMilestones } from "../plugins/pj-lens/src/ui/views/gantt.js";
-import { renderPrio, renderTodayTasks, todayTaskIds } from "../plugins/pj-lens/src/ui/views/prio.js";
+import { renderPrio, renderTodayTasks, todayTaskIds, doneAskHtml } from "../plugins/pj-lens/src/ui/views/prio.js";
 import { renderSettings } from "../plugins/pj-lens/src/ui/views/settings.js";
 import { checkMeterHtml } from "../plugins/pj-lens/src/ui/common.js";
 import { checklistEditorHtml } from "../plugins/pj-lens/src/ui/views/checklist.js";
@@ -1449,4 +1449,20 @@ test("renderTaskPop: チェックリストの欄を、期限の下・前のタ�
   const h = renderTaskPop(load(), { id: "A5", x: 10, y: 10 }, "");
   const due = h.indexOf('data-f="due"'), ck = h.indexOf("ckedit"), pre = h.indexOf("前のタスク");
   assert.ok(due >= 0 && ck > due && pre > ck);
+});
+
+// ---- Done にするときの警告 ----
+test("doneAskHtml: stage が check なら、未完了の項目の一覧と 3 つのボタン。文言はエスケープする", () => {
+  const h = doneAskHtml({ id: "A5", status: "Done", n: 0, future: [], open: ["a<b>", "b"], stage: "check", checkAll: false });
+  assert.ok(h.includes("未完了の項目が 2 件あります") && h.includes('role="alert"'));
+  assert.ok(h.includes("<li>a&lt;b&gt;</li>") && !h.includes("<li>a<b>"));
+  for (const a of ['data-ckall="A5"', 'data-ckkeep="A5"', "data-doneno"]) assert.ok(h.includes(a), a);
+  assert.ok(!h.includes("data-doneok"));
+});
+
+test("doneAskHtml: stage が future、または stage なし（従来の形）なら、予定枠の確認（data-doneok）のまま", () => {
+  for (const pd of [{ id: "A5", status: "Done", n: 1, future: ["S3"], open: [], stage: "future" }, { id: "A5", status: "Done", n: 1, future: ["S3"] }]) {
+    const h = doneAskHtml(pd);
+    assert.ok(h.includes('data-doneok="A5"') && h.includes("未来の予定の枠 1 件") && !h.includes("data-ckall"));
+  }
 });
