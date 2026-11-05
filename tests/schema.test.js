@@ -25,6 +25,18 @@ test("日付・時刻の演算", () => {
   assert.throws(() => addDays("2026-02-30", 1));
 });
 
+test("チェックリスト: 正しい形はエラーなし。配列でない・id の重複・text が空・done が真偽値でない・id が文字列でないはエラー", () => {
+  const d = load();
+  task(d, "A4").checklist = [{ id: "c1", text: "a", done: false }, { id: "c2", text: "b", done: true }];
+  assert.deepEqual(v(d).errors, []);
+  const bad = (cl) => { const e = load(); task(e, "A4").checklist = cl; return v(e).errors; };
+  assert.ok(hit(bad("x"), "A4"));
+  assert.ok(hit(bad([{ id: "c1", text: "a", done: false }, { id: "c1", text: "b", done: false }]), "c1"));
+  assert.ok(hit(bad([{ id: "c1", text: "  ", done: false }]), "A4"));
+  assert.ok(hit(bad([{ id: "c1", text: "a", done: "yes" }]), "A4"));
+  assert.ok(hit(bad([{ id: 1, text: "a", done: false }]), "A4"));
+});
+
 test("不明な状態値はエラー", () => {
   const d = load(); task(d, "A1").status = "Not Started";
   assert.ok(hit(v(d).errors, "A1"));
