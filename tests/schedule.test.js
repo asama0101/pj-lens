@@ -83,7 +83,7 @@ function rankData() {
 
 test("rankTasks: 手計算の点数と順序", () => {
   const r = rankTasks(rankData(), "2026-10-20");
-  assert.deepEqual(r.map((x) => [x.taskId, x.score]), [["R1", 209], ["R2", 105], ["R3", 81], ["R4", 76]]);
+  assert.deepEqual(r.map((x) => [x.taskId, x.score]), [["R1", 151], ["R3", 55.5], ["R2", 52.5], ["R4", 42]]);
 });
 
 test("rankTasks: Waiting は chase で待ち先名を含み、理由は日本語", () => {
@@ -110,6 +110,43 @@ test("rankTasks: 同点は期限の昇順→ID 昇順。タスク 0 件は空", 
 test("rankTasks: 循環があっても終了する", () => {
   const d = { ...base(), tasks: [T("A", "2026-10-25", { predecessors: ["B"] }), T("B", "2026-10-25", { predecessors: ["A"] }), T("C", "2026-10-25")] };
   assert.deepEqual(rankTasks(d, "2026-10-20").map((x) => x.taskId), ["C"]);
+});
+
+// ---- チェックリストの量を加えた点数（今日は 2026-10-20） ----
+const CK = (n, done = 0) => Array.from({ length: n + done }, (_, i) => ({ id: `c${i + 1}`, text: `項目${i + 1}`, done: i < done }));
+const scoreOf = (tasks, id = "X") => rankTasks({ ...base(), tasks }, "2026-10-20").find((r) => r.taskId === id).score;
+const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
+
+test("rankTasks: 期限点 (30−残り日数)×1.5 に、未チェック n 件の倍率 1+min(n,10)/10 をかける", () => {
+  near(scoreOf([T("X", "2026-10-25", { checklist: CK(3) })]), 48.75);
+  near(scoreOf([T("X", "2026-10-25")]), 37.5);
+  near(scoreOf([T("X", "2026-10-25", { importance: "high" })]), 49.5);
+  near(scoreOf([T("X", "2026-10-20")]), 45);
+});
+
+test("rankTasks: 済みの項目は数えない。未チェックが 10 件を超えても倍率は 2.0 まで", () => {
+  near(scoreOf([T("X", "2026-10-25", { checklist: CK(3, 2) })]), 48.75);
+  near(scoreOf([T("X", "2026-10-17", { checklist: CK(10) })]), 199);
+  near(scoreOf([T("X", "2026-10-17", { checklist: CK(15) })]), 199);
+});
+
+test("rankTasks: 期限が 30 日より先なら期限点は 0（倍率をかけても 0）", () => {
+  near(scoreOf([T("X", "2026-11-19", { checklist: CK(5) })]), 0);
+  near(scoreOf([T("X", "2026-11-24", { checklist: CK(5) })]), 0);
+});
+
+test("rankTasks: Waiting は倍率なし・+15 なし。chase と待ち先の理由は残る", () => {
+  const t = T("X", "2026-10-25", { status: "Waiting", waitingOn: { party: "ベンダーA", since: "2026-10-11" }, checklist: CK(3) });
+  near(scoreOf([t]), 37.5);
+  const r = rankTasks({ ...base(), tasks: [t] }, "2026-10-20")[0];
+  assert.equal(r.action, "chase");
+  assert.ok(r.reasons.some((x) => x.includes("ベンダーA")));
+});
+
+test("rankTasks: 後ろに未完了のタスクがあっても点は増えないが、理由には残る", () => {
+  const tasks = [T("X", "2026-10-25"), T("Y", "2027-03-01", { predecessors: ["X"] })];
+  near(scoreOf(tasks), 37.5);
+  assert.ok(rankTasks({ ...base(), tasks }, "2026-10-20").find((r) => r.taskId === "X").reasons.includes("次のタスク 1 件を止めている"));
 });
 
 test("syncMcpEvents: 消した会議の ID を使い回さず、同じ externalId の重複は 1 件にする（M4）", () => {

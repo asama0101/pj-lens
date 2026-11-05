@@ -1398,6 +1398,7 @@ const { freeSlots, rankTasks, addMeeting, updateMeeting, meetingPast, meetingKin
 
 
 
+
 /** 対象日の空き時間。skip の会議は無視し、重なりを統合して勤務時間内に切り詰める */
 function freeSlots(events, date, workday = DEFAULT_WORKDAY) {
   const [ws, we] = [toMin(workday.start), toMin(workday.end)];
@@ -1436,7 +1437,10 @@ function openDownstream(tasks, id) {
 
 /**
  * 今日の優先。対象は Done/Cancelled 以外で、前のタスクがすべて完了しているもの。
- * 点数 = 期限超過 100 + max(0,14-日数)×3 + 次のタスクの未完了 1 件ごとに 10 + 重要度(高12) + Waiting 15
+ * 点数 = 期限超過 100 + 期限点 × 倍率 + 重要度(高 12)
+ *   期限点 = 残り 30 日以内なら (30−残り日数)×1.5（超過した分も加算）、それより先は 0
+ *   倍率   = 1 + min(未チェックの項目数, 10)/10（Waiting は 1）
+ * 次のタスクの数と Waiting の催促は、点数には使わず、理由の表示だけに残す。
  */
 function rankTasks(data, today) {
   const byId = new Map(data.tasks.map((t) => [t.id, t]));
@@ -1448,16 +1452,16 @@ function rankTasks(data, today) {
     const reasons = [];
     let score = 0;
     if (left < 0) { score += 100; reasons.push(`期限超過 ${-left}日`); }
-    score += Math.max(0, 14 - left) * 3;
-    if (left >= 0 && left <= 14) reasons.push(left === 0 ? "期限は今日" : `期限まで ${left}日`);
+    const waiting = t.status === "Waiting";
+    const mult = waiting ? 1 : 1 + Math.min(checklistCount(t).open, 10) / 10;
+    score += (left <= 30 ? (30 - left) * 1.5 : 0) * mult;
+    if (left >= 0 && left <= 30) reasons.push(left === 0 ? "期限は今日" : `期限まで ${left}日`);
     const blocked = openDownstream(data.tasks, t.id);
-    score += blocked * 10;
     if (blocked) reasons.push(`次のタスク ${blocked} 件を止めている`);
     if (t.importance === "high") { score += 12; reasons.push("重要度: 高"); }
     let action = "work";
-    if (t.status === "Waiting") {
+    if (waiting) {
       action = "chase";
-      score += 15;
       const w = t.waitingOn;
       reasons.unshift(w ? `${w.party} への${left < 0 ? "催促" : "確認"}${isDate(w.since) ? `（回答待ち ${diffDays(today, w.since)}日）` : ""}` : "待ち先が未設定");
     }
