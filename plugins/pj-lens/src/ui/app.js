@@ -133,6 +133,9 @@ function focusSelector(el) {
   if (d.gadd) return q("data-gadd", d.gadd);
   if (d.cktext) return q("data-cktext", d.cktext);
   if (d.ckadd) return q("data-ckadd", d.ckadd);
+  if (d.ckdone) return q("data-ckdone", d.ckdone);
+  if (d.ckdel) return q("data-ckdel", d.ckdel);
+  if (d.cktoggle) return q("data-cktoggle", d.cktoggle);
   if (d.pref) return `[data-pref="${CSS.escape(d.pref)}"]`; // 右の列の取っ手
   if (d.set) return q("data-set", d.set);
   // 規則の欄は、書き換えるとキーワードが変わるので、行の位置（data-ri。書き換えても並びは変わらない）で探す

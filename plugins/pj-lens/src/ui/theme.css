@@ -272,6 +272,7 @@ tr.drop-after>td,.g-row.drop-after>.g-label,.g-row.drop-after>.g-lane{box-shadow
   .tbl.edit td::before{content:attr(data-l);display:block;font-size:11px;color:var(--muted)}
   .tbl.edit td[data-l=""]::before,.tbl.edit td[data-l="ID"]::before{display:none}
   .tbl.edit td:nth-child(4),.tbl.edit td:nth-child(11){grid-column:1/-1}
+  #view .tbl.edit tr.ck-tr>td{grid-column:1/-1;padding-left:0} /* チェックリストの展開行は全幅 */
 }
 
 .g-lane .gbar{top:6px;height:14px}
@@ -518,7 +519,8 @@ body:has(.ptool){padding-block-start:8px}
 #view .ck-meter:has(.ck-n.all) .ck-bar i{background:var(--ok)}
 #view .rank .ck-meter{grid-column:2}
 #view .rank.tl .ck-meter{grid-column:1}
-#view .g-label .ck-meter{grid-column:2}
+#view .g-label .ck-meter{grid-column:2/-1}
+#view .g-label[data-mvrow] .ck-meter{grid-column:3/-1} /* 画面のガントは 4 列（⠿・ID・名前・×）。名前の下に置く */
 /* ガントのバー: 済みの割合だけ濃く塗る（.gck）。残りは同じ色の薄い色。つまみ（.gh）は塗りより前に描くので、位置は変わらない */
 #view .gbar.ck{background:color-mix(in srgb,var(--accent) 35%,var(--surface))}
 #view .gbar.ck .gck{position:absolute;left:0;top:0;bottom:0;border-radius:4px 0 0 4px;background:var(--accent)}
