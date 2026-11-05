@@ -12,6 +12,7 @@ export const MODULES = [
   "src/core/dates.js",
   "src/core/holidays.js",
   "src/core/schema.js",
+  "src/core/checklist.js",
   "src/core/metrics.js",
   "src/core/sessions.js",
   "src/core/impact.js",

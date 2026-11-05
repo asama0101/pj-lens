@@ -941,6 +941,30 @@ function validate(data, now = nowLocal()) {
 return { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, HOLIDAY_KINDS, OP_KINDS, DEFAULT_WORKDAY, isClosed, validate };
 })();
 
+/* src/core/checklist.js */
+const { checklistOf, checklistCount, nextChecklistId } = (() => {
+// タスクのチェックリスト（task.checklist = [{ id, text, done }]）の読み取り用の小さな道具。純関数。
+// checklist がないタスクは「チェックリストなし」として扱う。
+
+/** タスクの項目の一覧（なければ空の配列） */
+const checklistOf = (t) => t?.checklist ?? [];
+
+/** 全体・済み・未チェックの件数 */
+function checklistCount(t) {
+  const items = checklistOf(t);
+  const done = items.filter((x) => x.done).length;
+  return { total: items.length, done, open: items.length - done };
+}
+
+/** 次の項目 ID。既存の c<数字> の最大番号 + 1（なければ c1） */
+function nextChecklistId(items) {
+  const max = items.reduce((m, x) => Math.max(m, +(/^c(\d+)$/.exec(x.id)?.[1] ?? 0)), 0);
+  return `c${max + 1}`;
+}
+
+return { checklistOf, checklistCount, nextChecklistId };
+})();
+
 /* src/core/metrics.js */
 const { taskStart, ganttRows, ganttLayout, timeTicks, projectProgress, taskFlags, projectFlags } = (() => {
 // 進捗率・遅延判定・ガント用の算出（純関数）
@@ -2306,8 +2330,9 @@ return { depPath, depMarkup, drawDeps, focusDeps };
 })();
 
 /* src/ui/edit.js */
-const { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, addPredecessor, moveTask, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject } = (() => {
+const { predecessorCandidates, updateTask, addChecklistItem, updateChecklistItem, removeChecklistItem, moveChecklistItem, checkAllChecklist, newChecklist, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, addPredecessor, moveTask, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject } = (() => {
 // 画面からの編集（追加・削除・更新）。すべて不変更新で、不正な入力は例外にする（呼び出し側が理由を表示する）。
+
 
 
 
@@ -2397,6 +2422,64 @@ function updateTask(data, taskId, patch, today = nowLocal().date) {
     return n;
   });
 }
+
+// ---- チェックリスト（task.checklist = [{ id, text, done }]） ----
+const itemText = (text) => {
+  const s = String(text ?? "").trim();
+  if (!s) throw new Error("項目を入力してください");
+  return s;
+};
+const mapChecklist = (data, taskId, fn) => mapTask(data, taskId, (t) => ({ ...t, checklist: fn(t.checklist ?? []) }));
+const needItem = (items, itemId) => {
+  if (!items.some((c) => c.id === itemId)) throw new Error(`項目 ${itemId} がありません`);
+};
+
+/** 末尾に項目を足す。ID は、いまある最大番号 + 1（c1, c2…） */
+function addChecklistItem(data, taskId, text) {
+  const s = itemText(text);
+  return mapChecklist(data, taskId, (items) => [...items, { id: nextChecklistId(items), text: s, done: false }]);
+}
+
+/** patch: { text?, done? } */
+function updateChecklistItem(data, taskId, itemId, patch) {
+  return mapChecklist(data, taskId, (items) => {
+    needItem(items, itemId);
+    return items.map((c) => {
+      if (c.id !== itemId) return c;
+      const n = { ...c };
+      if ("text" in patch) n.text = itemText(patch.text);
+      if ("done" in patch) n.done = !!patch.done;
+      return n;
+    });
+  });
+}
+
+function removeChecklistItem(data, taskId, itemId) {
+  return mapChecklist(data, taskId, (items) => {
+    needItem(items, itemId);
+    return items.filter((c) => c.id !== itemId);
+  });
+}
+
+/** itemId を beforeId の前へ（null は末尾）。動かしても並びが同じなら、同じ data を返す */
+function moveChecklistItem(data, taskId, itemId, beforeId = null) {
+  const cur = data.tasks.find((t) => t.id === taskId)?.checklist ?? [];
+  needItem(cur, itemId);
+  if (beforeId !== null) needItem(cur, beforeId);
+  if (beforeId === itemId) return data;
+  const moving = cur.find((c) => c.id === itemId);
+  const rest = cur.filter((c) => c.id !== itemId);
+  const at = beforeId === null ? rest.length : rest.findIndex((c) => c.id === beforeId);
+  const next = [...rest.slice(0, at), moving, ...rest.slice(at)];
+  if (next.every((c, i) => c === cur[i])) return data;
+  return mapChecklist(data, taskId, () => next);
+}
+
+/** 全項目を済みにする */
+const checkAllChecklist = (data, taskId) => mapChecklist(data, taskId, (items) => items.map((c) => ({ ...c, done: true })));
+
+/** 文言の一覧から、c1 から採番した項目を作る（空は除く）。addTask に付ける項目用 */
+const newChecklist = (texts) => texts.map((s) => String(s ?? "").trim()).filter(Boolean).map((text, i) => ({ id: `c${i + 1}`, text, done: false }));
 
 /** patch: name / type / status / start / due */
 function updateProject(data, projectId, patch) {
@@ -2688,7 +2771,7 @@ function deleteProject(data, projectId) {
   return { data: { ...data, settings, events, projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
 }
 
-return { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, addPredecessor, moveTask, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject };
+return { predecessorCandidates, updateTask, addChecklistItem, updateChecklistItem, removeChecklistItem, moveChecklistItem, checkAllChecklist, newChecklist, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, addPredecessor, moveTask, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject };
 })();
 
 /* src/ui/inboxedits.js */
