@@ -7,6 +7,7 @@ import { renderGantt, assignLevels, layoutMilestones } from "../plugins/pj-lens/
 import { renderPrio, renderTodayTasks, todayTaskIds } from "../plugins/pj-lens/src/ui/views/prio.js";
 import { renderSettings } from "../plugins/pj-lens/src/ui/views/settings.js";
 import { checkMeterHtml } from "../plugins/pj-lens/src/ui/common.js";
+import { checklistEditorHtml } from "../plugins/pj-lens/src/ui/views/checklist.js";
 import { renderTaskPop } from "../plugins/pj-lens/src/ui/views/taskpop.js";
 import { renderInboxBar, ibExamples } from "../plugins/pj-lens/src/ui/views/inboxpanel.js";
 import { ruleMeetingCounts } from "../plugins/pj-lens/src/core/rules.js";
@@ -1414,4 +1415,38 @@ test("renderGantt: 文言の特殊文字は出力に混ざらない（数字と�
   d.tasks.find((t) => t.id === "A5").checklist = [{ id: "c1", text: "<b>x</b>", done: true }];
   const html = gantt(d, ["A"], { readonly: true });
   assert.ok(!html.includes("<b>x</b>") && grow(html, "A5").includes(">1/1<"));
+});
+
+// ---- チェックリストの編集欄（リストの展開・ガントの編集の窓） ----
+test("checklistEditorHtml: 項目ごとに取っ手・チェック・文言・削除、末尾に追加欄。文言はエスケープ。項目なしでも追加欄は出る", () => {
+  const t = { id: "A5", checklist: [{ id: "c1", text: '<b>"x"&', done: true }, { id: "c2", text: "b", done: false }, { id: "c3", text: "c", done: false }] };
+  const h = checklistEditorHtml(t);
+  assert.equal(count(h, /data-ckid="/g), 3);
+  for (const a of ["data-ckmv", "data-ckdone", "data-cktext", "data-ckdel"]) assert.equal(count(h, new RegExp(`${a}="A5\\|c\\d"`, "g")), 3, a);
+  assert.equal(count(h, /data-ckadd="A5"/g), 1);
+  assert.ok(h.includes('value="&lt;b&gt;&quot;x&quot;&amp;"') && !h.includes("<b>\"x\""));
+  assert.equal(count(h, /type="checkbox"[^>]*checked/g), 1);
+  const textInput = (id) => new RegExp(`<input[^>]*data-cktext="A5\\|${id}"[^>]*>`).exec(h)[0];
+  assert.ok(textInput("c1").includes("done") && !textInput("c2").includes("done"), "済みの文言だけ done");
+  const e = checklistEditorHtml({ id: "A4" });
+  assert.ok(e.includes('data-ckadd="A4"') && !e.includes("data-ckid"));
+});
+
+test("renderProjects(list): 列「チェック」。閉じていれば ▸ M/N（項目なしは ＋ 追加）、開いていればその行の直後に編集欄", () => {
+  const d = load();
+  const html = renderProjects(d, TODAY, { view: "list", filter: "A" });
+  assert.ok(html.includes("<th>チェック</th>"));
+  assert.ok(/data-cktoggle="A5" aria-expanded="false"[^>]*>▸ 2\/4</.test(html) && /data-cktoggle="A4" aria-expanded="false"[^>]*>＋ 追加</.test(html));
+  assert.ok(!html.includes("ck-tr"));
+  const open = renderProjects(d, TODAY, { view: "list", filter: "A", checkOpen: new Set(["A5"]) });
+  assert.ok(/aria-expanded="true"[^>]*>▾ 2\/4</.test(open));
+  const i = open.indexOf('data-row="A5"'), p = open.indexOf('data-ckpanel="A5"'), nxt = open.indexOf('<tr data-row="', i + 1);
+  assert.ok(i >= 0 && p > i && p < nxt, "A5 の行の直後");
+  assert.equal(count(open, /data-ckpanel=/g), 1);
+});
+
+test("renderTaskPop: チェックリストの欄を、期限の下・前のタスクの上に置く", () => {
+  const h = renderTaskPop(load(), { id: "A5", x: 10, y: 10 }, "");
+  const due = h.indexOf('data-f="due"'), ck = h.indexOf("ckedit"), pre = h.indexOf("前のタスク");
+  assert.ok(due >= 0 && ck > due && pre > ck);
 });

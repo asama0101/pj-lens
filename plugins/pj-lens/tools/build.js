@@ -38,6 +38,7 @@ export const MODULES = [
   "src/ui/views/workload.js",
   "src/ui/views/settings.js",
   "src/ui/views/inboxpanel.js",
+  "src/ui/views/checklist.js",
   "src/ui/views/taskpop.js",
   "src/ui/views/project.js",
   "src/ui/views/report.js",

@@ -533,6 +533,19 @@ body:has(.ptool){padding-block-start:8px}
 #view .gbar.ck.b-todo .gck{background:var(--todo);opacity:.55}
 #view .gbar.ck.b-wait{background:var(--warn-soft)}
 #view .gbar.ck.b-wait .gck{background:var(--warn);opacity:.45}
+/* チェックリストの編集欄（リストの展開行・ガントの編集の窓）と、リストの「チェック」列のボタン */
+#view .ckedit{border:1px solid var(--accent-soft);background:var(--accent-soft);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+#view .ck-head{display:flex;align-items:center;gap:8px;font-size:13px}
+#view .ck-row,#view .ck-add{display:flex;align-items:center;gap:6px;min-height:34px}
+#view .ck-row .in,#view .ck-add .in{flex:1;min-width:0}
+#view .ck-row .in.done{text-decoration:line-through;color:var(--muted)}
+#view .ck-row input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--accent)}
+#view .ck-add{border-top:1px dashed var(--line);margin-top:4px;padding-top:6px}
+#view .ck-tr>td{background:var(--accent-soft);padding-left:78px}
+#view .ck-tr .ckedit{max-width:640px;border:0;padding:0}
+#view .ck-toggle{font:inherit;font-size:12px;padding:2px 8px;min-height:28px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);cursor:pointer;white-space:nowrap}
+#view .ck-toggle.ck-empty{border-style:dashed;color:var(--muted)}
+#view .tpop .ckedit{margin-block:2px}
 </style>
 </head>
 <body>
@@ -4103,11 +4116,32 @@ function renderInboxBar(data, ui) {
 return { ibExamples, renderInboxBar };
 })();
 
+/* src/ui/views/checklist.js */
+const { checklistEditorHtml } = (() => {
+// チェックリストの編集欄（リストの展開行と、ガントの編集の窓が共用）。
+// 属性（data-ck*）は app.js のイベントが読む: data-ckbox（タスク）・data-ckid（項目の行）・data-ckmv（並び替えの取っ手）・
+//   data-ckdone（チェック）・data-cktext（文言）・data-ckdel（削除）・data-ckadd（追加欄）。値は「タスクID|項目ID」。
+
+
+
+function checklistEditorHtml(t) {
+  const id = esc(t.id);
+  const rows = checklistOf(t).map((c) => {
+    const key = `${id}|${esc(c.id)}`;
+    return `<div class="ck-row" data-ckid="${esc(c.id)}"><span class="mv" draggable="true" data-ckmv="${key}" title="ドラッグで並べ替え" aria-label="${esc(c.text)} を並べ替え">⠿</span><input type="checkbox" data-ckdone="${key}"${c.done ? " checked" : ""} aria-label="済み"><input class="in${c.done ? " done" : ""}" data-cktext="${key}" value="${esc(c.text)}" aria-label="項目"><button class="gx" data-ckdel="${key}" aria-label="${esc(c.text)} を削除">×</button></div>`;
+  }).join("");
+  return `<div class="ckedit" data-ckbox="${id}"><div class="ck-head"><b>チェックリスト</b> ${checkMeterHtml(t)}</div>${rows}<div class="ck-add"><input class="in" data-ckadd="${id}" placeholder="項目を追加（Enter で追加）" aria-label="項目を追加"></div></div>`;
+}
+
+return { checklistEditorHtml };
+})();
+
 /* src/ui/views/taskpop.js */
 const { predEditHtml, startInputHtml, renderTaskPop } = (() => {
 // ガントチャートでタスク名・バーをクリックしたときに開く、編集の小さな窓。
 // 入力の属性（data-f・data-id・data-addpre・data-rmpre）は、リストの編集欄と同じ。保存と描き直しは、リストと同じ処理が受け持つ。
 // 窓を閉じる ×: data-tpopclose / 窓: data-tpop。「リストで開く」は data-goto、削除は data-del（どちらも既存の処理）
+
 
 
 
@@ -4142,6 +4176,7 @@ function renderTaskPop(data, pop, statusHtml) {
     ${field("件名", `<input class="in" data-f="title" data-id="${id}" value="${esc(t.title)}">`)}
     <div class="tp-f"><span class="muted">状態</span><div>${statusHtml}</div></div>
     <div class="tp-r">${field("開始", startInputHtml(data, t))}${field("期限", `<input class="in" type="date" data-f="due" data-id="${id}" value="${esc(t.due)}">`)}</div>
+    ${checklistEditorHtml(t)}
     <div class="tp-f"><span class="muted">前のタスク</span>${predEditHtml(data, t)}</div>
     <div class="tp-r">${field("重要度", `<select class="in sm" data-f="importance" data-id="${id}">${importance}</select>`)}</div>
     ${field("メモ", `<input class="in" data-f="memo" data-id="${id}" value="${esc(t.memo ?? "")}" placeholder="メモ">`)}
@@ -4155,6 +4190,8 @@ return { predEditHtml, startInputHtml, renderTaskPop };
 /* src/ui/views/project.js */
 const { renderProjects } = (() => {
 // プロジェクト画面: 絞り込み × ガント／リスト、右に「今日のタスク」「今日の優先」
+
+
 
 
 
@@ -4180,6 +4217,14 @@ function statusCellHtml(t, opts, late) {
   return `<select class="in" data-f="status" data-id="${id}" aria-label="${id} の状態">${TASK_STATUS.map((o) => `<option ${o === t.status ? "selected" : ""}>${o}</option>`).join("")}</select>${late ? ` <span class="pill late">期限超過</span>` : ""}`;
 }
 
+/** リストの「チェック」列。押すと、その行の下に編集欄が開く（開いているタスクは opts.checkOpen の Set） */
+function checkCell(t, opts) {
+  const { total, done } = checklistCount(t);
+  const open = !!opts.checkOpen?.has(t.id);
+  const label = total ? `${open ? "▾" : "▸"} ${done}/${total}` : "＋ 追加";
+  return `<button class="ck-toggle${total ? "" : " ck-empty"}" data-cktoggle="${esc(t.id)}" aria-expanded="${open}" aria-label="${esc(t.id)} のチェックリスト">${label}</button>`;
+}
+
 function renderList(data, p, today, opts) {
   const prog = projectProgress(data, p.id);
   const tasks = data.tasks.filter((t) => t.projectId === p.id);
@@ -4202,13 +4247,14 @@ function renderList(data, p, today, opts) {
       <td data-l="待ち先"><input class="in" data-f="party" data-id="${esc(t.id)}" value="${esc(t.waitingOn?.party ?? "")}" placeholder="${t.status === "Waiting" ? "ベンダー・部署名" : "—"}" ${t.status === "Waiting" ? "" : "disabled"} aria-label="${esc(t.id)} の待ち先">${needParty}</td>
       <td data-l="重要度"><select class="in sm" data-f="importance" data-id="${esc(t.id)}" aria-label="${esc(t.id)} の重要度">${[["", "—"], ["high", "高"]].map(([v, l]) => `<option value="${v}" ${(t.importance ?? "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></td>
       <td data-l="メモ"><input class="in" data-f="memo" data-id="${esc(t.id)}" value="${esc(t.memo ?? "")}" placeholder="メモ" aria-label="${esc(t.id)} のメモ"></td>
-      <td data-l="実績" class="mono muted">${actText(data, t.id)}</td><td data-l="">${delCell}</td></tr>`;
+      <td data-l="チェック">${checkCell(t, opts)}</td>
+      <td data-l="実績" class="mono muted">${actText(data, t.id)}</td><td data-l="">${delCell}</td></tr>${opts.checkOpen?.has(t.id) ? `<tr class="ck-tr" data-ckpanel="${esc(t.id)}"><td colspan="14">${checklistEditorHtml(t)}</td></tr>` : ""}`;
   };
   // (大項目, 中項目) ごとに見出し行を入れて並べる。「＋」はそのグループへ追加する入口なので、0 件でも「（なし）」を出す
   const secs = groupSections(tasks, { ensureNone: true });
   const rows = secs.map((sec) => {
     const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
-    return `<tr class="grp-tr" data-mvgrp="${esc(p.id)}" data-mvg="${esc(sec.group)}" data-mvsg="${esc(sec.subgroup)}"><td colspan="13"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""} <button class="plus" data-addat="${esc(p.id)}" data-ag="${esc(sec.group)}" data-asg="${esc(sec.subgroup)}" aria-label="${esc(name)} にタスクを追加">＋</button></td></tr>${sec.tasks.map(rowOf).join("")}`;
+    return `<tr class="grp-tr" data-mvgrp="${esc(p.id)}" data-mvg="${esc(sec.group)}" data-mvsg="${esc(sec.subgroup)}"><td colspan="14"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""} <button class="plus" data-addat="${esc(p.id)}" data-ag="${esc(sec.group)}" data-asg="${esc(sec.subgroup)}" aria-label="${esc(name)} にタスクを追加">＋</button></td></tr>${sec.tasks.map(rowOf).join("")}`;
   }).join("");
 
   const projTaskIds = new Set(tasks.map((t) => t.id));
@@ -4228,7 +4274,7 @@ function renderList(data, p, today, opts) {
       <label>開始 <input class="in sm" type="date" data-pf="start" data-pid="${esc(p.id)}" value="${esc(p.start)}" aria-label="${esc(p.name)} の開始日"></label>
       <label>期限 <input class="in sm" type="date" data-pf="due" data-pid="${esc(p.id)}" value="${esc(p.due)}" aria-label="${esc(p.name)} の期限"></label>
       <span>進捗 <b class="mono">${prog.done}/${prog.total}</b> (${Math.round(prog.rate * 100)}%)</span><span class="mono hrs">${(() => { const hh = projectHours(data, p.id); return `稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）`; })()}</span></div></div><div>${flagPills(data, p.id, today, projectFlags(data, p.id, today))}</div></div>
-    </div><div class="twrap"><div class="thstrip" aria-hidden="true"></div><div class="tscroll tlist"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>前のタスク</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
+    </div><div class="twrap"><div class="thstrip" aria-hidden="true"></div><div class="tscroll tlist"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>前のタスク</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>チェック</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
     <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="note">変更はその場でファイルに保存されます。次のタスクの日程をまとめて見直すときは、画面の下端の「Claude Code に依頼する」に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>
     <div class="mslist">${ms}<div><button class="btn" data-msadd="${esc(p.id)}">＋ マイルストーンを追加</button> <span class="note">ガントに◆で表示されます。</span></div></div>

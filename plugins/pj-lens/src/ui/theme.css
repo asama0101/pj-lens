@@ -526,3 +526,16 @@ body:has(.ptool){padding-block-start:8px}
 #view .gbar.ck.b-todo .gck{background:var(--todo);opacity:.55}
 #view .gbar.ck.b-wait{background:var(--warn-soft)}
 #view .gbar.ck.b-wait .gck{background:var(--warn);opacity:.45}
+/* チェックリストの編集欄（リストの展開行・ガントの編集の窓）と、リストの「チェック」列のボタン */
+#view .ckedit{border:1px solid var(--accent-soft);background:var(--accent-soft);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+#view .ck-head{display:flex;align-items:center;gap:8px;font-size:13px}
+#view .ck-row,#view .ck-add{display:flex;align-items:center;gap:6px;min-height:34px}
+#view .ck-row .in,#view .ck-add .in{flex:1;min-width:0}
+#view .ck-row .in.done{text-decoration:line-through;color:var(--muted)}
+#view .ck-row input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--accent)}
+#view .ck-add{border-top:1px dashed var(--line);margin-top:4px;padding-top:6px}
+#view .ck-tr>td{background:var(--accent-soft);padding-left:78px}
+#view .ck-tr .ckedit{max-width:640px;border:0;padding:0}
+#view .ck-toggle{font:inherit;font-size:12px;padding:2px 8px;min-height:28px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);cursor:pointer;white-space:nowrap}
+#view .ck-toggle.ck-empty{border-style:dashed;color:var(--muted)}
+#view .tpop .ckedit{margin-block:2px}
