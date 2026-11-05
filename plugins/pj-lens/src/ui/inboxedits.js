@@ -1,9 +1,10 @@
 // 受信箱の依頼の操作のうち、1 つの対象（タスク・プロジェクト・マイルストーン）を直す操作。inboxops.js の simulate が、当てる順に呼ぶ。
 // ハンドラは (w, o, ctx) → 新しい w。w は作業用のコピー。対象が無い・値が不正なら例外にし、変更案の行は ctx.rows[節の名前] に足す。
-// ctx: { today, warnings, rows, taskId(token), projectId(token), touch(taskId), log(taskId), touchProject(projectId), dueGiven }
+// ctx: { today, warnings, rows, taskId(token), projectId(token), touch(taskId), touchChecklist(taskId), log(taskId), touchProject(projectId), dueGiven }
 //   taskId・projectId は、同じ依頼の addTask・addProject の ref を、採番後の ID にする。touch は承認時の確認（base）の対象、log は変更履歴に載せるタスク。
 import { addDays } from "../core/dates.js";
-import { addMilestone, deleteMilestone, deleteProject, deleteTask, updateMilestone, updateProject, updateTask } from "./edit.js";
+import { addChecklistItem, addMilestone, deleteMilestone, deleteProject, deleteTask, removeChecklistItem, updateChecklistItem, updateMilestone, updateProject, updateTask } from "./edit.js";
+import { checklistOf } from "../core/checklist.js";
 
 const PROJECT_FIELDS = ["name", "type", "status", "start", "due"];
 
@@ -11,6 +12,11 @@ const taskOf = (w, id) => {
   const t = w.tasks.find((x) => x.id === id);
   if (!t) throw new Error(`タスク ${id} がありません`);
   return t;
+};
+const itemOf = (t, itemId) => {
+  const c = checklistOf(t).find((x) => x.id === itemId);
+  if (!c) throw new Error(`タスク ${t.id} に項目 ${itemId} がありません`);
+  return c;
 };
 const projectOf = (w, id) => {
   const p = w.projects.find((x) => x.id === id);
@@ -52,6 +58,49 @@ export const EDITS = {
     ctx.touch(id); ctx.log(id);
     ctx.rows.importance.push({ taskId: id, title: t.title, old: t.importance ?? null, new: o.importance ?? null });
     return next;
+  },
+
+  /** 項目を末尾に足す。ID は画面の追加と同じ規則（最大番号 + 1） */
+  addChecklistItem(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    const next = addChecklistItem(w, id, o.text);
+    const item = checklistOf(taskOf(next, id)).at(-1);
+    ctx.touch(id); ctx.touchChecklist(id); ctx.log(id);
+    ctx.rows.checklist.push({ taskId: id, title: t.title, action: "add", itemId: item.id, text: item.text, old: null, new: item.text });
+    return next;
+  },
+
+  setChecklistDone(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    if (typeof o.done !== "boolean") throw new Error(`setChecklistDone（${id}）には done（true か false）が必要です`);
+    const cur = itemOf(t, o.itemId);
+    if (cur.done === o.done) { ctx.warnings.push(`タスク ${id} の項目 ${cur.id} は、すでに${o.done ? "済み" : "未チェック"}なので変わりません`); return w; }
+    ctx.touch(id); ctx.touchChecklist(id); ctx.log(id);
+    ctx.rows.checklist.push({ taskId: id, title: t.title, action: o.done ? "check" : "uncheck", itemId: cur.id, text: cur.text, old: cur.done, new: o.done });
+    return updateChecklistItem(w, id, cur.id, { done: o.done });
+  },
+
+  setChecklistText(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    const cur = itemOf(t, o.itemId);
+    const next = updateChecklistItem(w, id, cur.id, { text: o.text });
+    const text = itemOf(taskOf(next, id), cur.id).text;
+    if (text === cur.text) { ctx.warnings.push(`タスク ${id} の項目 ${cur.id} は、指定どおりの文言なので変わりません`); return w; }
+    ctx.touch(id); ctx.touchChecklist(id); ctx.log(id);
+    ctx.rows.checklist.push({ taskId: id, title: t.title, action: "text", itemId: cur.id, text, old: cur.text, new: text });
+    return next;
+  },
+
+  removeChecklistItem(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    const cur = itemOf(t, o.itemId);
+    ctx.touch(id); ctx.touchChecklist(id); ctx.log(id);
+    ctx.rows.checklist.push({ taskId: id, title: t.title, action: "remove", itemId: cur.id, text: cur.text, old: cur.text, new: null });
+    return removeChecklistItem(w, id, cur.id);
   },
 
   updateProject(w, o, ctx) {

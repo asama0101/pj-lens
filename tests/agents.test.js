@@ -69,10 +69,10 @@ test("inbox: addTask は businessDays（due と排他）で営業日を書き、
   assert.doesNotMatch(t, /期限が書かれていない/);
 });
 
-test("inbox: 操作 13 種類の名前と書き方が書かれ、addProject・addTask の ref を他の操作から指せることが書かれている", () => {
+test("inbox: 操作 17 種類の名前と書き方が書かれ、addProject・addTask の ref を他の操作から指せることが書かれている", () => {
   const t = read("agents/inbox.md");
-  assert.ok(t.includes("操作は 13 種類"));
-  for (const op of ["moveDue", "addPred", "removePred", "addTask", "addProject", "setStatus", "setImportance", "removeTask", "updateProject", "removeProject", "addMilestone", "moveMilestone", "removeMilestone"]) assert.ok(t.includes(`"op":"${op}"`), op);
+  assert.ok(t.includes("操作は 17 種類"));
+  for (const op of ["moveDue", "addPred", "removePred", "addTask", "addProject", "setStatus", "setImportance", "removeTask", "updateProject", "removeProject", "addMilestone", "moveMilestone", "removeMilestone", "addChecklistItem", "setChecklistDone", "setChecklistText", "removeChecklistItem"]) assert.ok(t.includes(`"op":"${op}"`), op);
   assert.ok(t.includes("3〜5 件"));
   assert.match(t, /ref.*他の操作|他の操作.*ref/);
 });
@@ -155,4 +155,10 @@ test("mcp: 保存済みの selfEmails があれば、手順 4 で聞き直さな
   const t = read("skills/mcp/SKILL.md");
   const step = t.slice(t.indexOf("4. **自分のメールアドレス"), t.indexOf("5. **試しに"));
   assert.match(step, /保存済みなら、聞かずに/);
+});
+
+test("inbox: チェックリストの操作は、依頼に明記されたときだけ（推定しない）。項目は ID で指し、addTask の checklist は文字列の配列", () => {
+  const t = read("agents/inbox.md");
+  assert.match(t, /チェックリスト[^\n]*明記されたときだけ/);
+  assert.ok(t.includes('"checklist":["') && t.includes("itemId"));
 });

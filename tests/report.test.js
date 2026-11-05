@@ -169,3 +169,8 @@ test("buildReport: opts.showMeetingTitles が設定より優先する（true で
   assert.deepEqual(titles(buildReport(withSetting(false), TODAY, {})), []);
   assert.deepEqual(titles(buildReport(withSetting(false), TODAY, { showMeetingTitles: undefined })), []);
 });
+
+test("レポートのガントにも、チェックリストの M/N（A5 は 2/4）が出る", () => {
+  const html = buildReport(load(), TODAY);
+  assert.ok(html.includes("ck-meter") && html.includes(">2/4<"));
+});

@@ -279,6 +279,7 @@ tr.drop-after>td,.g-row.drop-after>.g-label,.g-row.drop-after>.g-lane{box-shadow
   .tbl.edit td::before{content:attr(data-l);display:block;font-size:11px;color:var(--muted)}
   .tbl.edit td[data-l=""]::before,.tbl.edit td[data-l="ID"]::before{display:none}
   .tbl.edit td:nth-child(4),.tbl.edit td:nth-child(11){grid-column:1/-1}
+  #view .tbl.edit tr.ck-tr>td{grid-column:1/-1;padding-left:0} /* チェックリストの展開行は全幅 */
 }
 
 .g-lane .gbar{top:6px;height:14px}
@@ -516,6 +517,44 @@ body:has(.ptool){padding-block-start:8px}
 #view section.panel > .pstick{padding-top:20px}
 #view section.panel > .gtop{padding-top:22px}
 #view .cols>.side,#view .side-toggle{margin-top:8px}
+/* チェックリストの進み具合（細い線と「済み/全体」）。今日の優先・今日のタスク・ガントのラベルが使う */
+#view .ck-meter{display:flex;align-items:center;gap:6px}
+#view .ck-bar{display:block;width:72px;height:4px;border-radius:2px;background:var(--line);overflow:hidden;flex:none}
+#view .ck-bar i{display:block;height:100%;background:var(--accent)}
+#view .ck-n{font-size:11px;font-weight:400;color:var(--muted)}
+#view .ck-n.all{color:var(--ok)}
+#view .ck-meter:has(.ck-n.all) .ck-bar i{background:var(--ok)}
+#view .rank .ck-meter{grid-column:2}
+#view .rank.tl .ck-meter{grid-column:1}
+#view .g-label .ck-meter{grid-column:2/-1}
+#view .g-label[data-mvrow] .ck-meter{grid-column:3/-1} /* 画面のガントは 4 列（⠿・ID・名前・×）。名前の下に置く */
+/* ガントのバー: 済みの割合だけ濃く塗る（.gck）。残りは同じ色の薄い色。つまみ（.gh）は塗りより前に描くので、位置は変わらない */
+#view .gbar.ck{background:color-mix(in srgb,var(--accent) 35%,var(--surface))}
+#view .gbar.ck .gck{position:absolute;left:0;top:0;bottom:0;border-radius:4px 0 0 4px;background:var(--accent)}
+#view .gbar.ck.b-todo{background:transparent}
+#view .gbar.ck.b-todo .gck{background:var(--todo);opacity:.55}
+#view .gbar.ck.b-wait{background:var(--warn-soft)}
+#view .gbar.ck.b-wait .gck{background:var(--warn);opacity:.45}
+/* チェックリストの編集欄（リストの展開行・ガントの編集の窓）と、リストの「チェック」列のボタン */
+#view .ckedit{border:1px solid var(--accent-soft);background:var(--accent-soft);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+#view .ck-head{display:flex;align-items:center;gap:8px;font-size:13px}
+#view .ck-row,#view .ck-add{display:flex;align-items:center;gap:6px;min-height:34px}
+#view .ck-row .in,#view .ck-add .in{flex:1;min-width:0}
+#view .ck-row .in.done{text-decoration:line-through;color:var(--muted)}
+#view .ck-row input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--accent)}
+#view .ck-add{border-top:1px dashed var(--line);margin-top:4px;padding-top:6px}
+#view .ck-tr>td{background:var(--accent-soft);padding-left:78px}
+#view .ck-tr .ckedit{max-width:640px;border:0;padding:0}
+#view .ck-toggle{font:inherit;font-size:12px;padding:2px 8px;min-height:28px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);cursor:pointer;white-space:nowrap}
+#view .ck-toggle.ck-empty{border-style:dashed;color:var(--muted)}
+#view .tpop .ckedit{margin-block:2px}
+#view .ck-row.drop-before{box-shadow:inset 0 2px 0 var(--accent)}
+#view .ck-row.drop-after{box-shadow:inset 0 -2px 0 var(--accent)}
+/* Done にするときのチェックリストの警告 */
+#view .ask.warn-ck{background:var(--warn-soft);border:1px solid var(--warn);border-radius:8px;padding:10px 12px}
+#view .ask.warn-ck b{color:var(--warn)}
+#view .ask.warn-ck ul{margin:6px 0;padding-left:18px}
+#view .ck-row .gx{opacity:1;position:static;min-width:32px;min-height:32px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -716,7 +755,7 @@ const IMPORTANCE = ["high", "mid", "low"];
 const CAUSES = ["ベンダー", "社内", "自分", "その他"];
 const HOLIDAY_KINDS = ["祝日", "有給", "その他"];
 const REQUEST_STATUS = ["pending", "working", "question", "proposed", "applied", "rejected", "failed"];
-const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask", "addProject", "setStatus", "setImportance", "updateProject", "removeTask", "removeProject", "addMilestone", "moveMilestone", "removeMilestone"];
+const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask", "addProject", "setStatus", "setImportance", "updateProject", "removeTask", "removeProject", "addMilestone", "moveMilestone", "removeMilestone", "addChecklistItem", "setChecklistDone", "setChecklistText", "removeChecklistItem"];
 const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 
 /** 終わったタスク（Done・Cancelled）か */
@@ -795,6 +834,19 @@ function validate(data, now = nowLocal()) {
     if (t.start != null && !isDate(t.start)) err(`タスク ${t.id}: 開始日の形式が不正です (${t.start})`);
     if (t.doneAt != null && !isDate(t.doneAt)) err(`タスク ${t.id}: 完了日の形式が不正です (${t.doneAt})`);
     if (t.importance != null && !IMPORTANCE.includes(t.importance)) err(`タスク ${t.id}: 不明な重要度 "${t.importance}"`);
+    if (t.checklist !== undefined) {
+      if (!Array.isArray(t.checklist)) err(`タスク ${t.id}: チェックリスト (checklist) が配列ではありません`);
+      else {
+        const seen = new Set();
+        for (const c of t.checklist) {
+          if (typeof c?.id !== "string" || !c.id) err(`タスク ${t.id}: チェックリストの項目の ID が文字列ではありません`);
+          else if (seen.has(c.id)) err(`タスク ${t.id}: チェックリストの項目の ID が重複しています: ${c.id}`);
+          else seen.add(c.id);
+          if (typeof c?.text !== "string" || !c.text.trim()) err(`タスク ${t.id}: チェックリストの項目 ${c?.id} の文言が空です`);
+          if (typeof c?.done !== "boolean") err(`タスク ${t.id}: チェックリストの項目 ${c?.id} の done が真偽値ではありません`);
+        }
+      }
+    }
     const preds = t.predecessors ?? [];
     for (const pid of preds) {
       if (!taskIds.has(pid)) err(`タスク ${t.id}: 存在しない前のタスク "${pid}"`);
@@ -926,6 +978,30 @@ function validate(data, now = nowLocal()) {
 }
 
 return { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, IMPORTANCE, CAUSES, HOLIDAY_KINDS, OP_KINDS, DEFAULT_WORKDAY, isClosed, validate };
+})();
+
+/* src/core/checklist.js */
+const { checklistOf, checklistCount, nextChecklistId } = (() => {
+// タスクのチェックリスト（task.checklist = [{ id, text, done }]）の読み取り用の小さな道具。純関数。
+// checklist がないタスクは「チェックリストなし」として扱う。
+
+/** タスクの項目の一覧（なければ空の配列） */
+const checklistOf = (t) => t?.checklist ?? [];
+
+/** 全体・済み・未チェックの件数 */
+function checklistCount(t) {
+  const items = checklistOf(t);
+  const done = items.filter((x) => x.done).length;
+  return { total: items.length, done, open: items.length - done };
+}
+
+/** 次の項目 ID。既存の c<数字> の最大番号 + 1（なければ c1） */
+function nextChecklistId(items) {
+  const max = items.reduce((m, x) => Math.max(m, +(/^c(\d+)$/.exec(x.id)?.[1] ?? 0)), 0);
+  return `c${max + 1}`;
+}
+
+return { checklistOf, checklistCount, nextChecklistId };
 })();
 
 /* src/core/metrics.js */
@@ -1361,6 +1437,7 @@ const { freeSlots, rankTasks, addMeeting, updateMeeting, meetingPast, meetingKin
 
 
 
+
 /** 対象日の空き時間。skip の会議は無視し、重なりを統合して勤務時間内に切り詰める */
 function freeSlots(events, date, workday = DEFAULT_WORKDAY) {
   const [ws, we] = [toMin(workday.start), toMin(workday.end)];
@@ -1399,7 +1476,10 @@ function openDownstream(tasks, id) {
 
 /**
  * 今日の優先。対象は Done/Cancelled 以外で、前のタスクがすべて完了しているもの。
- * 点数 = 期限超過 100 + max(0,14-日数)×3 + 次のタスクの未完了 1 件ごとに 10 + 重要度(高12) + Waiting 15
+ * 点数 = 期限超過 100 + 期限点 × 倍率 + 重要度(高 12)
+ *   期限点 = 残り 30 日以内なら (30−残り日数)×1.5（超過した分も加算）、それより先は 0
+ *   倍率   = 1 + min(未チェックの項目数, 10)/10（Waiting は 1）
+ * 次のタスクの数と Waiting の催促は、点数には使わず、理由の表示だけに残す。
  */
 function rankTasks(data, today) {
   const byId = new Map(data.tasks.map((t) => [t.id, t]));
@@ -1411,16 +1491,16 @@ function rankTasks(data, today) {
     const reasons = [];
     let score = 0;
     if (left < 0) { score += 100; reasons.push(`期限超過 ${-left}日`); }
-    score += Math.max(0, 14 - left) * 3;
-    if (left >= 0 && left <= 14) reasons.push(left === 0 ? "期限は今日" : `期限まで ${left}日`);
+    const waiting = t.status === "Waiting";
+    const mult = waiting ? 1 : 1 + Math.min(checklistCount(t).open, 10) / 10;
+    score += (left <= 30 ? (30 - left) * 1.5 : 0) * mult;
+    if (left >= 0 && left <= 30) reasons.push(left === 0 ? "期限は今日" : `期限まで ${left}日`);
     const blocked = openDownstream(data.tasks, t.id);
-    score += blocked * 10;
     if (blocked) reasons.push(`次のタスク ${blocked} 件を止めている`);
     if (t.importance === "high") { score += 12; reasons.push("重要度: 高"); }
     let action = "work";
-    if (t.status === "Waiting") {
+    if (waiting) {
       action = "chase";
-      score += 15;
       const w = t.waitingOn;
       reasons.unshift(w ? `${w.party} への${left < 0 ? "催促" : "確認"}${isDate(w.since) ? `（回答待ち ${diffDays(today, w.since)}日）` : ""}` : "待ち先が未設定");
     }
@@ -2177,8 +2257,9 @@ return { saveHtmlFile };
 })();
 
 /* src/ui/common.js */
-const { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills } = (() => {
+const { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills, checkMeterHtml } = (() => {
 // 画面共通の小さな道具（HTML エスケープ、日付・時刻の表示、状態の見た目）。DOM には触れない。
+
 
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -2218,7 +2299,15 @@ function flagPills(data, projectId, today, flags) {
   return out.join("");
 }
 
-return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills };
+/** チェックリストの進み具合（細い線と「済み/全体」）。項目がなければ空。remain なら「（残り K 件）」を添える */
+function checkMeterHtml(t, { remain = false } = {}) {
+  const { total, done, open } = checklistCount(t);
+  if (!total) return "";
+  const pct = Math.round((done / total) * 100);
+  return `<span class="ck-meter"><span class="ck-bar"><i style="width:${pct}%"></i></span><b class="ck-n mono${done === total ? " all" : ""}">${done}/${total}${remain ? `（残り ${open} 件）` : ""}</b></span>`;
+}
+
+return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills, checkMeterHtml };
 })();
 
 /* src/ui/deps.js */
@@ -2293,8 +2382,9 @@ return { depPath, depMarkup, drawDeps, focusDeps };
 })();
 
 /* src/ui/edit.js */
-const { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, addPredecessor, moveTask, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject } = (() => {
+const { predecessorCandidates, updateTask, addChecklistItem, updateChecklistItem, removeChecklistItem, moveChecklistItem, checkAllChecklist, newChecklist, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, addPredecessor, moveTask, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject } = (() => {
 // 画面からの編集（追加・削除・更新）。すべて不変更新で、不正な入力は例外にする（呼び出し側が理由を表示する）。
+
 
 
 
@@ -2384,6 +2474,64 @@ function updateTask(data, taskId, patch, today = nowLocal().date) {
     return n;
   });
 }
+
+// ---- チェックリスト（task.checklist = [{ id, text, done }]） ----
+const itemText = (text) => {
+  const s = String(text ?? "").trim();
+  if (!s) throw new Error("項目を入力してください");
+  return s;
+};
+const mapChecklist = (data, taskId, fn) => mapTask(data, taskId, (t) => ({ ...t, checklist: fn(t.checklist ?? []) }));
+const needItem = (items, itemId) => {
+  if (!items.some((c) => c.id === itemId)) throw new Error(`項目 ${itemId} がありません`);
+};
+
+/** 末尾に項目を足す。ID は、いまある最大番号 + 1（c1, c2…） */
+function addChecklistItem(data, taskId, text) {
+  const s = itemText(text);
+  return mapChecklist(data, taskId, (items) => [...items, { id: nextChecklistId(items), text: s, done: false }]);
+}
+
+/** patch: { text?, done? } */
+function updateChecklistItem(data, taskId, itemId, patch) {
+  return mapChecklist(data, taskId, (items) => {
+    needItem(items, itemId);
+    return items.map((c) => {
+      if (c.id !== itemId) return c;
+      const n = { ...c };
+      if ("text" in patch) n.text = itemText(patch.text);
+      if ("done" in patch) n.done = !!patch.done;
+      return n;
+    });
+  });
+}
+
+function removeChecklistItem(data, taskId, itemId) {
+  return mapChecklist(data, taskId, (items) => {
+    needItem(items, itemId);
+    return items.filter((c) => c.id !== itemId);
+  });
+}
+
+/** itemId を beforeId の前へ（null は末尾）。動かしても並びが同じなら、同じ data を返す */
+function moveChecklistItem(data, taskId, itemId, beforeId = null) {
+  const cur = data.tasks.find((t) => t.id === taskId)?.checklist ?? [];
+  needItem(cur, itemId);
+  if (beforeId !== null) needItem(cur, beforeId);
+  if (beforeId === itemId) return data;
+  const moving = cur.find((c) => c.id === itemId);
+  const rest = cur.filter((c) => c.id !== itemId);
+  const at = beforeId === null ? rest.length : rest.findIndex((c) => c.id === beforeId);
+  const next = [...rest.slice(0, at), moving, ...rest.slice(at)];
+  if (next.every((c, i) => c === cur[i])) return data;
+  return mapChecklist(data, taskId, () => next);
+}
+
+/** 全項目を済みにする */
+const checkAllChecklist = (data, taskId) => mapChecklist(data, taskId, (items) => items.map((c) => ({ ...c, done: true })));
+
+/** 文言の一覧から、c1 から採番した項目を作る（空は除く）。addTask に付ける項目用 */
+const newChecklist = (texts) => texts.map((s) => String(s ?? "").trim()).filter(Boolean).map((text, i) => ({ id: `c${i + 1}`, text, done: false }));
 
 /** patch: name / type / status / start / due */
 function updateProject(data, projectId, patch) {
@@ -2675,15 +2823,36 @@ function deleteProject(data, projectId) {
   return { data: { ...data, settings, events, projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
 }
 
-return { predecessorCandidates, updateTask, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, addPredecessor, moveTask, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject };
+return { predecessorCandidates, updateTask, addChecklistItem, updateChecklistItem, removeChecklistItem, moveChecklistItem, checkAllChecklist, newChecklist, updateProject, addMilestone, updateMilestone, deleteMilestone, moveMilestone, moveTaskDates, addPredecessor, moveTask, moveProjectDates, addTaskQuick, addTask, deleteTask, updateSettings, addHoliday, holidayRangeDays, addHolidayRange, removeHoliday, addWorkday, removeWorkday, addProject, deleteProject };
+})();
+
+/* src/ui/donecheck.js */
+const { planDone } = (() => {
+// タスクを Done・Cancelled にするとき、確認が要るものを調べる（データは変えない）。changeStatus が使う。
+
+
+
+/**
+ * open: Done にするとき、未チェックの項目の文言（Cancelled など他の状態では空）
+ * future: Done・Cancelled にすると解除される、未来の予定枠の ID
+ */
+function planDone(data, id, status, now) {
+  const t = data.tasks.find((x) => x.id === id);
+  const open = status === "Done" ? checklistOf(t).filter((c) => !c.done).map((c) => c.text) : [];
+  const future = status === "Done" || status === "Cancelled" ? futurePlanned(data, id, now) : [];
+  return { open, future };
+}
+
+return { planDone };
 })();
 
 /* src/ui/inboxedits.js */
 const { EDITS } = (() => {
 // 受信箱の依頼の操作のうち、1 つの対象（タスク・プロジェクト・マイルストーン）を直す操作。inboxops.js の simulate が、当てる順に呼ぶ。
 // ハンドラは (w, o, ctx) → 新しい w。w は作業用のコピー。対象が無い・値が不正なら例外にし、変更案の行は ctx.rows[節の名前] に足す。
-// ctx: { today, warnings, rows, taskId(token), projectId(token), touch(taskId), log(taskId), touchProject(projectId), dueGiven }
+// ctx: { today, warnings, rows, taskId(token), projectId(token), touch(taskId), touchChecklist(taskId), log(taskId), touchProject(projectId), dueGiven }
 //   taskId・projectId は、同じ依頼の addTask・addProject の ref を、採番後の ID にする。touch は承認時の確認（base）の対象、log は変更履歴に載せるタスク。
+
 
 
 
@@ -2693,6 +2862,11 @@ const taskOf = (w, id) => {
   const t = w.tasks.find((x) => x.id === id);
   if (!t) throw new Error(`タスク ${id} がありません`);
   return t;
+};
+const itemOf = (t, itemId) => {
+  const c = checklistOf(t).find((x) => x.id === itemId);
+  if (!c) throw new Error(`タスク ${t.id} に項目 ${itemId} がありません`);
+  return c;
 };
 const projectOf = (w, id) => {
   const p = w.projects.find((x) => x.id === id);
@@ -2734,6 +2908,49 @@ const EDITS = {
     ctx.touch(id); ctx.log(id);
     ctx.rows.importance.push({ taskId: id, title: t.title, old: t.importance ?? null, new: o.importance ?? null });
     return next;
+  },
+
+  /** 項目を末尾に足す。ID は画面の追加と同じ規則（最大番号 + 1） */
+  addChecklistItem(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    const next = addChecklistItem(w, id, o.text);
+    const item = checklistOf(taskOf(next, id)).at(-1);
+    ctx.touch(id); ctx.touchChecklist(id); ctx.log(id);
+    ctx.rows.checklist.push({ taskId: id, title: t.title, action: "add", itemId: item.id, text: item.text, old: null, new: item.text });
+    return next;
+  },
+
+  setChecklistDone(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    if (typeof o.done !== "boolean") throw new Error(`setChecklistDone（${id}）には done（true か false）が必要です`);
+    const cur = itemOf(t, o.itemId);
+    if (cur.done === o.done) { ctx.warnings.push(`タスク ${id} の項目 ${cur.id} は、すでに${o.done ? "済み" : "未チェック"}なので変わりません`); return w; }
+    ctx.touch(id); ctx.touchChecklist(id); ctx.log(id);
+    ctx.rows.checklist.push({ taskId: id, title: t.title, action: o.done ? "check" : "uncheck", itemId: cur.id, text: cur.text, old: cur.done, new: o.done });
+    return updateChecklistItem(w, id, cur.id, { done: o.done });
+  },
+
+  setChecklistText(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    const cur = itemOf(t, o.itemId);
+    const next = updateChecklistItem(w, id, cur.id, { text: o.text });
+    const text = itemOf(taskOf(next, id), cur.id).text;
+    if (text === cur.text) { ctx.warnings.push(`タスク ${id} の項目 ${cur.id} は、指定どおりの文言なので変わりません`); return w; }
+    ctx.touch(id); ctx.touchChecklist(id); ctx.log(id);
+    ctx.rows.checklist.push({ taskId: id, title: t.title, action: "text", itemId: cur.id, text, old: cur.text, new: text });
+    return next;
+  },
+
+  removeChecklistItem(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    const cur = itemOf(t, o.itemId);
+    ctx.touch(id); ctx.touchChecklist(id); ctx.log(id);
+    ctx.rows.checklist.push({ taskId: id, title: t.title, action: "remove", itemId: cur.id, text: cur.text, old: cur.text, new: null });
+    return removeChecklistItem(w, id, cur.id);
   },
 
   updateProject(w, o, ctx) {
@@ -2815,7 +3032,7 @@ const { summarizeSections, planOps, applyProposal } = (() => {
 // 受信箱の依頼の「変更の操作（ops）」の計画と適用。HTML と CLI（tools/inbox.js）が共有する。
 // 計画（planOps）は、操作を作業用のコピーに当てて、変更案の表・警告・適用前の確認用の値（base）を作る。データは変えない。
 // 適用（applyProposal）は、base が現在のデータと同じときだけ、同じ手順で操作を当てて、変更履歴を足す。
-// 当てる順: addProject → addTask → updateProject → setStatus・setImportance → addMilestone → moveMilestone → removeMilestone → addPred・removePred → moveDue → removeTask → removeProject（それぞれ書かれた順）。次のタスクの動きは computeImpact の規則に合わせる。
+// 当てる順: addProject → addTask → updateProject → setStatus・setImportance → addChecklistItem・setChecklistDone・setChecklistText・removeChecklistItem → addMilestone → moveMilestone → removeMilestone → addPred・removePred → moveDue → removeTask → removeProject（それぞれ書かれた順）。次のタスクの動きは computeImpact の規則に合わせる。
 
 
 
@@ -2824,6 +3041,7 @@ const { summarizeSections, planOps, applyProposal } = (() => {
 
 
 const max = (a, b) => (a > b ? a : b);
+const CHECKLIST_OPS = ["addChecklistItem", "setChecklistDone", "setChecklistText", "removeChecklistItem"];
 
 function simulate(data, ops, today) {
   if (!Array.isArray(ops) || !ops.length) throw new Error("操作がありません");
@@ -2841,11 +3059,12 @@ function simulate(data, ops, today) {
   const warnings = [];
   const predRows = [], addInfo = [], moves = [];
   const inboxIds = new Set();   // source: inbox の記録に載せるタスク
+  const ckTouched = new Set();  // チェックリストの操作が触る既存のタスク（base に、項目の中身を入れる）
   const projects = new Set();
   const projectRefs = new Map(); // addProject の ref → 採番した ID
   const newProjects = [];        // { ref, id }
   const dueGiven = new Set();    // 期限が指定された新規プロジェクトの ID（それ以外は、タスクの最終期限から決める）
-  const rows = { status: [], importance: [], projectChange: [], milestone: [], removeTask: [], removeProject: [] }; // inboxedits.js の操作の変更案の行
+  const rows = { status: [], importance: [], checklist: [], projectChange: [], milestone: [], removeTask: [], removeProject: [] }; // inboxedits.js の操作の変更案の行
   let predCount = 0, addCount = 0;
 
   const setDue = (id, due, reason) => {
@@ -2923,7 +3142,9 @@ function simulate(data, ops, today) {
     planned.set(o, o.businessDays === undefined ? o : (({ businessDays, ...rest }) => ({ ...rest, due }))(o));
     // 開始日: 書かれていればそのとおり。前のタスクがあるタスクは入れない（前のタスクから決まる開始日にする）。なければ今日（期限が過去なら入れない）
     const start = o.start ?? ((o.predecessors ?? []).length || due < today ? null : today);
-    w = addTask(w, { projectId: pidOf(o), title: o.title, due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
+    if (o.checklist !== undefined && (!Array.isArray(o.checklist) || o.checklist.some((x) => typeof x !== "string"))) throw new Error(`addTask（${ref}）の checklist は文字列の配列にしてください`);
+    const items = o.checklist?.length ? newChecklist(o.checklist) : [];
+    w = addTask(w, { projectId: pidOf(o), title: o.title, due, start, group: o.group ?? null, subgroup: o.subgroup ?? null, ...(items.length ? { checklist: items } : {}) });
     const id = w.tasks.at(-1).id;
     refs.set(ref, id);
     inboxIds.add(id);
@@ -2953,11 +3174,13 @@ function simulate(data, ops, today) {
     taskId: resolve,
     projectId: (token) => projectRefs.get(token) ?? token,
     touch: (id) => { if (before.has(id)) touched.add(id); },
+    touchChecklist: (id) => { if (before.has(id)) ckTouched.add(id); },
     log: (id) => inboxIds.add(id),
     touchProject: (id) => { if (!newProjects.some((n) => n.id === id)) projects.add(id); },
   };
   for (const o of ops.filter((x) => x.op === "updateProject")) w = EDITS.updateProject(w, o, editCtx);
   for (const o of ops.filter((x) => x.op === "setStatus" || x.op === "setImportance")) w = EDITS[o.op](w, o, editCtx);
+  for (const o of ops.filter((x) => CHECKLIST_OPS.includes(x.op))) w = EDITS[o.op](w, o, editCtx);
 
   for (const kind of ["addMilestone", "moveMilestone", "removeMilestone"]) for (const o of ops.filter((x) => x.op === kind)) w = EDITS[kind](w, o, editCtx);
 
@@ -3062,18 +3285,18 @@ function simulate(data, ops, today) {
 
   const baseIds = new Set([...touched, ...[...changed].filter((id) => before.has(id))]);
   const baseTasks = {};
-  for (const id of baseIds) { const t = before.get(id); baseTasks[id] = { due: t.due, predecessors: [...(t.predecessors ?? [])], status: t.status }; projects.add(t.projectId); }
+  for (const id of baseIds) { const t = before.get(id); baseTasks[id] = { due: t.due, predecessors: [...(t.predecessors ?? [])], status: t.status, ...(ckTouched.has(id) ? { checklist: JSON.stringify(t.checklist ?? []) } : {}) }; projects.add(t.projectId); } // 項目を触るタスクは、項目の中身も承認時に比べる
 
   // 前のタスクが、そのまた前のタスクに合わせて引き上げられると、businessDays の期限も引き上げられ、営業日が吸収される。表の営業日と食い違うので知らせる
   for (const o of adds.filter((x) => x.businessDays !== undefined)) {
     const ref = String(o.ref).trim();
     if (T(refs.get(ref)).due !== dueOf.get(ref)) warnings.push(`登録するタスク ${ref}（${o.title}）の営業日 ${o.businessDays} は、前のタスクの期限が引き上げられたため反映されていません（期限は ${T(refs.get(ref)).due}）`);
   }
-  const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, businessDays: o.businessDays ?? null, start: t.start ?? null, predecessors: o.predecessors ?? [] }; });
+  const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, businessDays: o.businessDays ?? null, start: t.start ?? null, predecessors: o.predecessors ?? [], checklist: (t.checklist ?? []).map((c) => c.text) }; });
   const sections = [];
   if (projectRows.length) sections.push({ kind: "project", rows: projectRows });
   if (addRows.length) sections.push({ kind: "add", rows: addRows });
-  for (const kind of ["status", "importance", "projectChange", "milestone"]) if (rows[kind].length) sections.push({ kind, rows: rows[kind] });
+  for (const kind of ["status", "importance", "checklist", "projectChange", "milestone"]) if (rows[kind].length) sections.push({ kind, rows: rows[kind] });
   if (predRows.length) sections.push({ kind: "pred", rows: predRows });
   if (dueRows.length) sections.push({ kind: "due", rows: dueRows });
   for (const kind of ["removeTask", "removeProject"]) if (rows[kind].length) sections.push({ kind, rows: rows[kind] });
@@ -3086,16 +3309,17 @@ const sectionsKey = (sections) => JSON.stringify(sections.map((s) => [s.kind, s.
     : s.kind === "project" ? [r.ref, r.id, r.name, r.type]
     : s.kind === "status" ? [r.taskId, r.oldStatus, r.newStatus, r.oldWaitingOn, r.newWaitingOn?.party ?? null]
     : s.kind === "importance" ? [r.taskId, r.old, r.new]
+    : s.kind === "checklist" ? [r.taskId, r.action, r.itemId, r.old, r.new]
     : s.kind === "projectChange" ? [r.projectId, r.name, r.changes]
     : s.kind === "milestone" ? [r.projectId, r.action, r.name, r.oldDate, r.newDate]
     : s.kind === "removeTask" ? [r.taskId, r.status, r.affected.map((a) => a.taskId)]
     : s.kind === "removeProject" ? [r.projectId, r.tasks.map((t) => [t.taskId, t.status]), r.eventLinks]
     : s.kind === "pred" ? [r.taskId, r.predId, r.action]
-      : [r.ref, r.title, r.projectId, r.group, r.subgroup, r.due, r.predecessors])]));
+      : [r.ref, r.title, r.projectId, r.group, r.subgroup, r.due, r.predecessors, r.checklist])]));
 
 const count = (sections, ...kinds) => sections.filter((s) => kinds.includes(s.kind)).reduce((n, s) => n + s.rows.filter((r) => r.action !== "same").length, 0);
 /** 節の件数のうち、あるときだけ書く項目（プロジェクト・状態・重要度・プロジェクト変更・削除）。要約と変更履歴の reason の先頭に付く */
-const extraParts = (sections) => [[["project"], "プロジェクト"], [["status"], "状態"], [["importance"], "重要度"], [["projectChange"], "プロジェクト変更"], [["milestone"], "マイルストーン"], [["removeTask", "removeProject"], "削除"]]
+const extraParts = (sections) => [[["project"], "プロジェクト"], [["status"], "状態"], [["importance"], "重要度"], [["checklist"], "チェックリスト"], [["projectChange"], "プロジェクト変更"], [["milestone"], "マイルストーン"], [["removeTask", "removeProject"], "削除"]]
   .filter(([kinds]) => count(sections, ...kinds)).map(([kinds, label]) => `${label} ${count(sections, ...kinds)} 件`);
 
 /** 変更案（sections）の要約。例: 「期限 2 件・順番 1 件・登録 2 件」（変更なしの前のタスクは数えない）。ほかの節があるときだけ、先頭に「プロジェクト 1 件・」などが付く */
@@ -3118,6 +3342,7 @@ function applyProposal(data, proposal, { reason, cause, today }) {
   for (const [id, v] of Object.entries(proposal.base?.tasks ?? {})) {
     const t = data.tasks.find((x) => x.id === id);
     if (!t || t.due !== v.due || t.status !== v.status || (t.predecessors ?? []).join(",") !== (v.predecessors ?? []).join(",")) throw stale();
+    if ("checklist" in v && JSON.stringify(t.checklist ?? []) !== v.checklist) throw stale(); // 提案のあとに画面で項目が変わった
   }
   for (const pid of proposal.base?.projects ?? []) if (!(data.projects ?? []).some((p) => p.id === pid)) throw stale();
 
@@ -3158,9 +3383,15 @@ function statusButtons(t) {
   return start || done ? `<span class="bb">${start}${done}</span>` : "";
 }
 
-/** 未来の予定の枠を解除して Done・Cancelled にする確認（今日のタスクの行と、リストの状態の欄が使う） */
+/** Done・Cancelled にする前の確認（今日のタスクの行と、リストの状態の欄が使う）。
+ *  stage が "check" なら、未完了のチェック項目の警告（残りをチェックして Done／そのまま Done／やめる）。
+ *  それ以外（"future"、または stage なし）は、未来の予定の枠を解除する確認 */
 function doneAskHtml(pd) {
-  return `<div class="ask" style="max-width:none">${esc(pd.id)} の未来の予定の枠 ${pd.n} 件を解除して ${esc(pd.status)} にします。<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-doneok="${esc(pd.id)}">解除して ${esc(pd.status)} にする</button><button class="btn" data-doneno>やめる</button></div></div>`;
+  const id = esc(pd.id);
+  if (pd.stage === "check") {
+    return `<div class="ask warn-ck" role="alert" style="max-width:none"><b>チェックリストに、未完了の項目が ${pd.open.length} 件あります。</b><ul>${pd.open.map((x) => `<li>${esc(x)}</li>`).join("")}</ul><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"><button class="btn" data-ckall="${id}">残りをすべてチェックして ${esc(pd.status)} にする</button><button class="btn" data-ckkeep="${id}">未完了のまま ${esc(pd.status)} にする</button><button class="btn" data-doneno>やめる</button></div></div>`;
+  }
+  return `<div class="ask" style="max-width:none">${id} の未来の予定の枠 ${pd.n} 件を解除して ${esc(pd.status)} にします。<div style="display:flex;gap:6px;margin-top:4px"><button class="btn danger" data-doneok="${id}">解除して ${esc(pd.status)} にする</button><button class="btn" data-doneno>やめる</button></div></div>`;
 }
 
 /** 今日の日付に作業枠（予定・実績・未確認）があるタスクを [{ t, slots }] で返す。未完了を最初の枠の開始順に、Done・Cancelled を末尾に */
@@ -3182,7 +3413,7 @@ function renderTodayTasks(data, today, opts = {}) {
     const proj = esc(data.projects.find((p) => p.id === t.projectId)?.name ?? "");
     const times = slots.map((s) => esc(`${s.start}–${s.end}`)).join("、");
     const ask = opts.pendingDone?.id === t.id ? doneAskHtml(opts.pendingDone) : "";
-    return `<li data-today="${esc(t.id)}"${isClosed(t) ? ' class="closed"' : ""}><span class="pj">${proj}</span><span class="t">${esc(t.title)} ${statusPill(t)}</span><span class="why mono">${times}</span>${isClosed(t) ? "" : statusButtons(t)}${ask}</li>`;
+    return `<li data-today="${esc(t.id)}"${isClosed(t) ? ' class="closed"' : ""}><span class="pj">${proj}</span><span class="t">${esc(t.title)} ${statusPill(t)}</span><span class="why mono">${times}</span>${isClosed(t) ? "" : checkMeterHtml(t, { remain: true })}${isClosed(t) ? "" : statusButtons(t)}${ask}</li>`;
   }).join("");
   return `<section class="panel todaytasks" aria-labelledby="h-td"><h2 id="h-td">今日のタスク</h2><ul class="rank tl">${items}</ul></section>`;
 }
@@ -3203,7 +3434,7 @@ function renderPrio(data, today, opts = {}) {
     const pill = a.count ? ` <span class="pill ok">${a.count}回・実績 ${a.hours.toFixed(1)}h</span>` : "";
     const proj = esc(data.projects.find((p) => p.id === t.projectId)?.name ?? "");
     const drag = sched ? ` draggable="true" data-pick="${esc(t.id)}" tabindex="0"` : "";
-    return `<li${drag} class="${picked === t.id ? "picked" : ""}"><span class="n">${i + 1}</span><span class="pj">${proj}</span><span class="t">${r.action === "chase" ? `<span class="act">${r.reasons.some((x) => x.includes("催促")) ? "催促" : "確認"}</span>` : ""}${esc(t.title)} ${statusPill(t)}${pill}</span><span class="why">${esc(r.reasons.join("。"))}</span></li>`;
+    return `<li${drag} class="${picked === t.id ? "picked" : ""}"><span class="n">${i + 1}</span><span class="pj">${proj}</span><span class="t">${r.action === "chase" ? `<span class="act">${r.reasons.some((x) => x.includes("催促")) ? "催促" : "確認"}</span>` : ""}${esc(t.title)} ${statusPill(t)}${pill}</span>${checkMeterHtml(t, { remain: true })}<span class="why">${esc(r.reasons.join("。"))}</span></li>`;
   }).join("");
   const note = sched
     ? "タスクをカレンダーへドラッグして配置します(15分刻み・長さ1時間)。配置済みの枠もドラッグで移動できます。キーボードでは、タスクを選んで日表示の空き枠を押します。"
@@ -3226,6 +3457,7 @@ return { doneAskHtml, todayTaskIds, renderTodayTasks, renderPrio, renderSide, re
 /* src/ui/views/gantt.js */
 const { assignLevels, layoutMilestones, renderGantt } = (() => {
 // ガントチャート（画面とレポートで共用）。位置と幅はすべて範囲全体に対する % で表し、画面幅に追従させる。
+
 
 
 
@@ -3364,9 +3596,11 @@ function renderGantt(data, projectIds, today, opts = {}) {
       const gt = readonly ? "" : ` data-gt="${esc(t.id)}"${hasPre ? ` data-pre="${esc(t.predecessors.join(" "))}"` : ""}`;
       const drag = readonly ? "" : " gdrag";
       const label = `${esc(t.id)} ${esc(t.title)} ${fmtMD(r.start)}〜${fmtMD(r.end)}`;
+      const ck = checklistCount(t);
+      const ckFill = ck.total && t.status !== "Done" && t.status !== "Cancelled" ? `<u class="gck" style="width:${Math.round((ck.done / ck.total) * 100)}%"></u>` : ""; // 済みの割合だけ濃く塗る（完了したタスクは今までどおり）
       const bar = r.point
         ? `<i class="dot mk${drag} ${ui.dot}${late ? " is-late" : ""}"${gt} style="left:calc(${x(r.end)} + ${(50 / total).toFixed(3)}%)" title="${label}${readonly ? "" : "(ドラッグで期限を変更)"}"></i>`
-        : `<i class="gbar${drag} ${ui.bar}${late ? " is-late" : ""}"${gt} style="left:${x(r.start)};width:${(((diffDays(r.end, r.start) + 1) / total) * 100).toFixed(3)}%;min-width:5px" title="${label}${readonly ? "" : "(クリックで編集、ドラッグで移動、両端で開始・期限を変更)"}">${readonly ? "" : '<b class="gh l" data-gh="l"></b><b class="gh r" data-gh="r"></b>'}</i>`;
+        : `<i class="gbar${drag} ${ui.bar}${ckFill ? " ck" : ""}${late ? " is-late" : ""}"${gt} style="left:${x(r.start)};width:${(((diffDays(r.end, r.start) + 1) / total) * 100).toFixed(3)}%;min-width:5px" title="${label}${readonly ? "" : "(クリックで編集、ドラッグで移動、両端で開始・期限を変更)"}">${ckFill}${readonly ? "" : '<b class="gh l" data-gh="l"></b><b class="gh r" data-gh="r"></b>'}</i>`;
       const act = r.actual && showActual
         ? `<i class="gact" style="left:${x(r.actual.start)};width:${((Math.max(diffDays(r.actual.end, r.actual.start), 0) + 1) / total * 100).toFixed(3)}%;min-width:4px" title="実績 ${fmtMD(r.actual.start)}〜${fmtMD(r.actual.end)}"></i>`
         : "";
@@ -3378,7 +3612,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
         const name = readonly ? `<span class="g-name">${esc(t.title)}</span>` : `<button class="g-name" data-gedit="${esc(t.id)}" title="クリックで編集">${esc(t.title)}</button>`;
         const del = readonly ? "" : `<button class="gx" data-del="${esc(t.id)}" aria-label="${esc(t.id)} を削除">×</button>`;
         const imp = t.importance === "high" && !["Done", "Cancelled"].includes(t.status) ? " imp-high" : ""; // 重要度の印（高）。完了したタスクには付けない
-        lab = `<div class="g-label${imp}"${readonly ? "" : ` data-mvrow="${esc(t.id)}"`}>${readonly ? "" : `<span class="mv" draggable="true" data-mvh="${esc(t.id)}" title="ドラッグで並べ替え" aria-label="${esc(t.id)} を並べ替え">⠿</span>`}<span class="id">${esc(t.id)}</span>${name}${del}<span class="g-pre">${hasPre ? "← " + esc(t.predecessors.join(", ")) : ""}</span></div>`;
+        lab = `<div class="g-label${imp}"${readonly ? "" : ` data-mvrow="${esc(t.id)}"`}>${readonly ? "" : `<span class="mv" draggable="true" data-mvh="${esc(t.id)}" title="ドラッグで並べ替え" aria-label="${esc(t.id)} を並べ替え">⠿</span>`}<span class="id">${esc(t.id)}</span>${name}${del}<span class="g-pre">${hasPre ? "← " + esc(t.predecessors.join(", ")) : ""}</span>${checkMeterHtml(t)}</div>`;
       }
       return `<div class="g-row">${lab}<div class="g-lane" ${laneStyle}>${bar}${act}<span class="g-due mono" style="left:${x(addDays(r.end, 1))}">${fmtMD(t.due)}</span></div></div>`;
     };
@@ -3884,6 +4118,12 @@ function sectionHtml(data, s) {
     const rows = s.rows.map((r) => `<tr><td class="id">${esc(r.taskId)}</td><td>${esc(r.title)}</td><td>${esc(r.old ?? "（なし）")}</td><td><b>${esc(r.new ?? "（外す）")}</b></td></tr>`).join("");
     return `<div class="ib-sec"><b>重要度の変更（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>ID</th><th>件名</th><th>今の重要度</th><th>新しい重要度</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
+  if (s.kind === "checklist") {
+    const label = { add: "追加", check: "チェック", uncheck: "チェックを外す", text: "文言の変更", remove: "削除" };
+    const item = (r) => (r.action === "text" ? `${esc(r.old)} → <b>${esc(r.new)}</b>` : esc(r.text ?? r.new ?? r.old ?? ""));
+    const rows = s.rows.map((r) => `<tr><td class="id">${esc(r.taskId)}</td><td>${esc(r.title)}</td><td><span class="pill ${r.action === "remove" ? "bad" : "ok"}">${label[r.action] ?? esc(r.action)}</span></td><td><span class="mono muted">${esc(r.itemId)}</span> ${item(r)}</td></tr>`).join("");
+    return `<div class="ib-sec"><b>チェックリストの変更（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>ID</th><th>件名</th><th>操作</th><th>項目</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
   if (s.kind === "projectChange") {
     const label = { name: "名前", type: "種別", status: "状態", start: "開始日", due: "期限" };
     const rows = s.rows.flatMap((r) => r.changes.map((c) => `<tr><td class="id">${esc(r.projectId)}</td><td>${esc(r.name)}</td><td>${label[c.field] ?? esc(c.field)}</td><td>${esc(c.old)}</td><td><b>${esc(c.new)}</b></td></tr>`)).join("");
@@ -3903,7 +4143,7 @@ function sectionHtml(data, s) {
     return `<div class="ib-sec ib-danger"><b>プロジェクトの削除（${s.rows.length} 件）</b><ul class="ib-list">${rows}</ul></div>`;
   }
   if (s.kind === "add") {
-    const rows = s.rows.map((r, i) => `<tr data-row="${i + 1}"><td class="mono">${i + 1}</td><td>${esc(r.title)}</td><td>${r.group ? esc(r.group) : "（なし）"}${r.subgroup ? ` ▸ ${esc(r.subgroup)}` : ""}</td><td class="mono">${esc(r.businessDays ?? "—")}</td><td class="mono">${fmtMD(r.due)}</td><td class="mono">${(r.predecessors ?? []).length ? esc(r.predecessors.join(", ")) : "—"}</td></tr>`).join("");
+    const rows = s.rows.map((r, i) => `<tr data-row="${i + 1}"><td class="mono">${i + 1}</td><td>${esc(r.title)}${(r.checklist ?? []).length ? ` <span class="muted">（項目 ${r.checklist.length} 件）</span>` : ""}</td><td>${r.group ? esc(r.group) : "（なし）"}${r.subgroup ? ` ▸ ${esc(r.subgroup)}` : ""}</td><td class="mono">${esc(r.businessDays ?? "—")}</td><td class="mono">${fmtMD(r.due)}</td><td class="mono">${(r.predecessors ?? []).length ? esc(r.predecessors.join(", ")) : "—"}</td></tr>`).join("");
     return `<div class="ib-sec"><b>タスクの登録（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>#</th><th>件名</th><th>大項目 ▸ 中項目</th><th>営業日</th><th>期限</th><th>前のタスク</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   return "";
@@ -3974,11 +4214,32 @@ function renderInboxBar(data, ui) {
 return { ibExamples, renderInboxBar };
 })();
 
+/* src/ui/views/checklist.js */
+const { checklistEditorHtml } = (() => {
+// チェックリストの編集欄（リストの展開行と、ガントの編集の窓が共用）。
+// 属性（data-ck*）は app.js のイベントが読む: data-ckbox（タスク）・data-ckid（項目の行）・data-ckmv（並び替えの取っ手）・
+//   data-ckdone（チェック）・data-cktext（文言）・data-ckdel（削除）・data-ckadd（追加欄）。値は「タスクID|項目ID」。
+
+
+
+function checklistEditorHtml(t) {
+  const id = esc(t.id);
+  const rows = checklistOf(t).map((c) => {
+    const key = `${id}|${esc(c.id)}`;
+    return `<div class="ck-row" data-ckid="${esc(c.id)}"><span class="mv" draggable="true" data-ckmv="${key}" title="ドラッグで並べ替え" aria-label="${esc(c.text)} を並べ替え">⠿</span><input type="checkbox" data-ckdone="${key}"${c.done ? " checked" : ""} aria-label="済み"><input class="in${c.done ? " done" : ""}" data-cktext="${key}" value="${esc(c.text)}" aria-label="項目"><button class="gx" data-ckdel="${key}" aria-label="${esc(c.text)} を削除">×</button></div>`;
+  }).join("");
+  return `<div class="ckedit" data-ckbox="${id}"><div class="ck-head"><b>チェックリスト</b> ${checkMeterHtml(t)}</div>${rows}<div class="ck-add"><input class="in" data-ckadd="${id}" placeholder="項目を追加（Enter で追加）" aria-label="項目を追加"></div></div>`;
+}
+
+return { checklistEditorHtml };
+})();
+
 /* src/ui/views/taskpop.js */
 const { predEditHtml, startInputHtml, renderTaskPop } = (() => {
 // ガントチャートでタスク名・バーをクリックしたときに開く、編集の小さな窓。
 // 入力の属性（data-f・data-id・data-addpre・data-rmpre）は、リストの編集欄と同じ。保存と描き直しは、リストと同じ処理が受け持つ。
 // 窓を閉じる ×: data-tpopclose / 窓: data-tpop。「リストで開く」は data-goto、削除は data-del（どちらも既存の処理）
+
 
 
 
@@ -4013,6 +4274,7 @@ function renderTaskPop(data, pop, statusHtml) {
     ${field("件名", `<input class="in" data-f="title" data-id="${id}" value="${esc(t.title)}">`)}
     <div class="tp-f"><span class="muted">状態</span><div>${statusHtml}</div></div>
     <div class="tp-r">${field("開始", startInputHtml(data, t))}${field("期限", `<input class="in" type="date" data-f="due" data-id="${id}" value="${esc(t.due)}">`)}</div>
+    ${checklistEditorHtml(t)}
     <div class="tp-f"><span class="muted">前のタスク</span>${predEditHtml(data, t)}</div>
     <div class="tp-r">${field("重要度", `<select class="in sm" data-f="importance" data-id="${id}">${importance}</select>`)}</div>
     ${field("メモ", `<input class="in" data-f="memo" data-id="${id}" value="${esc(t.memo ?? "")}" placeholder="メモ">`)}
@@ -4026,6 +4288,8 @@ return { predEditHtml, startInputHtml, renderTaskPop };
 /* src/ui/views/project.js */
 const { renderProjects } = (() => {
 // プロジェクト画面: 絞り込み × ガント／リスト、右に「今日のタスク」「今日の優先」
+
+
 
 
 
@@ -4051,6 +4315,14 @@ function statusCellHtml(t, opts, late) {
   return `<select class="in" data-f="status" data-id="${id}" aria-label="${id} の状態">${TASK_STATUS.map((o) => `<option ${o === t.status ? "selected" : ""}>${o}</option>`).join("")}</select>${late ? ` <span class="pill late">期限超過</span>` : ""}`;
 }
 
+/** リストの「チェック」列。押すと、その行の下に編集欄が開く（開いているタスクは opts.checkOpen の Set） */
+function checkCell(t, opts) {
+  const { total, done } = checklistCount(t);
+  const open = !!opts.checkOpen?.has(t.id);
+  const label = total ? `${open ? "▾" : "▸"} ${done}/${total}` : "＋ 追加";
+  return `<button class="ck-toggle${total ? "" : " ck-empty"}" data-cktoggle="${esc(t.id)}" aria-expanded="${open}" aria-label="${esc(t.id)} のチェックリスト">${label}</button>`;
+}
+
 function renderList(data, p, today, opts) {
   const prog = projectProgress(data, p.id);
   const tasks = data.tasks.filter((t) => t.projectId === p.id);
@@ -4073,13 +4345,14 @@ function renderList(data, p, today, opts) {
       <td data-l="待ち先"><input class="in" data-f="party" data-id="${esc(t.id)}" value="${esc(t.waitingOn?.party ?? "")}" placeholder="${t.status === "Waiting" ? "ベンダー・部署名" : "—"}" ${t.status === "Waiting" ? "" : "disabled"} aria-label="${esc(t.id)} の待ち先">${needParty}</td>
       <td data-l="重要度"><select class="in sm" data-f="importance" data-id="${esc(t.id)}" aria-label="${esc(t.id)} の重要度">${[["", "—"], ["high", "高"]].map(([v, l]) => `<option value="${v}" ${(t.importance ?? "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></td>
       <td data-l="メモ"><input class="in" data-f="memo" data-id="${esc(t.id)}" value="${esc(t.memo ?? "")}" placeholder="メモ" aria-label="${esc(t.id)} のメモ"></td>
-      <td data-l="実績" class="mono muted">${actText(data, t.id)}</td><td data-l="">${delCell}</td></tr>`;
+      <td data-l="チェック">${checkCell(t, opts)}</td>
+      <td data-l="実績" class="mono muted">${actText(data, t.id)}</td><td data-l="">${delCell}</td></tr>${opts.checkOpen?.has(t.id) ? `<tr class="ck-tr" data-ckpanel="${esc(t.id)}"><td colspan="14">${checklistEditorHtml(t)}</td></tr>` : ""}`;
   };
   // (大項目, 中項目) ごとに見出し行を入れて並べる。「＋」はそのグループへ追加する入口なので、0 件でも「（なし）」を出す
   const secs = groupSections(tasks, { ensureNone: true });
   const rows = secs.map((sec) => {
     const name = `${sec.group || "（なし）"}${sec.subgroup ? ` ▸ ${sec.subgroup}` : ""}`;
-    return `<tr class="grp-tr" data-mvgrp="${esc(p.id)}" data-mvg="${esc(sec.group)}" data-mvsg="${esc(sec.subgroup)}"><td colspan="13"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""} <button class="plus" data-addat="${esc(p.id)}" data-ag="${esc(sec.group)}" data-asg="${esc(sec.subgroup)}" aria-label="${esc(name)} にタスクを追加">＋</button></td></tr>${sec.tasks.map(rowOf).join("")}`;
+    return `<tr class="grp-tr" data-mvgrp="${esc(p.id)}" data-mvg="${esc(sec.group)}" data-mvsg="${esc(sec.subgroup)}"><td colspan="14"><b>${esc(sec.group || "（なし）")}</b>${sec.subgroup ? ` <span class="muted">▸ ${esc(sec.subgroup)}</span>` : ""} <button class="plus" data-addat="${esc(p.id)}" data-ag="${esc(sec.group)}" data-asg="${esc(sec.subgroup)}" aria-label="${esc(name)} にタスクを追加">＋</button></td></tr>${sec.tasks.map(rowOf).join("")}`;
   }).join("");
 
   const projTaskIds = new Set(tasks.map((t) => t.id));
@@ -4099,7 +4372,7 @@ function renderList(data, p, today, opts) {
       <label>開始 <input class="in sm" type="date" data-pf="start" data-pid="${esc(p.id)}" value="${esc(p.start)}" aria-label="${esc(p.name)} の開始日"></label>
       <label>期限 <input class="in sm" type="date" data-pf="due" data-pid="${esc(p.id)}" value="${esc(p.due)}" aria-label="${esc(p.name)} の期限"></label>
       <span>進捗 <b class="mono">${prog.done}/${prog.total}</b> (${Math.round(prog.rate * 100)}%)</span><span class="mono hrs">${(() => { const hh = projectHours(data, p.id); return `稼働 ${(hh.task + hh.meeting).toFixed(1)}h（タスク ${hh.task.toFixed(1)}h・会議 ${hh.meeting.toFixed(1)}h）`; })()}</span></div></div><div>${flagPills(data, p.id, today, projectFlags(data, p.id, today))}</div></div>
-    </div><div class="twrap"><div class="thstrip" aria-hidden="true"></div><div class="tscroll tlist"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>前のタスク</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
+    </div><div class="twrap"><div class="thstrip" aria-hidden="true"></div><div class="tscroll tlist"><table class="tbl edit"><thead><tr><th>ID</th><th>${esc(labels.group)}</th><th>${esc(labels.subgroup)}</th><th>件名</th><th>状態</th><th>開始</th><th>期限</th><th>前のタスク</th><th>待ち先</th><th>重要度</th><th>メモ</th><th>チェック</th><th>実績</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
     <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="note">変更はその場でファイルに保存されます。次のタスクの日程をまとめて見直すときは、画面の下端の「Claude Code に依頼する」に頼みます。</span></div>
     <h2 style="margin:18px 0 8px;font-size:13px">マイルストーン</h2>
     <div class="mslist">${ms}<div><button class="btn" data-msadd="${esc(p.id)}">＋ マイルストーンを追加</button> <span class="note">ガントに◆で表示されます。</span></div></div>
@@ -4291,7 +4564,7 @@ const S = {
   data: null, openError: "",
   screen: "gantt",
   filter: "all", gwin: "m6", hideDone: false,
-  askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
+  askDel: null, askDelProject: null, pendingWait: null, pendingDone: null, checkOpen: new Set(),
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
   prefs: loadPrefs(), settingsClosed: loadSettingsClosed(), tpop: null, addAt: null, last: null, ruleError: "",
   ib: { open: false, text: loadInboxDraft(), projectId: "", replies: {}, reasons: {}, causes: {} },
@@ -4325,7 +4598,7 @@ function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
   if (S.screen === "gantt" || S.screen === "list") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.screen, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, addAt: S.addAt, tpop: S.screen === "gantt" ? S.tpop : null, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
+    return renderProjects(S.data, today, { filter: S.filter, view: S.screen, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, checkOpen: S.checkOpen, addAt: S.addAt, tpop: S.screen === "gantt" ? S.tpop : null, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
   if (S.screen === "settings") return renderSettings(S.data, today, { ruleError: S.ruleError, closed: S.settingsClosed });
   if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
@@ -4413,6 +4686,11 @@ function focusSelector(el) {
   if (d.pf && d.pid) return q("data-pf", d.pf) + q("data-pid", d.pid);
   if (d.mf && d.pid) return q("data-mf", d.mf) + q("data-pid", d.pid) + q("data-i", d.i);
   if (d.gadd) return q("data-gadd", d.gadd);
+  if (d.cktext) return q("data-cktext", d.cktext);
+  if (d.ckadd) return q("data-ckadd", d.ckadd);
+  if (d.ckdone) return q("data-ckdone", d.ckdone);
+  if (d.ckdel) return q("data-ckdel", d.ckdel);
+  if (d.cktoggle) return q("data-cktoggle", d.cktoggle);
   if (d.pref) return `[data-pref="${CSS.escape(d.pref)}"]`; // 右の列の取っ手
   if (d.set) return q("data-set", d.set);
   // 規則の欄は、書き換えるとキーワードが変わるので、行の位置（data-ri。書き換えても並びは変わらない）で探す
@@ -4520,6 +4798,7 @@ function loaded(data) {
   }
   S.data = data;
   S.tpop = null;
+  S.checkOpen = new Set();
   sync.reset();
   S.ruleError = "";
   S.openError = "";
@@ -4713,6 +4992,10 @@ view.addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
   if (q("[data-pref]")) { togglePref("showPrio"); return; } // 右の列の取っ手
   if (q("[data-tpopclose]")) { S.tpop = null; render(); return; }
+  const ckt = q("[data-cktoggle]");
+  if (ckt) { const id = ckt.dataset.cktoggle; if (S.checkOpen.has(id)) S.checkOpen.delete(id); else S.checkOpen.add(id); render(); return; }
+  const ckd = q("[data-ckdel]");
+  if (ckd) { const [tid, iid] = ckd.dataset.ckdel.split("|"); apply((d) => removeChecklistItem(d, tid, iid)); return; }
   const ge = q("[data-gedit]");
   if (ge) { const r = ge.getBoundingClientRect(); openTaskPop(ge.dataset.gedit, e.detail ? e.clientX : r.left, e.detail ? e.clientY : r.bottom); return; } // キーボード(detail 0)は、ボタンの位置に出す
   // 編集の窓の外(バー・タスク名以外)のクリックで閉じる
@@ -4790,10 +5073,18 @@ view.addEventListener("click", (e) => {
   if (wk) { submitWait(wk.dataset.waitok); return; }
   if (q("[data-waitno]")) { S.pendingWait = null; render(); return; }
   if (q("[data-doneno]")) { S.pendingDone = null; render(); return; }
+  const ck = q("[data-ckall],[data-ckkeep]"); // チェックの警告の「残りをチェックして Done」「そのまま Done」
+  if (ck && S.pendingDone) {
+    const pd = S.pendingDone, checkAll = ck.matches("[data-ckall]");
+    if (pd.future.length) { S.pendingDone = { ...pd, stage: "future", checkAll }; render(); return; } // 続けて予定枠の確認
+    S.pendingDone = null;
+    setStatus(pd.id, pd.status, [], checkAll);
+    return;
+  }
   const dk = q("[data-doneok]");
   if (dk) {
     const pd = S.pendingDone; S.pendingDone = null;
-    setStatus(pd.id, pd.status, pd.future.filter((sid) => futurePlanned(S.data, pd.id, clock()).includes(sid))); // 確認を出してから始まった枠は消さない
+    setStatus(pd.id, pd.status, pd.future.filter((sid) => futurePlanned(S.data, pd.id, clock()).includes(sid)), !!pd.checkAll); // 確認を出してから始まった枠は消さない
     return;
   }
 
@@ -4863,16 +5154,18 @@ view.addEventListener("click", (e) => {
 function changeStatus(id, status) {
   const t = S.data.tasks.find((x) => x.id === id);
   if (status === "Waiting" && !t.waitingOn?.party) { S.pendingWait = id; S.focusSel = `[data-waitparty="${id}"]`; render(); return; }
-  const future = status === "Done" || status === "Cancelled" ? futurePlanned(S.data, id, clock()) : [];
-  if (future.length) { S.pendingDone = { id, status, n: future.length, future }; render(); return; } // 未来の予定枠を消すので確認する
+  const { open, future } = planDone(S.data, id, status, clock());
+  // 未チェックの項目がある（Done のとき）、または未来の予定枠を消す（Done・Cancelled のとき）なら、確認する。先にチェックの警告、次に予定枠
+  if (open.length || future.length) { S.pendingDone = { id, status, n: future.length, future, open, stage: open.length ? "check" : "future", checkAll: false }; render(); return; }
   setStatus(id, status, []);
 }
 
-function setStatus(id, status, future) {
+function setStatus(id, status, future, checkAll = false) {
   const kept = status === "Done" || status === "Cancelled" ? runningPlanned(S.data, id, clock()).length : 0; // 完了にしても進行中の枠は残る
   const keptMsg = kept ? `。進行中の枠 ${kept} 件は残しました（終わったら「実績にする」で確定します）` : "";
   apply((d) => {
     let next = updateTask(d, id, { status }, clock().date);
+    if (checkAll) next = checkAllChecklist(next, id);
     for (const sid of future) next = removeSession(next, sid);
     return next;
   }, future.length ? `${id} の状態を ${status} にしました。未来の予定の枠 ${future.length} 件を解除しました${keptMsg}` : `変更を保存しました${keptMsg}`);
@@ -4888,6 +5181,16 @@ function submitWait(id) {
 
 /* ---------- 入力の変更 ---------- */
 // 入力欄から次の欄へ移るとき、フォーカスの移動が終わってから描き直す(先に描き直すと移動先が消える)
+/** チェックリストの追加欄: Enter で追加する。日本語入力の変換確定の Enter（isComposing）では追加しない */
+view.addEventListener("keydown", (e) => {
+  const el = e.target.closest?.("[data-ckadd]");
+  if (!el || e.key !== "Enter" || e.isComposing) return;
+  e.preventDefault();
+  const text = el.value.trim(), id = el.dataset.ckadd;
+  if (!text) return;
+  S.focusSel = `[data-ckadd="${id}"]`;
+  apply((d) => addChecklistItem(d, id, text));
+});
 view.addEventListener("change", (e) => { const el = e.target; setTimeout(() => onChange(el), 0); });
 function onReportChange(el) {
   const { date: today } = clock();
@@ -5013,6 +5316,16 @@ function onChange(el) {
     apply((d) => updateMilestone(d, pid, i, { [el.dataset.mf]: el.value }), "マイルストーンを更新しました");
     return;
   }
+  if (el.dataset.ckdone !== undefined) {
+    const [tid, iid] = el.dataset.ckdone.split("|"), done = el.checked;
+    apply((d) => updateChecklistItem(d, tid, iid, { done }));
+    return;
+  }
+  if (el.dataset.cktext !== undefined) {
+    const [tid, iid] = el.dataset.cktext.split("|"), text = el.value;
+    apply((d) => updateChecklistItem(d, tid, iid, { text })); // 空にすると例外のトーストが出て、描き直しで元に戻る
+    return;
+  }
   if (el.dataset.addpre !== undefined) {
     if (el.value) {
       const id = el.dataset.addpre, pre = el.value;
@@ -5068,6 +5381,14 @@ function showTip(text, x, y) {
 function hideTip() { document.getElementById("dragtip")?.remove(); }
 
 view.addEventListener("dragstart", (e) => {
+  const ckm = e.target.closest("[data-ckmv]");
+  if (ckm) { // チェックリストの項目の並べ替え（同じタスクの中だけ）
+    drag = { kind: "ckorder", id: ckm.dataset.ckmv };
+    e.dataTransfer.setDragImage(ckm.closest(".ck-row"), 12, 12);
+    e.dataTransfer.setData("text/plain", drag.id);
+    e.dataTransfer.effectAllowed = "move";
+    return;
+  }
   const li = e.target.closest("[data-pick]"), bl = e.target.closest("[data-dragsess]"), mg = e.target.closest("[data-dragmtg]"), mv = e.target.closest("[data-mvh]");
   drag = li ? { kind: "task", id: li.dataset.pick } : bl ? { kind: "sess", id: bl.dataset.dragsess } : mg ? { kind: "mtg", id: mg.dataset.dragmtg } : mv ? { kind: "order", id: mv.dataset.mvh } : null;
   if (!drag) return;
@@ -5100,8 +5421,28 @@ function planOrder(e) {
   if (moveTask(S.data, drag.id, plan) === S.data) return null;
   return { ...plan, row };
 }
+/** チェックリストの項目の落とし先。行の上半分ならその前、下半分なら次の項目の前（なければ末尾）。動かない・落とせないときは null */
+function planCkOrder(e) {
+  const row = e.target.closest?.(".ck-row");
+  const box = row?.closest("[data-ckbox]");
+  const [tid, iid] = drag.id.split("|");
+  if (!row || box?.dataset.ckbox !== tid) return null;
+  const rows = [...box.querySelectorAll(":scope > .ck-row")];
+  const r = row.getBoundingClientRect(), before = e.clientY < r.top + r.height / 2;
+  const beforeId = before ? row.dataset.ckid : (rows[rows.indexOf(row) + 1]?.dataset.ckid ?? null);
+  if (beforeId === iid || moveChecklistItem(S.data, tid, iid, beforeId) === S.data) return null;
+  return { tid, iid, beforeId, row, pos: before ? "before" : "after" };
+}
 const clearOrderLine = () => view.querySelectorAll(".drop-before,.drop-after").forEach((r) => r.classList.remove("drop-before", "drop-after"));
 view.addEventListener("dragover", (e) => {
+  if (drag?.kind === "ckorder") {
+    const p = planCkOrder(e);
+    clearOrderLine();
+    if (!p) return;
+    e.preventDefault();
+    p.row.classList.add(p.pos === "before" ? "drop-before" : "drop-after");
+    return;
+  }
   if (drag?.kind === "order") {
     const p = planOrder(e);
     clearOrderLine();
@@ -5122,6 +5463,14 @@ view.addEventListener("dragover", (e) => {
   if (p.error) hideTip(); else showTip(`${hm(p.st)}–${hm(p.end)}`, e.clientX, e.clientY);
 });
 view.addEventListener("drop", (e) => {
+  if (drag?.kind === "ckorder") {
+    e.preventDefault();
+    const p = planCkOrder(e);
+    clearOrderLine();
+    drag = null;
+    if (p) apply((d) => moveChecklistItem(d, p.tid, p.iid, p.beforeId));
+    return;
+  }
   if (drag?.kind === "order") {
     e.preventDefault();
     const p = planOrder(e), id = drag.id;

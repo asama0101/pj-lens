@@ -208,3 +208,11 @@ test("applyWbsImport: 取り込み記録（ファイル名・日付・件数）�
   assert.equal(same, d2, "変更がなければ、データも記録も変えない");
   assert.equal(d0.settings.wbsImports, undefined, "元のデータは変わらない");
 });
+
+test("apply: 再取り込みで、既存タスクのチェックリストは消えない", () => {
+  const d = run(empty(), rows());
+  const k = "設計/要件/要件定義";
+  const withCk = { ...d, tasks: d.tasks.map((t) => (t.wbsKey === k ? { ...t, checklist: [{ id: "c1", text: "a", done: true }] } : t)) };
+  const r = rows(); r[0].due = "2026-11-12";
+  assert.deepEqual(byKey(run(withCk, r), k).checklist, [{ id: "c1", text: "a", done: true }]);
+});

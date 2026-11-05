@@ -272,6 +272,7 @@ tr.drop-after>td,.g-row.drop-after>.g-label,.g-row.drop-after>.g-lane{box-shadow
   .tbl.edit td::before{content:attr(data-l);display:block;font-size:11px;color:var(--muted)}
   .tbl.edit td[data-l=""]::before,.tbl.edit td[data-l="ID"]::before{display:none}
   .tbl.edit td:nth-child(4),.tbl.edit td:nth-child(11){grid-column:1/-1}
+  #view .tbl.edit tr.ck-tr>td{grid-column:1/-1;padding-left:0} /* チェックリストの展開行は全幅 */
 }
 
 .g-lane .gbar{top:6px;height:14px}
@@ -509,3 +510,41 @@ body:has(.ptool){padding-block-start:8px}
 #view section.panel > .pstick{padding-top:20px}
 #view section.panel > .gtop{padding-top:22px}
 #view .cols>.side,#view .side-toggle{margin-top:8px}
+/* チェックリストの進み具合（細い線と「済み/全体」）。今日の優先・今日のタスク・ガントのラベルが使う */
+#view .ck-meter{display:flex;align-items:center;gap:6px}
+#view .ck-bar{display:block;width:72px;height:4px;border-radius:2px;background:var(--line);overflow:hidden;flex:none}
+#view .ck-bar i{display:block;height:100%;background:var(--accent)}
+#view .ck-n{font-size:11px;font-weight:400;color:var(--muted)}
+#view .ck-n.all{color:var(--ok)}
+#view .ck-meter:has(.ck-n.all) .ck-bar i{background:var(--ok)}
+#view .rank .ck-meter{grid-column:2}
+#view .rank.tl .ck-meter{grid-column:1}
+#view .g-label .ck-meter{grid-column:2/-1}
+#view .g-label[data-mvrow] .ck-meter{grid-column:3/-1} /* 画面のガントは 4 列（⠿・ID・名前・×）。名前の下に置く */
+/* ガントのバー: 済みの割合だけ濃く塗る（.gck）。残りは同じ色の薄い色。つまみ（.gh）は塗りより前に描くので、位置は変わらない */
+#view .gbar.ck{background:color-mix(in srgb,var(--accent) 35%,var(--surface))}
+#view .gbar.ck .gck{position:absolute;left:0;top:0;bottom:0;border-radius:4px 0 0 4px;background:var(--accent)}
+#view .gbar.ck.b-todo{background:transparent}
+#view .gbar.ck.b-todo .gck{background:var(--todo);opacity:.55}
+#view .gbar.ck.b-wait{background:var(--warn-soft)}
+#view .gbar.ck.b-wait .gck{background:var(--warn);opacity:.45}
+/* チェックリストの編集欄（リストの展開行・ガントの編集の窓）と、リストの「チェック」列のボタン */
+#view .ckedit{border:1px solid var(--accent-soft);background:var(--accent-soft);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+#view .ck-head{display:flex;align-items:center;gap:8px;font-size:13px}
+#view .ck-row,#view .ck-add{display:flex;align-items:center;gap:6px;min-height:34px}
+#view .ck-row .in,#view .ck-add .in{flex:1;min-width:0}
+#view .ck-row .in.done{text-decoration:line-through;color:var(--muted)}
+#view .ck-row input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--accent)}
+#view .ck-add{border-top:1px dashed var(--line);margin-top:4px;padding-top:6px}
+#view .ck-tr>td{background:var(--accent-soft);padding-left:78px}
+#view .ck-tr .ckedit{max-width:640px;border:0;padding:0}
+#view .ck-toggle{font:inherit;font-size:12px;padding:2px 8px;min-height:28px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);cursor:pointer;white-space:nowrap}
+#view .ck-toggle.ck-empty{border-style:dashed;color:var(--muted)}
+#view .tpop .ckedit{margin-block:2px}
+#view .ck-row.drop-before{box-shadow:inset 0 2px 0 var(--accent)}
+#view .ck-row.drop-after{box-shadow:inset 0 -2px 0 var(--accent)}
+/* Done にするときのチェックリストの警告 */
+#view .ask.warn-ck{background:var(--warn-soft);border:1px solid var(--warn);border-radius:8px;padding:10px 12px}
+#view .ask.warn-ck b{color:var(--warn)}
+#view .ask.warn-ck ul{margin:6px 0;padding-left:18px}
+#view .ck-row .gx{opacity:1;position:static;min-width:32px;min-height:32px;color:var(--muted)}

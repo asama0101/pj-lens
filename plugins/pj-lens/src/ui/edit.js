@@ -3,6 +3,7 @@ import { addDays, diffDays, isDate, isTime, isWeekend, toMin, nowLocal } from ".
 import { calendarOf } from "../core/holidays.js";
 import { taskStart } from "../core/metrics.js";
 import { groupSections } from "../core/groups.js";
+import { nextChecklistId } from "../core/checklist.js";
 import { TASK_STATUS, PROJECT_STATUS, PROJECT_TYPE, HOLIDAY_KINDS } from "../core/schema.js";
 
 const mapTask = (data, id, fn) => {
@@ -88,6 +89,64 @@ export function updateTask(data, taskId, patch, today = nowLocal().date) {
     return n;
   });
 }
+
+// ---- チェックリスト（task.checklist = [{ id, text, done }]） ----
+const itemText = (text) => {
+  const s = String(text ?? "").trim();
+  if (!s) throw new Error("項目を入力してください");
+  return s;
+};
+const mapChecklist = (data, taskId, fn) => mapTask(data, taskId, (t) => ({ ...t, checklist: fn(t.checklist ?? []) }));
+const needItem = (items, itemId) => {
+  if (!items.some((c) => c.id === itemId)) throw new Error(`項目 ${itemId} がありません`);
+};
+
+/** 末尾に項目を足す。ID は、いまある最大番号 + 1（c1, c2…） */
+export function addChecklistItem(data, taskId, text) {
+  const s = itemText(text);
+  return mapChecklist(data, taskId, (items) => [...items, { id: nextChecklistId(items), text: s, done: false }]);
+}
+
+/** patch: { text?, done? } */
+export function updateChecklistItem(data, taskId, itemId, patch) {
+  return mapChecklist(data, taskId, (items) => {
+    needItem(items, itemId);
+    return items.map((c) => {
+      if (c.id !== itemId) return c;
+      const n = { ...c };
+      if ("text" in patch) n.text = itemText(patch.text);
+      if ("done" in patch) n.done = !!patch.done;
+      return n;
+    });
+  });
+}
+
+export function removeChecklistItem(data, taskId, itemId) {
+  return mapChecklist(data, taskId, (items) => {
+    needItem(items, itemId);
+    return items.filter((c) => c.id !== itemId);
+  });
+}
+
+/** itemId を beforeId の前へ（null は末尾）。動かしても並びが同じなら、同じ data を返す */
+export function moveChecklistItem(data, taskId, itemId, beforeId = null) {
+  const cur = data.tasks.find((t) => t.id === taskId)?.checklist ?? [];
+  needItem(cur, itemId);
+  if (beforeId !== null) needItem(cur, beforeId);
+  if (beforeId === itemId) return data;
+  const moving = cur.find((c) => c.id === itemId);
+  const rest = cur.filter((c) => c.id !== itemId);
+  const at = beforeId === null ? rest.length : rest.findIndex((c) => c.id === beforeId);
+  const next = [...rest.slice(0, at), moving, ...rest.slice(at)];
+  if (next.every((c, i) => c === cur[i])) return data;
+  return mapChecklist(data, taskId, () => next);
+}
+
+/** 全項目を済みにする */
+export const checkAllChecklist = (data, taskId) => mapChecklist(data, taskId, (items) => items.map((c) => ({ ...c, done: true })));
+
+/** 文言の一覧から、c1 から採番した項目を作る（空は除く）。addTask に付ける項目用 */
+export const newChecklist = (texts) => texts.map((s) => String(s ?? "").trim()).filter(Boolean).map((text, i) => ({ id: `c${i + 1}`, text, done: false }));
 
 /** patch: name / type / status / start / due */
 export function updateProject(data, projectId, patch) {

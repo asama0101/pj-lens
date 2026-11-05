@@ -4,8 +4,10 @@ import { readFileSync } from "node:fs";
 import { addDays, diffDays } from "../plugins/pj-lens/src/core/dates.js";
 import { renderProjects } from "../plugins/pj-lens/src/ui/views/project.js";
 import { renderGantt, assignLevels, layoutMilestones } from "../plugins/pj-lens/src/ui/views/gantt.js";
-import { renderPrio, renderTodayTasks, todayTaskIds } from "../plugins/pj-lens/src/ui/views/prio.js";
+import { renderPrio, renderTodayTasks, todayTaskIds, doneAskHtml } from "../plugins/pj-lens/src/ui/views/prio.js";
 import { renderSettings } from "../plugins/pj-lens/src/ui/views/settings.js";
+import { checkMeterHtml } from "../plugins/pj-lens/src/ui/common.js";
+import { checklistEditorHtml } from "../plugins/pj-lens/src/ui/views/checklist.js";
 import { renderTaskPop } from "../plugins/pj-lens/src/ui/views/taskpop.js";
 import { renderInboxBar, ibExamples } from "../plugins/pj-lens/src/ui/views/inboxpanel.js";
 import { ruleMeetingCounts } from "../plugins/pj-lens/src/core/rules.js";
@@ -1348,4 +1350,133 @@ test("renderList: .twrap は表（.tlist）だけを含み、メモ・マイル�
   assert.equal(count(wrap, /<table\b/g), 1);
   assert.ok(!wrap.includes("マイルストーン") && !wrap.includes("日程変更の履歴") && !wrap.includes("変更はその場でファイルに保存"), "表の外のものを含まない");
   assert.ok(html.indexOf("マイルストーン", end) > end, "マイルストーンは .twrap の後");
+});
+
+// ---- チェックリストの M/N 表示（今日の優先・今日のタスク） ----
+const ckTask = (n, done) => ({ checklist: Array.from({ length: n }, (_, i) => ({ id: `c${i + 1}`, text: `項目${i + 1}`, done: i < done })) });
+
+test("checkMeterHtml: 項目なしは空。あれば割合の幅と M/N。remain で残り件数。全部済みは all", () => {
+  assert.equal(checkMeterHtml({}), "");
+  assert.equal(checkMeterHtml({ checklist: [] }), "");
+  const a = checkMeterHtml(ckTask(5, 2));
+  assert.ok(a.includes("width:40%") && a.includes(">2/5<") && a.includes('class="ck-n mono"'));
+  assert.ok(checkMeterHtml(ckTask(5, 2), { remain: true }).includes("2/5（残り 3 件）"));
+  assert.ok(checkMeterHtml(ckTask(4, 4)).includes('class="ck-n mono all"'));
+});
+
+test("renderTodayTasks: チェックリストのあるタスクの行に M/N（残り K 件）。ないタスクの行には出ない", () => {
+  const { d } = withToday();
+  const [a5, a7] = items(renderTodayTasks(d, TODAY));
+  assert.ok(a5.html.includes("2/4（残り 2 件）") && a5.html.includes("ck-meter"));
+  assert.ok(!a7.html.includes("ck-meter"));
+});
+
+test("renderPrio: チェックリストのあるタスクの行に M/N（残り K 件）。ないタスクの行には出ない", () => {
+  const html = renderPrio(load(), TODAY, { sched: true });
+  assert.ok(html.includes("2/4（残り 2 件）"));
+  assert.equal(count(html, /ck-meter/g), 1, "チェックリストのあるタスク（A5）だけ");
+});
+
+// ---- ガントのチェックリスト表示 ----
+const grow = (html, id) => html.split('<div class="g-row">').find((r) => r.includes(`<span class="id">${id}</span>`)) ?? "";
+
+test("renderGantt: チェックリストのあるタスクは、ラベルに線と M/N、バーに割合の塗り。バーの右の期限には数字を出さない", () => {
+  const r = grow(gantt(load(), ["A"]), "A5"); // In Progress・2/4
+  assert.ok(r.includes("ck-meter") && count(r, />2\/4</g) === 1, "ラベルに M/N");
+  assert.ok(/class="gbar[^"]*\bck\b/.test(r) && r.includes('<u class="gck" style="width:50%"></u>'), "バーの塗り");
+  assert.match(/class="g-due mono"[^>]*>([^<]*)</.exec(r)[1], /^\d+\/\d+$/, "バーの右は期限の日付だけ");
+});
+
+test("renderGantt: 項目なしのタスクには、線も数字も塗りも出ない。0 件済みは幅 0%", () => {
+  const d = load();
+  const html = gantt(d, ["A"]);
+  const r4 = grow(html, "A4");
+  assert.ok(!r4.includes("ck-meter") && !r4.includes("gck"));
+  d.tasks.find((t) => t.id === "A4").checklist = [{ id: "c1", text: "a", done: false }, { id: "c2", text: "b", done: false }];
+  assert.ok(grow(gantt(d, ["A"]), "A4").includes('class="gck" style="width:0%"'));
+});
+
+test("renderGantt: Done のタスクは、ラベルの M/N が all（緑）で、バーに塗りを出さない", () => {
+  const r = grow(gantt(load(), ["A"]), "A1"); // Done・3/3
+  assert.ok(r.includes('class="ck-n mono all"') && r.includes(">3/3<"));
+  assert.ok(!r.includes("gck"));
+});
+
+test("renderGantt: 点（期限だけのタスク）は、ラベルに M/N を出し、塗りは出さない", () => {
+  const d = load();
+  const t = d.tasks.find((x) => x.id === "A6");
+  Object.assign(t, { start: null, predecessors: [], checklist: [{ id: "c1", text: "a", done: true }, { id: "c2", text: "b", done: false }] });
+  const r = grow(gantt(d, ["A"]), "A6");
+  assert.ok(r.includes("dot mk") && r.includes(">1/2<") && !r.includes("gck"));
+});
+
+test("renderGantt: 文言の特殊文字は出力に混ざらない（数字と幅だけ）。レポート用（readonly）にも M/N が出る", () => {
+  const d = load();
+  d.tasks.find((t) => t.id === "A5").checklist = [{ id: "c1", text: "<b>x</b>", done: true }];
+  const html = gantt(d, ["A"], { readonly: true });
+  assert.ok(!html.includes("<b>x</b>") && grow(html, "A5").includes(">1/1<"));
+});
+
+// ---- チェックリストの編集欄（リストの展開・ガントの編集の窓） ----
+test("checklistEditorHtml: 項目ごとに取っ手・チェック・文言・削除、末尾に追加欄。文言はエスケープ。項目なしでも追加欄は出る", () => {
+  const t = { id: "A5", checklist: [{ id: "c1", text: '<b>"x"&', done: true }, { id: "c2", text: "b", done: false }, { id: "c3", text: "c", done: false }] };
+  const h = checklistEditorHtml(t);
+  assert.equal(count(h, /data-ckid="/g), 3);
+  for (const a of ["data-ckmv", "data-ckdone", "data-cktext", "data-ckdel"]) assert.equal(count(h, new RegExp(`${a}="A5\\|c\\d"`, "g")), 3, a);
+  assert.equal(count(h, /data-ckadd="A5"/g), 1);
+  assert.ok(h.includes('value="&lt;b&gt;&quot;x&quot;&amp;"') && !h.includes("<b>\"x\""));
+  assert.equal(count(h, /type="checkbox"[^>]*checked/g), 1);
+  const textInput = (id) => new RegExp(`<input[^>]*data-cktext="A5\\|${id}"[^>]*>`).exec(h)[0];
+  assert.ok(textInput("c1").includes("done") && !textInput("c2").includes("done"), "済みの文言だけ done");
+  const e = checklistEditorHtml({ id: "A4" });
+  assert.ok(e.includes('data-ckadd="A4"') && !e.includes("data-ckid"));
+});
+
+test("renderProjects(list): 列「チェック」。閉じていれば ▸ M/N（項目なしは ＋ 追加）、開いていればその行の直後に編集欄", () => {
+  const d = load();
+  const html = renderProjects(d, TODAY, { view: "list", filter: "A" });
+  assert.ok(html.includes("<th>チェック</th>"));
+  assert.ok(/data-cktoggle="A5" aria-expanded="false"[^>]*>▸ 2\/4</.test(html) && /data-cktoggle="A4" aria-expanded="false"[^>]*>＋ 追加</.test(html));
+  assert.ok(!html.includes("ck-tr"));
+  const open = renderProjects(d, TODAY, { view: "list", filter: "A", checkOpen: new Set(["A5"]) });
+  assert.ok(/aria-expanded="true"[^>]*>▾ 2\/4</.test(open));
+  const i = open.indexOf('data-row="A5"'), p = open.indexOf('data-ckpanel="A5"'), nxt = open.indexOf('<tr data-row="', i + 1);
+  assert.ok(i >= 0 && p > i && p < nxt, "A5 の行の直後");
+  assert.equal(count(open, /data-ckpanel=/g), 1);
+});
+
+test("renderTaskPop: チェックリストの欄を、期限の下・前のタスクの上に置く", () => {
+  const h = renderTaskPop(load(), { id: "A5", x: 10, y: 10 }, "");
+  const due = h.indexOf('data-f="due"'), ck = h.indexOf("ckedit"), pre = h.indexOf("前のタスク");
+  assert.ok(due >= 0 && ck > due && pre > ck);
+});
+
+// ---- Done にするときの警告 ----
+test("doneAskHtml: stage が check なら、未完了の項目の一覧と 3 つのボタン。文言はエスケープする", () => {
+  const h = doneAskHtml({ id: "A5", status: "Done", n: 0, future: [], open: ["a<b>", "b"], stage: "check", checkAll: false });
+  assert.ok(h.includes("未完了の項目が 2 件あります") && h.includes('role="alert"'));
+  assert.ok(h.includes("<li>a&lt;b&gt;</li>") && !h.includes("<li>a<b>"));
+  for (const a of ['data-ckall="A5"', 'data-ckkeep="A5"', "data-doneno"]) assert.ok(h.includes(a), a);
+  assert.ok(!h.includes("data-doneok"));
+});
+
+test("doneAskHtml: stage が future、または stage なし（従来の形）なら、予定枠の確認（data-doneok）のまま", () => {
+  for (const pd of [{ id: "A5", status: "Done", n: 1, future: ["S3"], open: [], stage: "future" }, { id: "A5", status: "Done", n: 1, future: ["S3"] }]) {
+    const h = doneAskHtml(pd);
+    assert.ok(h.includes('data-doneok="A5"') && h.includes("未来の予定の枠 1 件") && !h.includes("data-ckall"));
+  }
+});
+
+test("受信箱の提案カード: チェックリストの節は、タスク・操作・項目の文言（旧→新）を出す。登録の行には項目の件数を添える。文言はエスケープする", () => {
+  const html = cardOf([
+    { kind: "checklist", rows: [
+      { taskId: "A4", title: "検証環境の構築", action: "add", itemId: "c1", old: null, new: "<i>搭載</i>" },
+      { taskId: "A5", title: "切替手順書", action: "check", itemId: "c3", old: false, new: true },
+      { taskId: "A5", title: "切替手順書", action: "text", itemId: "c4", old: "レビュー", new: "レビュー（2 名）" },
+      { taskId: "A5", title: "切替手順書", action: "remove", itemId: "c2", old: "切り戻し", new: null },
+    ] },
+    { kind: "add", rows: [{ ref: "t1", title: "疎通確認", projectId: "A", group: null, subgroup: null, due: "2026-12-10", businessDays: null, start: null, predecessors: [], checklist: ["a", "b"] }] },
+  ]);
+  for (const w of ["チェックリストの変更（4 件）", "追加", "チェック", "文言の変更", "削除", "レビュー（2 名）", "項目 2 件"]) assert.ok(html.includes(w), w);
+  assert.ok(html.includes("&lt;i&gt;搭載&lt;/i&gt;") && !html.includes("<i>搭載</i>"));
 });

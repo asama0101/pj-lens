@@ -8,7 +8,7 @@ export const IMPORTANCE = ["high", "mid", "low"];
 export const CAUSES = ["ベンダー", "社内", "自分", "その他"];
 export const HOLIDAY_KINDS = ["祝日", "有給", "その他"];
 const REQUEST_STATUS = ["pending", "working", "question", "proposed", "applied", "rejected", "failed"];
-export const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask", "addProject", "setStatus", "setImportance", "updateProject", "removeTask", "removeProject", "addMilestone", "moveMilestone", "removeMilestone"];
+export const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask", "addProject", "setStatus", "setImportance", "updateProject", "removeTask", "removeProject", "addMilestone", "moveMilestone", "removeMilestone", "addChecklistItem", "setChecklistDone", "setChecklistText", "removeChecklistItem"];
 export const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 
 /** 終わったタスク（Done・Cancelled）か */
@@ -87,6 +87,19 @@ export function validate(data, now = nowLocal()) {
     if (t.start != null && !isDate(t.start)) err(`タスク ${t.id}: 開始日の形式が不正です (${t.start})`);
     if (t.doneAt != null && !isDate(t.doneAt)) err(`タスク ${t.id}: 完了日の形式が不正です (${t.doneAt})`);
     if (t.importance != null && !IMPORTANCE.includes(t.importance)) err(`タスク ${t.id}: 不明な重要度 "${t.importance}"`);
+    if (t.checklist !== undefined) {
+      if (!Array.isArray(t.checklist)) err(`タスク ${t.id}: チェックリスト (checklist) が配列ではありません`);
+      else {
+        const seen = new Set();
+        for (const c of t.checklist) {
+          if (typeof c?.id !== "string" || !c.id) err(`タスク ${t.id}: チェックリストの項目の ID が文字列ではありません`);
+          else if (seen.has(c.id)) err(`タスク ${t.id}: チェックリストの項目の ID が重複しています: ${c.id}`);
+          else seen.add(c.id);
+          if (typeof c?.text !== "string" || !c.text.trim()) err(`タスク ${t.id}: チェックリストの項目 ${c?.id} の文言が空です`);
+          if (typeof c?.done !== "boolean") err(`タスク ${t.id}: チェックリストの項目 ${c?.id} の done が真偽値ではありません`);
+        }
+      }
+    }
     const preds = t.predecessors ?? [];
     for (const pid of preds) {
       if (!taskIds.has(pid)) err(`タスク ${t.id}: 存在しない前のタスク "${pid}"`);

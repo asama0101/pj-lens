@@ -11,6 +11,8 @@ import {
   addHoliday, addHolidayRange, holidayRangeDays, removeHoliday, addWorkday, removeWorkday, addPredecessor, moveTask,
 } from "../plugins/pj-lens/src/ui/edit.js";
 
+import { addChecklistItem, updateChecklistItem, removeChecklistItem, moveChecklistItem, checkAllChecklist, newChecklist } from "../plugins/pj-lens/src/ui/edit.js";
+
 const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
 const TODAY = "2026-10-20";
 const task = (d, id) => d.tasks.find((t) => t.id === id);
@@ -409,4 +411,50 @@ test("moveTask: 配列の順が表示の順と違うプロジェクトも、動�
   assert.deepEqual(shownOrder(d, "A"), ["A2", "A3", "A4", "A5", "A6", "A7", "A1"]);
   const n = moveTask(d, "A7", { beforeId: "A6" });
   assert.deepEqual(idsOf(n, "A"), ["A2", "A3", "A4", "A5", "A7", "A6", "A1"]);
+});
+
+// ---- チェックリスト ----
+const items = (d, id) => (task(d, id).checklist ?? []).map((c) => [c.id, c.text, c.done]);
+
+test("addChecklistItem: 末尾に c1, c2… で足す。前後の空白は除き、空は例外。元のデータは変えない", () => {
+  const d = load();
+  const a = addChecklistItem(d, "A4", "a");
+  assert.deepEqual(items(a, "A4"), [["c1", "a", false]]);
+  assert.deepEqual(items(addChecklistItem(a, "A4", "  x  "), "A4"), [["c1", "a", false], ["c2", "x", false]]);
+  assert.throws(() => addChecklistItem(d, "A4", "  "), /項目を入力/);
+  assert.equal(task(d, "A4").checklist, undefined);
+  ok(a);
+});
+
+test("addChecklistItem: 削除のあとに足しても、同時にある ID は重複しない", () => {
+  let d = load();
+  for (const t of ["a", "b", "c"]) d = addChecklistItem(d, "A4", t);
+  const noC1 = removeChecklistItem(d, "A4", "c1");
+  assert.deepEqual(items(addChecklistItem(noC1, "A4", "d"), "A4").map((x) => x[0]), ["c2", "c3", "c4"]);
+  const noC3 = removeChecklistItem(d, "A4", "c3");
+  assert.equal(new Set(items(addChecklistItem(noC3, "A4", "d"), "A4").map((x) => x[0])).size, 3);
+});
+
+test("updateChecklistItem: done と text を変える。存在しない項目・空の text は例外", () => {
+  const d = addChecklistItem(load(), "A4", "a");
+  assert.deepEqual(items(updateChecklistItem(d, "A4", "c1", { done: true }), "A4"), [["c1", "a", true]]);
+  assert.deepEqual(items(updateChecklistItem(d, "A4", "c1", { text: " b " }), "A4"), [["c1", "b", false]]);
+  assert.throws(() => updateChecklistItem(d, "A4", "c9", { done: true }), /項目/);
+  assert.throws(() => updateChecklistItem(d, "A4", "c1", { text: "" }), /項目を入力/);
+});
+
+test("moveChecklistItem: beforeId の前へ。null は末尾。同じ並びなら同じ data を返す", () => {
+  let d = load();
+  for (const t of ["a", "b", "c"]) d = addChecklistItem(d, "A4", t);
+  assert.deepEqual(items(moveChecklistItem(d, "A4", "c3", "c1"), "A4").map((x) => x[0]), ["c3", "c1", "c2"]);
+  assert.deepEqual(items(moveChecklistItem(d, "A4", "c1", null), "A4").map((x) => x[0]), ["c2", "c3", "c1"]);
+  assert.equal(moveChecklistItem(d, "A4", "c2", "c3"), d);
+  assert.equal(moveChecklistItem(d, "A4", "c3", null), d);
+});
+
+test("checkAllChecklist: 全項目を済みにする。newChecklist: 空を除いて c1 から採番", () => {
+  let d = load();
+  for (const t of ["a", "b"]) d = addChecklistItem(d, "A4", t);
+  assert.deepEqual(items(checkAllChecklist(d, "A4"), "A4").map((x) => x[2]), [true, true]);
+  assert.deepEqual(newChecklist(["a", "", "b"]), [{ id: "c1", text: "a", done: false }, { id: "c2", text: "b", done: false }]);
 });

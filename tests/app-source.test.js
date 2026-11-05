@@ -429,3 +429,27 @@ test("app.js: プロジェクト名のプルダウン（data-projectpick）で�
   assert.match(src, /el\.dataset\.projectpick !== undefined\) \{ S\.filter = el\.value; S\.resetScroll = true; render\(\); return; \}/);
   assert.ok(!src.includes("S.group") && !src.includes("groupfilter") && !src.includes("group: \"all\""), "大項目の絞り込みの状態を持たない");
 });
+
+// チェックリストの編集欄のイベントは、Task 6 の属性（data-ck*）を読んで、edit.js の関数に載せる（動作は実ブラウザで確認する）
+test("app.js: チェックリストの編集欄のイベントをつなぐ（開閉・チェック・文言・削除・追加・並び替え）。変換確定の Enter では追加しない", () => {
+  for (const a of ["[data-cktoggle]", "dataset.ckdone", "dataset.cktext", "[data-ckdel]", "[data-ckadd]", "[data-ckmv]"]) assert.ok(src.includes(a), a);
+  for (const f of ["addChecklistItem", "updateChecklistItem", "removeChecklistItem", "moveChecklistItem"]) assert.ok(src.includes(f), f);
+  assert.match(src, /e\.isComposing/);
+  assert.match(src, /checkOpen: S\.checkOpen/, "リストの展開の状態を描画に渡す");
+  assert.match(src, /S\.checkOpen = new Set\(\)/);
+});
+
+// ---- 全体レビューの修正（M1・M3・M4） ----
+
+test("focusSelector: チェックリストのチェック・削除・展開ボタンも、描き直しのあとにフォーカスを戻せる（キーボードで操作しても位置を見失わない）", () => {
+  const fn = src.slice(src.indexOf("function focusSelector("), src.indexOf("function focusSelector(") + 1600);
+  for (const k of ["d.ckdone", "d.ckdel", "d.cktoggle"]) assert.ok(fn.includes(k), k);
+});
+
+test("theme.css: 画面のガントのラベル（⠿・ID・名前・×の 4 列）では、チェックリストの線を名前の列（3 列目）に置く", () => {
+  assert.match(css, /\.g-label\[data-mvrow\] \.ck-meter\{grid-column:3\/-1\}/);
+});
+
+test("theme.css: 幅 860px 以下で、リストのチェックリストの展開行（.ck-tr）は全幅にする", () => {
+  assert.match(css, /\.tbl\.edit tr\.ck-tr>td\{grid-column:1\/-1;padding-left:0\}/);
+});

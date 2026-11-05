@@ -13,12 +13,13 @@ node "${CLAUDE_PLUGIN_ROOT}/tools/inbox.js" <コマンド> ".pj-lens/data.json" 
 ## 1 件の処理の手順（依頼 ID は R3 のような形）
 1. **受け取る**: `claim ".pj-lens/data.json" R3`。出力に、依頼の文章（`thread`）と対象のプロジェクト（`projectId`。null は「すべて」）がある。
 2. **データを読む**: `.pj-lens/data.json` の `projects`・`tasks`（ID・件名・期限・状態・前のタスク）を、Read で読む。依頼に出てくるタスクを、ID と件名で照合する。
-3. **依頼を操作に分ける**。操作は 13 種類（`ops.json` に配列で書く。OS の一時フォルダに置き、プロジェクトのフォルダには置かない）:
+3. **依頼を操作に分ける**。操作は 17 種類（`ops.json` に配列で書く。OS の一時フォルダに置き、プロジェクトのフォルダには置かない）:
    - `{"op":"moveDue","taskId":"A3","deltaDays":45}` または `"newDue":"2026-11-30"`。前倒し（`deltaDays` が負）のとき、次のタスクも詰める依頼なら `"compress":true`。**次のタスクの日付は自分で計算しない**（`propose` が計算する）。
    - `{"op":"addPred","taskId":"A4","predId":"A3"}`（A3 の後に A4）、`{"op":"removePred","taskId":"A4","predId":"A3"}`。
    - `{"op":"addProject","ref":"p1","name":"ルータの増設","type":"増設"}`。新しいプロジェクトを足す。`ref` は、同じ依頼の中で一意（`addTask` の `ref` とは別の名前）。`type` は 増設・更改・改善・不具合対処・その他 のどれか（省略は「その他」）。**ID・状態・開始日・期限は書かない**（`propose` が決める。期限は、そのプロジェクトのタスクの最後の期限になる）。`start`・`due` は、依頼に日付が書かれているときだけ入れる。`addTask` の `projectId` に、この `ref` を書くと、新しいプロジェクトにタスクを入れられる。
    - `{"op":"setStatus","taskId":"A3","status":"Done"}`。`status` は To Do／In Progress／Waiting／Done／Cancelled。`Waiting` は待ち先が要る: `"waitingOn":{"party":"ベンダーX"}`（待ち先が書かれていなければ聞き返す）。
    - `{"op":"setImportance","taskId":"A4","importance":"high"}`（`high` だけ。外すときは `null`）。**重要度は、依頼に明記されたときだけ設定する（推定しない）。**
+   - チェックリスト（タスクの中の小さな作業の一覧）の操作: `{"op":"addChecklistItem","taskId":"A4","text":"…"}`（末尾に足す）、`{"op":"setChecklistDone","taskId":"A4","itemId":"c2","done":true}`（`done` は `true`／`false`）、`{"op":"setChecklistText","taskId":"A4","itemId":"c2","text":"…"}`、`{"op":"removeChecklistItem","taskId":"A4","itemId":"c2"}`。項目は `itemId`（`data.json` のそのタスクの `checklist[].id`）で指す。**チェックリストの操作は、依頼に明記されたときだけ設定する（推定しない）**。`addTask` には、項目の文言の配列 `"checklist":["…","…"]` を付けられる（登録時に `c1` から採番される）。同じ依頼で登録するタスクの項目を足すときは、`addChecklistItem` の `taskId` に `ref` を書く。項目の並べ替えは依頼からはできない（画面で行う）。
    - `{"op":"updateProject","projectId":"A","name":"…","type":"…","status":"保留","start":"…","due":"…"}`（直す項目だけ書く。`status` は 計画中・進行中・保留・完了・中止）。
    - `{"op":"addMilestone","projectId":"A","name":"検収","date":"2027-03-10"}`、`{"op":"moveMilestone","projectId":"A","name":"本番切替","newDate":"2027-03-13"}`（または `"deltaDays":21`）、`{"op":"removeMilestone","projectId":"A","name":"機器発注"}`。マイルストーンは「プロジェクト＋名前」で指す。名前に当たるものが 0 件・2 件以上なら `propose` が例外を返すので、聞き返す。
    - `{"op":"removeTask","taskId":"A7"}`、`{"op":"removeProject","projectId":"C"}`。**削除は、依頼に明記されたときだけ提案する**（「いらない」「やめた」だけで消さない。迷ったら `ask` で確かめる）。削除は元に戻せない。配下のタスクも消えるので、`--summary` に何が消えるかを書く。

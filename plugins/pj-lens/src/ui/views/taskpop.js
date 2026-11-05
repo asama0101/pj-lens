@@ -4,6 +4,7 @@
 import { esc, fmtMD } from "../common.js";
 import { taskStart } from "../../core/metrics.js";
 import { predecessorCandidates } from "../edit.js";
+import { checklistEditorHtml } from "./checklist.js";
 
 /** 前のタスクの外し方（×）と足し方（選択）。リストの編集欄と共用 */
 export function predEditHtml(data, t) {
@@ -35,6 +36,7 @@ export function renderTaskPop(data, pop, statusHtml) {
     ${field("件名", `<input class="in" data-f="title" data-id="${id}" value="${esc(t.title)}">`)}
     <div class="tp-f"><span class="muted">状態</span><div>${statusHtml}</div></div>
     <div class="tp-r">${field("開始", startInputHtml(data, t))}${field("期限", `<input class="in" type="date" data-f="due" data-id="${id}" value="${esc(t.due)}">`)}</div>
+    ${checklistEditorHtml(t)}
     <div class="tp-f"><span class="muted">前のタスク</span>${predEditHtml(data, t)}</div>
     <div class="tp-r">${field("重要度", `<select class="in sm" data-f="importance" data-id="${id}">${importance}</select>`)}</div>
     ${field("メモ", `<input class="in" data-f="memo" data-id="${id}" value="${esc(t.memo ?? "")}" placeholder="メモ">`)}

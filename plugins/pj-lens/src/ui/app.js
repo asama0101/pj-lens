@@ -9,7 +9,7 @@ const S = {
   data: null, openError: "",
   screen: "gantt",
   filter: "all", gwin: "m6", hideDone: false,
-  askDel: null, askDelProject: null, pendingWait: null, pendingDone: null,
+  askDel: null, askDelProject: null, pendingWait: null, pendingDone: null, checkOpen: new Set(),
   sview: "week", sdate: clock().date, selSess: null, selMtg: null, mtgDraft: null, picked: null,
   prefs: loadPrefs(), settingsClosed: loadSettingsClosed(), tpop: null, addAt: null, last: null, ruleError: "",
   ib: { open: false, text: loadInboxDraft(), projectId: "", replies: {}, reasons: {}, causes: {} },
@@ -43,7 +43,7 @@ function renderBody() {
   const { date: today } = clock();
   if (!S.data) return startScreen();
   if (S.screen === "gantt" || S.screen === "list") {
-    return renderProjects(S.data, today, { filter: S.filter, view: S.screen, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, addAt: S.addAt, tpop: S.screen === "gantt" ? S.tpop : null, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
+    return renderProjects(S.data, today, { filter: S.filter, view: S.screen, window: S.gwin, hideDone: S.hideDone, askDel: S.askDel, askDelProject: S.askDelProject, pendingWait: S.pendingWait, pendingDone: S.pendingDone, checkOpen: S.checkOpen, addAt: S.addAt, tpop: S.screen === "gantt" ? S.tpop : null, showPrio: S.prefs.showPrio, showActual: S.prefs.showActual });
   }
   if (S.screen === "settings") return renderSettings(S.data, today, { ruleError: S.ruleError, closed: S.settingsClosed });
   if (S.screen === "workload") return renderWorkload(S.data, today, { period: S.wperiod, date: S.wdate, now: clock() });
@@ -131,6 +131,11 @@ function focusSelector(el) {
   if (d.pf && d.pid) return q("data-pf", d.pf) + q("data-pid", d.pid);
   if (d.mf && d.pid) return q("data-mf", d.mf) + q("data-pid", d.pid) + q("data-i", d.i);
   if (d.gadd) return q("data-gadd", d.gadd);
+  if (d.cktext) return q("data-cktext", d.cktext);
+  if (d.ckadd) return q("data-ckadd", d.ckadd);
+  if (d.ckdone) return q("data-ckdone", d.ckdone);
+  if (d.ckdel) return q("data-ckdel", d.ckdel);
+  if (d.cktoggle) return q("data-cktoggle", d.cktoggle);
   if (d.pref) return `[data-pref="${CSS.escape(d.pref)}"]`; // 右の列の取っ手
   if (d.set) return q("data-set", d.set);
   // 規則の欄は、書き換えるとキーワードが変わるので、行の位置（data-ri。書き換えても並びは変わらない）で探す
@@ -238,6 +243,7 @@ function loaded(data) {
   }
   S.data = data;
   S.tpop = null;
+  S.checkOpen = new Set();
   sync.reset();
   S.ruleError = "";
   S.openError = "";
@@ -431,6 +437,10 @@ view.addEventListener("click", (e) => {
   const q = (sel) => e.target.closest(sel);
   if (q("[data-pref]")) { togglePref("showPrio"); return; } // 右の列の取っ手
   if (q("[data-tpopclose]")) { S.tpop = null; render(); return; }
+  const ckt = q("[data-cktoggle]");
+  if (ckt) { const id = ckt.dataset.cktoggle; if (S.checkOpen.has(id)) S.checkOpen.delete(id); else S.checkOpen.add(id); render(); return; }
+  const ckd = q("[data-ckdel]");
+  if (ckd) { const [tid, iid] = ckd.dataset.ckdel.split("|"); apply((d) => removeChecklistItem(d, tid, iid)); return; }
   const ge = q("[data-gedit]");
   if (ge) { const r = ge.getBoundingClientRect(); openTaskPop(ge.dataset.gedit, e.detail ? e.clientX : r.left, e.detail ? e.clientY : r.bottom); return; } // キーボード(detail 0)は、ボタンの位置に出す
   // 編集の窓の外(バー・タスク名以外)のクリックで閉じる
@@ -508,10 +518,18 @@ view.addEventListener("click", (e) => {
   if (wk) { submitWait(wk.dataset.waitok); return; }
   if (q("[data-waitno]")) { S.pendingWait = null; render(); return; }
   if (q("[data-doneno]")) { S.pendingDone = null; render(); return; }
+  const ck = q("[data-ckall],[data-ckkeep]"); // チェックの警告の「残りをチェックして Done」「そのまま Done」
+  if (ck && S.pendingDone) {
+    const pd = S.pendingDone, checkAll = ck.matches("[data-ckall]");
+    if (pd.future.length) { S.pendingDone = { ...pd, stage: "future", checkAll }; render(); return; } // 続けて予定枠の確認
+    S.pendingDone = null;
+    setStatus(pd.id, pd.status, [], checkAll);
+    return;
+  }
   const dk = q("[data-doneok]");
   if (dk) {
     const pd = S.pendingDone; S.pendingDone = null;
-    setStatus(pd.id, pd.status, pd.future.filter((sid) => futurePlanned(S.data, pd.id, clock()).includes(sid))); // 確認を出してから始まった枠は消さない
+    setStatus(pd.id, pd.status, pd.future.filter((sid) => futurePlanned(S.data, pd.id, clock()).includes(sid)), !!pd.checkAll); // 確認を出してから始まった枠は消さない
     return;
   }
 
@@ -581,16 +599,18 @@ view.addEventListener("click", (e) => {
 function changeStatus(id, status) {
   const t = S.data.tasks.find((x) => x.id === id);
   if (status === "Waiting" && !t.waitingOn?.party) { S.pendingWait = id; S.focusSel = `[data-waitparty="${id}"]`; render(); return; }
-  const future = status === "Done" || status === "Cancelled" ? futurePlanned(S.data, id, clock()) : [];
-  if (future.length) { S.pendingDone = { id, status, n: future.length, future }; render(); return; } // 未来の予定枠を消すので確認する
+  const { open, future } = planDone(S.data, id, status, clock());
+  // 未チェックの項目がある（Done のとき）、または未来の予定枠を消す（Done・Cancelled のとき）なら、確認する。先にチェックの警告、次に予定枠
+  if (open.length || future.length) { S.pendingDone = { id, status, n: future.length, future, open, stage: open.length ? "check" : "future", checkAll: false }; render(); return; }
   setStatus(id, status, []);
 }
 
-function setStatus(id, status, future) {
+function setStatus(id, status, future, checkAll = false) {
   const kept = status === "Done" || status === "Cancelled" ? runningPlanned(S.data, id, clock()).length : 0; // 完了にしても進行中の枠は残る
   const keptMsg = kept ? `。進行中の枠 ${kept} 件は残しました（終わったら「実績にする」で確定します）` : "";
   apply((d) => {
     let next = updateTask(d, id, { status }, clock().date);
+    if (checkAll) next = checkAllChecklist(next, id);
     for (const sid of future) next = removeSession(next, sid);
     return next;
   }, future.length ? `${id} の状態を ${status} にしました。未来の予定の枠 ${future.length} 件を解除しました${keptMsg}` : `変更を保存しました${keptMsg}`);
@@ -606,6 +626,16 @@ function submitWait(id) {
 
 /* ---------- 入力の変更 ---------- */
 // 入力欄から次の欄へ移るとき、フォーカスの移動が終わってから描き直す(先に描き直すと移動先が消える)
+/** チェックリストの追加欄: Enter で追加する。日本語入力の変換確定の Enter（isComposing）では追加しない */
+view.addEventListener("keydown", (e) => {
+  const el = e.target.closest?.("[data-ckadd]");
+  if (!el || e.key !== "Enter" || e.isComposing) return;
+  e.preventDefault();
+  const text = el.value.trim(), id = el.dataset.ckadd;
+  if (!text) return;
+  S.focusSel = `[data-ckadd="${id}"]`;
+  apply((d) => addChecklistItem(d, id, text));
+});
 view.addEventListener("change", (e) => { const el = e.target; setTimeout(() => onChange(el), 0); });
 function onReportChange(el) {
   const { date: today } = clock();
@@ -731,6 +761,16 @@ function onChange(el) {
     apply((d) => updateMilestone(d, pid, i, { [el.dataset.mf]: el.value }), "マイルストーンを更新しました");
     return;
   }
+  if (el.dataset.ckdone !== undefined) {
+    const [tid, iid] = el.dataset.ckdone.split("|"), done = el.checked;
+    apply((d) => updateChecklistItem(d, tid, iid, { done }));
+    return;
+  }
+  if (el.dataset.cktext !== undefined) {
+    const [tid, iid] = el.dataset.cktext.split("|"), text = el.value;
+    apply((d) => updateChecklistItem(d, tid, iid, { text })); // 空にすると例外のトーストが出て、描き直しで元に戻る
+    return;
+  }
   if (el.dataset.addpre !== undefined) {
     if (el.value) {
       const id = el.dataset.addpre, pre = el.value;
@@ -786,6 +826,14 @@ function showTip(text, x, y) {
 function hideTip() { document.getElementById("dragtip")?.remove(); }
 
 view.addEventListener("dragstart", (e) => {
+  const ckm = e.target.closest("[data-ckmv]");
+  if (ckm) { // チェックリストの項目の並べ替え（同じタスクの中だけ）
+    drag = { kind: "ckorder", id: ckm.dataset.ckmv };
+    e.dataTransfer.setDragImage(ckm.closest(".ck-row"), 12, 12);
+    e.dataTransfer.setData("text/plain", drag.id);
+    e.dataTransfer.effectAllowed = "move";
+    return;
+  }
   const li = e.target.closest("[data-pick]"), bl = e.target.closest("[data-dragsess]"), mg = e.target.closest("[data-dragmtg]"), mv = e.target.closest("[data-mvh]");
   drag = li ? { kind: "task", id: li.dataset.pick } : bl ? { kind: "sess", id: bl.dataset.dragsess } : mg ? { kind: "mtg", id: mg.dataset.dragmtg } : mv ? { kind: "order", id: mv.dataset.mvh } : null;
   if (!drag) return;
@@ -818,8 +866,28 @@ function planOrder(e) {
   if (moveTask(S.data, drag.id, plan) === S.data) return null;
   return { ...plan, row };
 }
+/** チェックリストの項目の落とし先。行の上半分ならその前、下半分なら次の項目の前（なければ末尾）。動かない・落とせないときは null */
+function planCkOrder(e) {
+  const row = e.target.closest?.(".ck-row");
+  const box = row?.closest("[data-ckbox]");
+  const [tid, iid] = drag.id.split("|");
+  if (!row || box?.dataset.ckbox !== tid) return null;
+  const rows = [...box.querySelectorAll(":scope > .ck-row")];
+  const r = row.getBoundingClientRect(), before = e.clientY < r.top + r.height / 2;
+  const beforeId = before ? row.dataset.ckid : (rows[rows.indexOf(row) + 1]?.dataset.ckid ?? null);
+  if (beforeId === iid || moveChecklistItem(S.data, tid, iid, beforeId) === S.data) return null;
+  return { tid, iid, beforeId, row, pos: before ? "before" : "after" };
+}
 const clearOrderLine = () => view.querySelectorAll(".drop-before,.drop-after").forEach((r) => r.classList.remove("drop-before", "drop-after"));
 view.addEventListener("dragover", (e) => {
+  if (drag?.kind === "ckorder") {
+    const p = planCkOrder(e);
+    clearOrderLine();
+    if (!p) return;
+    e.preventDefault();
+    p.row.classList.add(p.pos === "before" ? "drop-before" : "drop-after");
+    return;
+  }
   if (drag?.kind === "order") {
     const p = planOrder(e);
     clearOrderLine();
@@ -840,6 +908,14 @@ view.addEventListener("dragover", (e) => {
   if (p.error) hideTip(); else showTip(`${hm(p.st)}–${hm(p.end)}`, e.clientX, e.clientY);
 });
 view.addEventListener("drop", (e) => {
+  if (drag?.kind === "ckorder") {
+    e.preventDefault();
+    const p = planCkOrder(e);
+    clearOrderLine();
+    drag = null;
+    if (p) apply((d) => moveChecklistItem(d, p.tid, p.iid, p.beforeId));
+    return;
+  }
   if (drag?.kind === "order") {
     e.preventDefault();
     const p = planOrder(e), id = drag.id;

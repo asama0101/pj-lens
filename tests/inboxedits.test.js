@@ -251,3 +251,55 @@ test("setStatus: 今と同じ状態の指定は、行を出さず警告にする
   assert.ok(p.warnings.some((w) => w.includes("A1") && w.includes("Done")));
   assert.equal(task(apply([{ op: "setStatus", taskId: "A1", status: "Done" }], d), "A1").doneAt, task(d, "A1").doneAt);
 });
+
+// ---- チェックリストの操作 ----
+const ck = (d, id) => (task(d, id).checklist ?? []).map((c) => [c.id, c.text, c.done]);
+
+test("addChecklistItem: 末尾に足す。節 checklist に add の行（ID・文言）。同じ依頼の 2 件目は c2", () => {
+  const ops = [{ op: "addChecklistItem", taskId: "A4", text: "ラックに搭載" }, { op: "addChecklistItem", taskId: "A4", text: " 配線 " }];
+  assert.deepEqual(sec(plan(ops), "checklist").map((r) => [r.taskId, r.action, r.itemId, r.new]), [["A4", "add", "c1", "ラックに搭載"], ["A4", "add", "c2", "配線"]]);
+  const out = apply(ops);
+  assert.deepEqual(ck(out, "A4"), [["c1", "ラックに搭載", false], ["c2", "配線", false]]);
+  assert.deepEqual(validate(out).errors, []);
+});
+
+test("setChecklistDone・setChecklistText・removeChecklistItem: 項目を ID で指す。行に旧→新", () => {
+  const p = plan([{ op: "setChecklistDone", taskId: "A5", itemId: "c3", done: true }, { op: "setChecklistDone", taskId: "A5", itemId: "c1", done: false }, { op: "setChecklistText", taskId: "A5", itemId: "c4", text: "レビューを受ける（2 名）" }, { op: "removeChecklistItem", taskId: "A5", itemId: "c2" }]);
+  assert.deepEqual(sec(p, "checklist").map((r) => [r.action, r.itemId, r.old, r.new]), [["check", "c3", false, true], ["uncheck", "c1", true, false], ["text", "c4", "レビューを受ける", "レビューを受ける（2 名）"], ["remove", "c2", "切り戻し手順を書く", null]]);
+  const out = apply([{ op: "setChecklistDone", taskId: "A5", itemId: "c3", done: true }, { op: "setChecklistText", taskId: "A5", itemId: "c4", text: "レビューを受ける（2 名）" }, { op: "removeChecklistItem", taskId: "A5", itemId: "c2" }]);
+  assert.deepEqual(ck(out, "A5"), [["c1", "切替の流れを書く", true], ["c3", "作業時間を見積もる", true], ["c4", "レビューを受ける（2 名）", false]]);
+});
+
+test("チェックリストの操作: 存在しない項目・空の文言・done が真偽値でない・すでに同じ値は、例外か警告（データは変えない）", () => {
+  assert.throws(() => plan([{ op: "setChecklistDone", taskId: "A5", itemId: "c9", done: true }]), /c9/);
+  assert.throws(() => plan([{ op: "addChecklistItem", taskId: "A4", text: "  " }]), /項目/);
+  assert.throws(() => plan([{ op: "setChecklistDone", taskId: "A5", itemId: "c1" }]), /done/);
+  assert.throws(() => plan([{ op: "setChecklistText", taskId: "A5", itemId: "c1", text: "" }]), /項目/);
+  const p = plan([{ op: "setChecklistDone", taskId: "A5", itemId: "c1", done: true }]); // すでに済み
+  assert.equal(sec(p, "checklist").length, 0);
+  assert.ok(p.warnings.some((w) => w.includes("c1")));
+});
+
+test("addTask の checklist（文字列の配列）は c1 から採番。同じ依頼の addChecklistItem で、新しいタスクに続けて足せる", () => {
+  const ops = [{ op: "addTask", ref: "t1", projectId: "A", title: "疎通確認", due: "2026-12-10", checklist: ["a", "", "b"] }, { op: "addChecklistItem", taskId: "t1", text: "c" }];
+  const out = apply(ops);
+  const t = out.tasks.at(-1);
+  assert.deepEqual([t.title, t.checklist], ["疎通確認", [{ id: "c1", text: "a", done: false }, { id: "c2", text: "b", done: false }, { id: "c3", text: "c", done: false }]]);
+  assert.deepEqual(validate(out).errors, []);
+  assert.throws(() => plan([{ op: "addTask", ref: "t1", projectId: "A", title: "x", due: "2026-12-10", checklist: "a" }]), /checklist/);
+});
+
+test("提案のあとに画面で項目が変わると、承認は stale（追加・削除・文言）", () => {
+  const ops = [{ op: "setChecklistDone", taskId: "A5", itemId: "c3", done: true }];
+  const p = plan(ops);
+  const change = (fn) => { const d = load(); fn(task(d, "A5")); return d; };
+  for (const d of [change((t) => t.checklist.push({ id: "c5", text: "z", done: false })), change((t) => { t.checklist = t.checklist.filter((c) => c.id !== "c4"); }), change((t) => { t.checklist[2].text = "変更"; })]) {
+    assert.throws(() => applyProposal(d, p, { reason: "依頼", cause: "社内", today: TODAY }), (e) => e.code === "stale");
+  }
+  assert.doesNotThrow(() => applyProposal(load(), p, { reason: "依頼", cause: "社内", today: TODAY }));
+});
+
+test("summarizeSections: チェックリストの件数が先頭に付く", () => {
+  const p = plan([{ op: "addChecklistItem", taskId: "A4", text: "a" }, { op: "setChecklistDone", taskId: "A5", itemId: "c3", done: true }]);
+  assert.ok(summarizeSections(p.sections).startsWith("チェックリスト 2 件"));
+});
