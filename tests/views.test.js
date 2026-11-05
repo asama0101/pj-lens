@@ -1375,3 +1375,43 @@ test("renderPrio: チェックリストのあるタスクの行に M/N（残り 
   assert.ok(html.includes("2/4（残り 2 件）"));
   assert.equal(count(html, /ck-meter/g), 1, "チェックリストのあるタスク（A5）だけ");
 });
+
+// ---- ガントのチェックリスト表示 ----
+const grow = (html, id) => html.split('<div class="g-row">').find((r) => r.includes(`<span class="id">${id}</span>`)) ?? "";
+
+test("renderGantt: チェックリストのあるタスクは、ラベルに線と M/N、バーに割合の塗り。バーの右の期限には数字を出さない", () => {
+  const r = grow(gantt(load(), ["A"]), "A5"); // In Progress・2/4
+  assert.ok(r.includes("ck-meter") && count(r, />2\/4</g) === 1, "ラベルに M/N");
+  assert.ok(/class="gbar[^"]*\bck\b/.test(r) && r.includes('<u class="gck" style="width:50%"></u>'), "バーの塗り");
+  assert.match(/class="g-due mono"[^>]*>([^<]*)</.exec(r)[1], /^\d+\/\d+$/, "バーの右は期限の日付だけ");
+});
+
+test("renderGantt: 項目なしのタスクには、線も数字も塗りも出ない。0 件済みは幅 0%", () => {
+  const d = load();
+  const html = gantt(d, ["A"]);
+  const r4 = grow(html, "A4");
+  assert.ok(!r4.includes("ck-meter") && !r4.includes("gck"));
+  d.tasks.find((t) => t.id === "A4").checklist = [{ id: "c1", text: "a", done: false }, { id: "c2", text: "b", done: false }];
+  assert.ok(grow(gantt(d, ["A"]), "A4").includes('class="gck" style="width:0%"'));
+});
+
+test("renderGantt: Done のタスクは、ラベルの M/N が all（緑）で、バーに塗りを出さない", () => {
+  const r = grow(gantt(load(), ["A"]), "A1"); // Done・3/3
+  assert.ok(r.includes('class="ck-n mono all"') && r.includes(">3/3<"));
+  assert.ok(!r.includes("gck"));
+});
+
+test("renderGantt: 点（期限だけのタスク）は、ラベルに M/N を出し、塗りは出さない", () => {
+  const d = load();
+  const t = d.tasks.find((x) => x.id === "A6");
+  Object.assign(t, { start: null, predecessors: [], checklist: [{ id: "c1", text: "a", done: true }, { id: "c2", text: "b", done: false }] });
+  const r = grow(gantt(d, ["A"]), "A6");
+  assert.ok(r.includes("dot mk") && r.includes(">1/2<") && !r.includes("gck"));
+});
+
+test("renderGantt: 文言の特殊文字は出力に混ざらない（数字と幅だけ）。レポート用（readonly）にも M/N が出る", () => {
+  const d = load();
+  d.tasks.find((t) => t.id === "A5").checklist = [{ id: "c1", text: "<b>x</b>", done: true }];
+  const html = gantt(d, ["A"], { readonly: true });
+  assert.ok(!html.includes("<b>x</b>") && grow(html, "A5").includes(">1/1<"));
+});

@@ -525,6 +525,14 @@ body:has(.ptool){padding-block-start:8px}
 #view .ck-meter:has(.ck-n.all) .ck-bar i{background:var(--ok)}
 #view .rank .ck-meter{grid-column:2}
 #view .rank.tl .ck-meter{grid-column:1}
+#view .g-label .ck-meter{grid-column:2}
+/* ガントのバー: 済みの割合だけ濃く塗る（.gck）。残りは同じ色の薄い色。つまみ（.gh）は塗りより前に描くので、位置は変わらない */
+#view .gbar.ck{background:color-mix(in srgb,var(--accent) 35%,var(--surface))}
+#view .gbar.ck .gck{position:absolute;left:0;top:0;bottom:0;border-radius:4px 0 0 4px;background:var(--accent)}
+#view .gbar.ck.b-todo{background:transparent}
+#view .gbar.ck.b-todo .gck{background:var(--todo);opacity:.55}
+#view .gbar.ck.b-wait{background:var(--warn-soft)}
+#view .gbar.ck.b-wait .gck{background:var(--warn);opacity:.45}
 </style>
 </head>
 <body>
@@ -3351,6 +3359,7 @@ const { assignLevels, layoutMilestones, renderGantt } = (() => {
 
 
 
+
 const GANTT_WINDOWS = [["m1", "1か月"], ["m3", "3か月"], ["m6", "6か月"], ["y1", "1年"], ["all", "全期間"]];
 
 const legend = (showActual) => `<div class="legend"><span><i class="gbar b-todo" style="position:static;display:inline-block;width:22px;height:10px"></i>To Do</span><span><i class="gbar b-prog" style="position:static;display:inline-block;width:22px;height:10px"></i>In Progress</span><span><i class="gbar b-wait" style="position:static;display:inline-block;width:22px;height:10px"></i>Waiting</span><span><i class="gbar b-done" style="position:static;display:inline-block;width:22px;height:10px"></i>Done</span><span><i class="gbar gsum" style="position:static;display:inline-block;width:22px;height:8px"></i>プロジェクト全体</span><span><i class="ms" style="position:static;display:inline-block;transform:rotate(45deg);width:9px;height:9px"></i>マイルストーン</span>${showActual ? `<span><i class="gact" style="position:static;display:inline-block;width:22px;height:5px"></i>実績(最初の作業日〜完了日・今日)</span>` : ""}<span><i class="imp-key hi"></i>重要度 高（行を薄い赤で塗る）</span><span>開始日は、未入力なら前のタスクの期限から</span></div>`;
@@ -3482,9 +3491,11 @@ function renderGantt(data, projectIds, today, opts = {}) {
       const gt = readonly ? "" : ` data-gt="${esc(t.id)}"${hasPre ? ` data-pre="${esc(t.predecessors.join(" "))}"` : ""}`;
       const drag = readonly ? "" : " gdrag";
       const label = `${esc(t.id)} ${esc(t.title)} ${fmtMD(r.start)}〜${fmtMD(r.end)}`;
+      const ck = checklistCount(t);
+      const ckFill = ck.total && t.status !== "Done" && t.status !== "Cancelled" ? `<u class="gck" style="width:${Math.round((ck.done / ck.total) * 100)}%"></u>` : ""; // 済みの割合だけ濃く塗る（完了したタスクは今までどおり）
       const bar = r.point
         ? `<i class="dot mk${drag} ${ui.dot}${late ? " is-late" : ""}"${gt} style="left:calc(${x(r.end)} + ${(50 / total).toFixed(3)}%)" title="${label}${readonly ? "" : "(ドラッグで期限を変更)"}"></i>`
-        : `<i class="gbar${drag} ${ui.bar}${late ? " is-late" : ""}"${gt} style="left:${x(r.start)};width:${(((diffDays(r.end, r.start) + 1) / total) * 100).toFixed(3)}%;min-width:5px" title="${label}${readonly ? "" : "(クリックで編集、ドラッグで移動、両端で開始・期限を変更)"}">${readonly ? "" : '<b class="gh l" data-gh="l"></b><b class="gh r" data-gh="r"></b>'}</i>`;
+        : `<i class="gbar${drag} ${ui.bar}${ckFill ? " ck" : ""}${late ? " is-late" : ""}"${gt} style="left:${x(r.start)};width:${(((diffDays(r.end, r.start) + 1) / total) * 100).toFixed(3)}%;min-width:5px" title="${label}${readonly ? "" : "(クリックで編集、ドラッグで移動、両端で開始・期限を変更)"}">${ckFill}${readonly ? "" : '<b class="gh l" data-gh="l"></b><b class="gh r" data-gh="r"></b>'}</i>`;
       const act = r.actual && showActual
         ? `<i class="gact" style="left:${x(r.actual.start)};width:${((Math.max(diffDays(r.actual.end, r.actual.start), 0) + 1) / total * 100).toFixed(3)}%;min-width:4px" title="実績 ${fmtMD(r.actual.start)}〜${fmtMD(r.actual.end)}"></i>`
         : "";
@@ -3496,7 +3507,7 @@ function renderGantt(data, projectIds, today, opts = {}) {
         const name = readonly ? `<span class="g-name">${esc(t.title)}</span>` : `<button class="g-name" data-gedit="${esc(t.id)}" title="クリックで編集">${esc(t.title)}</button>`;
         const del = readonly ? "" : `<button class="gx" data-del="${esc(t.id)}" aria-label="${esc(t.id)} を削除">×</button>`;
         const imp = t.importance === "high" && !["Done", "Cancelled"].includes(t.status) ? " imp-high" : ""; // 重要度の印（高）。完了したタスクには付けない
-        lab = `<div class="g-label${imp}"${readonly ? "" : ` data-mvrow="${esc(t.id)}"`}>${readonly ? "" : `<span class="mv" draggable="true" data-mvh="${esc(t.id)}" title="ドラッグで並べ替え" aria-label="${esc(t.id)} を並べ替え">⠿</span>`}<span class="id">${esc(t.id)}</span>${name}${del}<span class="g-pre">${hasPre ? "← " + esc(t.predecessors.join(", ")) : ""}</span></div>`;
+        lab = `<div class="g-label${imp}"${readonly ? "" : ` data-mvrow="${esc(t.id)}"`}>${readonly ? "" : `<span class="mv" draggable="true" data-mvh="${esc(t.id)}" title="ドラッグで並べ替え" aria-label="${esc(t.id)} を並べ替え">⠿</span>`}<span class="id">${esc(t.id)}</span>${name}${del}<span class="g-pre">${hasPre ? "← " + esc(t.predecessors.join(", ")) : ""}</span>${checkMeterHtml(t)}</div>`;
       }
       return `<div class="g-row">${lab}<div class="g-lane" ${laneStyle}>${bar}${act}<span class="g-due mono" style="left:${x(addDays(r.end, 1))}">${fmtMD(t.due)}</span></div></div>`;
     };

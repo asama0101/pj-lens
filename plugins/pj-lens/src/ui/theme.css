@@ -518,3 +518,11 @@ body:has(.ptool){padding-block-start:8px}
 #view .ck-meter:has(.ck-n.all) .ck-bar i{background:var(--ok)}
 #view .rank .ck-meter{grid-column:2}
 #view .rank.tl .ck-meter{grid-column:1}
+#view .g-label .ck-meter{grid-column:2}
+/* ガントのバー: 済みの割合だけ濃く塗る（.gck）。残りは同じ色の薄い色。つまみ（.gh）は塗りより前に描くので、位置は変わらない */
+#view .gbar.ck{background:color-mix(in srgb,var(--accent) 35%,var(--surface))}
+#view .gbar.ck .gck{position:absolute;left:0;top:0;bottom:0;border-radius:4px 0 0 4px;background:var(--accent)}
+#view .gbar.ck.b-todo{background:transparent}
+#view .gbar.ck.b-todo .gck{background:var(--todo);opacity:.55}
+#view .gbar.ck.b-wait{background:var(--warn-soft)}
+#view .gbar.ck.b-wait .gck{background:var(--warn);opacity:.45}
