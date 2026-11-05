@@ -1466,3 +1466,17 @@ test("doneAskHtml: stage が future、または stage なし（従来の形）�
     assert.ok(h.includes('data-doneok="A5"') && h.includes("未来の予定の枠 1 件") && !h.includes("data-ckall"));
   }
 });
+
+test("受信箱の提案カード: チェックリストの節は、タスク・操作・項目の文言（旧→新）を出す。登録の行には項目の件数を添える。文言はエスケープする", () => {
+  const html = cardOf([
+    { kind: "checklist", rows: [
+      { taskId: "A4", title: "検証環境の構築", action: "add", itemId: "c1", old: null, new: "<i>搭載</i>" },
+      { taskId: "A5", title: "切替手順書", action: "check", itemId: "c3", old: false, new: true },
+      { taskId: "A5", title: "切替手順書", action: "text", itemId: "c4", old: "レビュー", new: "レビュー（2 名）" },
+      { taskId: "A5", title: "切替手順書", action: "remove", itemId: "c2", old: "切り戻し", new: null },
+    ] },
+    { kind: "add", rows: [{ ref: "t1", title: "疎通確認", projectId: "A", group: null, subgroup: null, due: "2026-12-10", businessDays: null, start: null, predecessors: [], checklist: ["a", "b"] }] },
+  ]);
+  for (const w of ["チェックリストの変更（4 件）", "追加", "チェック", "文言の変更", "削除", "レビュー（2 名）", "項目 2 件"]) assert.ok(html.includes(w), w);
+  assert.ok(html.includes("&lt;i&gt;搭載&lt;/i&gt;") && !html.includes("<i>搭載</i>"));
+});

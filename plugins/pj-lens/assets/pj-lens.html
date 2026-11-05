@@ -752,7 +752,7 @@ const IMPORTANCE = ["high", "mid", "low"];
 const CAUSES = ["ベンダー", "社内", "自分", "その他"];
 const HOLIDAY_KINDS = ["祝日", "有給", "その他"];
 const REQUEST_STATUS = ["pending", "working", "question", "proposed", "applied", "rejected", "failed"];
-const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask", "addProject", "setStatus", "setImportance", "updateProject", "removeTask", "removeProject", "addMilestone", "moveMilestone", "removeMilestone"];
+const OP_KINDS = ["moveDue", "addPred", "removePred", "addTask", "addProject", "setStatus", "setImportance", "updateProject", "removeTask", "removeProject", "addMilestone", "moveMilestone", "removeMilestone", "addChecklistItem", "setChecklistDone", "setChecklistText", "removeChecklistItem"];
 const DEFAULT_WORKDAY = { start: "09:00", end: "18:00" };
 
 /** 終わったタスク（Done・Cancelled）か */
@@ -2847,8 +2847,9 @@ return { planDone };
 const { EDITS } = (() => {
 // 受信箱の依頼の操作のうち、1 つの対象（タスク・プロジェクト・マイルストーン）を直す操作。inboxops.js の simulate が、当てる順に呼ぶ。
 // ハンドラは (w, o, ctx) → 新しい w。w は作業用のコピー。対象が無い・値が不正なら例外にし、変更案の行は ctx.rows[節の名前] に足す。
-// ctx: { today, warnings, rows, taskId(token), projectId(token), touch(taskId), log(taskId), touchProject(projectId), dueGiven }
+// ctx: { today, warnings, rows, taskId(token), projectId(token), touch(taskId), touchChecklist(taskId), log(taskId), touchProject(projectId), dueGiven }
 //   taskId・projectId は、同じ依頼の addTask・addProject の ref を、採番後の ID にする。touch は承認時の確認（base）の対象、log は変更履歴に載せるタスク。
+
 
 
 
@@ -2858,6 +2859,11 @@ const taskOf = (w, id) => {
   const t = w.tasks.find((x) => x.id === id);
   if (!t) throw new Error(`タスク ${id} がありません`);
   return t;
+};
+const itemOf = (t, itemId) => {
+  const c = checklistOf(t).find((x) => x.id === itemId);
+  if (!c) throw new Error(`タスク ${t.id} に項目 ${itemId} がありません`);
+  return c;
 };
 const projectOf = (w, id) => {
   const p = w.projects.find((x) => x.id === id);
@@ -2899,6 +2905,49 @@ const EDITS = {
     ctx.touch(id); ctx.log(id);
     ctx.rows.importance.push({ taskId: id, title: t.title, old: t.importance ?? null, new: o.importance ?? null });
     return next;
+  },
+
+  /** 項目を末尾に足す。ID は画面の追加と同じ規則（最大番号 + 1） */
+  addChecklistItem(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    const next = addChecklistItem(w, id, o.text);
+    const item = checklistOf(taskOf(next, id)).at(-1);
+    ctx.touch(id); ctx.touchChecklist(id); ctx.log(id);
+    ctx.rows.checklist.push({ taskId: id, title: t.title, action: "add", itemId: item.id, text: item.text, old: null, new: item.text });
+    return next;
+  },
+
+  setChecklistDone(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    if (typeof o.done !== "boolean") throw new Error(`setChecklistDone（${id}）には done（true か false）が必要です`);
+    const cur = itemOf(t, o.itemId);
+    if (cur.done === o.done) { ctx.warnings.push(`タスク ${id} の項目 ${cur.id} は、すでに${o.done ? "済み" : "未チェック"}なので変わりません`); return w; }
+    ctx.touch(id); ctx.touchChecklist(id); ctx.log(id);
+    ctx.rows.checklist.push({ taskId: id, title: t.title, action: o.done ? "check" : "uncheck", itemId: cur.id, text: cur.text, old: cur.done, new: o.done });
+    return updateChecklistItem(w, id, cur.id, { done: o.done });
+  },
+
+  setChecklistText(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    const cur = itemOf(t, o.itemId);
+    const next = updateChecklistItem(w, id, cur.id, { text: o.text });
+    const text = itemOf(taskOf(next, id), cur.id).text;
+    if (text === cur.text) { ctx.warnings.push(`タスク ${id} の項目 ${cur.id} は、指定どおりの文言なので変わりません`); return w; }
+    ctx.touch(id); ctx.touchChecklist(id); ctx.log(id);
+    ctx.rows.checklist.push({ taskId: id, title: t.title, action: "text", itemId: cur.id, text, old: cur.text, new: text });
+    return next;
+  },
+
+  removeChecklistItem(w, o, ctx) {
+    const id = ctx.taskId(o.taskId);
+    const t = taskOf(w, id);
+    const cur = itemOf(t, o.itemId);
+    ctx.touch(id); ctx.touchChecklist(id); ctx.log(id);
+    ctx.rows.checklist.push({ taskId: id, title: t.title, action: "remove", itemId: cur.id, text: cur.text, old: cur.text, new: null });
+    return removeChecklistItem(w, id, cur.id);
   },
 
   updateProject(w, o, ctx) {
@@ -2980,7 +3029,7 @@ const { summarizeSections, planOps, applyProposal } = (() => {
 // 受信箱の依頼の「変更の操作（ops）」の計画と適用。HTML と CLI（tools/inbox.js）が共有する。
 // 計画（planOps）は、操作を作業用のコピーに当てて、変更案の表・警告・適用前の確認用の値（base）を作る。データは変えない。
 // 適用（applyProposal）は、base が現在のデータと同じときだけ、同じ手順で操作を当てて、変更履歴を足す。
-// 当てる順: addProject → addTask → updateProject → setStatus・setImportance → addMilestone → moveMilestone → removeMilestone → addPred・removePred → moveDue → removeTask → removeProject（それぞれ書かれた順）。次のタスクの動きは computeImpact の規則に合わせる。
+// 当てる順: addProject → addTask → updateProject → setStatus・setImportance → addChecklistItem・setChecklistDone・setChecklistText・removeChecklistItem → addMilestone → moveMilestone → removeMilestone → addPred・removePred → moveDue → removeTask → removeProject（それぞれ書かれた順）。次のタスクの動きは computeImpact の規則に合わせる。
 
 
 
@@ -2989,6 +3038,7 @@ const { summarizeSections, planOps, applyProposal } = (() => {
 
 
 const max = (a, b) => (a > b ? a : b);
+const CHECKLIST_OPS = ["addChecklistItem", "setChecklistDone", "setChecklistText", "removeChecklistItem"];
 
 function simulate(data, ops, today) {
   if (!Array.isArray(ops) || !ops.length) throw new Error("操作がありません");
@@ -3006,11 +3056,12 @@ function simulate(data, ops, today) {
   const warnings = [];
   const predRows = [], addInfo = [], moves = [];
   const inboxIds = new Set();   // source: inbox の記録に載せるタスク
+  const ckTouched = new Set();  // チェックリストの操作が触る既存のタスク（base に、項目の中身を入れる）
   const projects = new Set();
   const projectRefs = new Map(); // addProject の ref → 採番した ID
   const newProjects = [];        // { ref, id }
   const dueGiven = new Set();    // 期限が指定された新規プロジェクトの ID（それ以外は、タスクの最終期限から決める）
-  const rows = { status: [], importance: [], projectChange: [], milestone: [], removeTask: [], removeProject: [] }; // inboxedits.js の操作の変更案の行
+  const rows = { status: [], importance: [], checklist: [], projectChange: [], milestone: [], removeTask: [], removeProject: [] }; // inboxedits.js の操作の変更案の行
   let predCount = 0, addCount = 0;
 
   const setDue = (id, due, reason) => {
@@ -3088,7 +3139,9 @@ function simulate(data, ops, today) {
     planned.set(o, o.businessDays === undefined ? o : (({ businessDays, ...rest }) => ({ ...rest, due }))(o));
     // 開始日: 書かれていればそのとおり。前のタスクがあるタスクは入れない（前のタスクから決まる開始日にする）。なければ今日（期限が過去なら入れない）
     const start = o.start ?? ((o.predecessors ?? []).length || due < today ? null : today);
-    w = addTask(w, { projectId: pidOf(o), title: o.title, due, start, group: o.group ?? null, subgroup: o.subgroup ?? null });
+    if (o.checklist !== undefined && (!Array.isArray(o.checklist) || o.checklist.some((x) => typeof x !== "string"))) throw new Error(`addTask（${ref}）の checklist は文字列の配列にしてください`);
+    const items = o.checklist?.length ? newChecklist(o.checklist) : [];
+    w = addTask(w, { projectId: pidOf(o), title: o.title, due, start, group: o.group ?? null, subgroup: o.subgroup ?? null, ...(items.length ? { checklist: items } : {}) });
     const id = w.tasks.at(-1).id;
     refs.set(ref, id);
     inboxIds.add(id);
@@ -3118,11 +3171,13 @@ function simulate(data, ops, today) {
     taskId: resolve,
     projectId: (token) => projectRefs.get(token) ?? token,
     touch: (id) => { if (before.has(id)) touched.add(id); },
+    touchChecklist: (id) => { if (before.has(id)) ckTouched.add(id); },
     log: (id) => inboxIds.add(id),
     touchProject: (id) => { if (!newProjects.some((n) => n.id === id)) projects.add(id); },
   };
   for (const o of ops.filter((x) => x.op === "updateProject")) w = EDITS.updateProject(w, o, editCtx);
   for (const o of ops.filter((x) => x.op === "setStatus" || x.op === "setImportance")) w = EDITS[o.op](w, o, editCtx);
+  for (const o of ops.filter((x) => CHECKLIST_OPS.includes(x.op))) w = EDITS[o.op](w, o, editCtx);
 
   for (const kind of ["addMilestone", "moveMilestone", "removeMilestone"]) for (const o of ops.filter((x) => x.op === kind)) w = EDITS[kind](w, o, editCtx);
 
@@ -3227,18 +3282,18 @@ function simulate(data, ops, today) {
 
   const baseIds = new Set([...touched, ...[...changed].filter((id) => before.has(id))]);
   const baseTasks = {};
-  for (const id of baseIds) { const t = before.get(id); baseTasks[id] = { due: t.due, predecessors: [...(t.predecessors ?? [])], status: t.status }; projects.add(t.projectId); }
+  for (const id of baseIds) { const t = before.get(id); baseTasks[id] = { due: t.due, predecessors: [...(t.predecessors ?? [])], status: t.status, ...(ckTouched.has(id) ? { checklist: JSON.stringify(t.checklist ?? []) } : {}) }; projects.add(t.projectId); } // 項目を触るタスクは、項目の中身も承認時に比べる
 
   // 前のタスクが、そのまた前のタスクに合わせて引き上げられると、businessDays の期限も引き上げられ、営業日が吸収される。表の営業日と食い違うので知らせる
   for (const o of adds.filter((x) => x.businessDays !== undefined)) {
     const ref = String(o.ref).trim();
     if (T(refs.get(ref)).due !== dueOf.get(ref)) warnings.push(`登録するタスク ${ref}（${o.title}）の営業日 ${o.businessDays} は、前のタスクの期限が引き上げられたため反映されていません（期限は ${T(refs.get(ref)).due}）`);
   }
-  const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, businessDays: o.businessDays ?? null, start: t.start ?? null, predecessors: o.predecessors ?? [] }; });
+  const addRows = adds.map((o) => { const t = T(refs.get(String(o.ref).trim())); return { ref: String(o.ref).trim(), title: t.title, projectId: t.projectId, group: t.group ?? null, subgroup: t.subgroup ?? null, due: t.due, businessDays: o.businessDays ?? null, start: t.start ?? null, predecessors: o.predecessors ?? [], checklist: (t.checklist ?? []).map((c) => c.text) }; });
   const sections = [];
   if (projectRows.length) sections.push({ kind: "project", rows: projectRows });
   if (addRows.length) sections.push({ kind: "add", rows: addRows });
-  for (const kind of ["status", "importance", "projectChange", "milestone"]) if (rows[kind].length) sections.push({ kind, rows: rows[kind] });
+  for (const kind of ["status", "importance", "checklist", "projectChange", "milestone"]) if (rows[kind].length) sections.push({ kind, rows: rows[kind] });
   if (predRows.length) sections.push({ kind: "pred", rows: predRows });
   if (dueRows.length) sections.push({ kind: "due", rows: dueRows });
   for (const kind of ["removeTask", "removeProject"]) if (rows[kind].length) sections.push({ kind, rows: rows[kind] });
@@ -3251,16 +3306,17 @@ const sectionsKey = (sections) => JSON.stringify(sections.map((s) => [s.kind, s.
     : s.kind === "project" ? [r.ref, r.id, r.name, r.type]
     : s.kind === "status" ? [r.taskId, r.oldStatus, r.newStatus, r.oldWaitingOn, r.newWaitingOn?.party ?? null]
     : s.kind === "importance" ? [r.taskId, r.old, r.new]
+    : s.kind === "checklist" ? [r.taskId, r.action, r.itemId, r.old, r.new]
     : s.kind === "projectChange" ? [r.projectId, r.name, r.changes]
     : s.kind === "milestone" ? [r.projectId, r.action, r.name, r.oldDate, r.newDate]
     : s.kind === "removeTask" ? [r.taskId, r.status, r.affected.map((a) => a.taskId)]
     : s.kind === "removeProject" ? [r.projectId, r.tasks.map((t) => [t.taskId, t.status]), r.eventLinks]
     : s.kind === "pred" ? [r.taskId, r.predId, r.action]
-      : [r.ref, r.title, r.projectId, r.group, r.subgroup, r.due, r.predecessors])]));
+      : [r.ref, r.title, r.projectId, r.group, r.subgroup, r.due, r.predecessors, r.checklist])]));
 
 const count = (sections, ...kinds) => sections.filter((s) => kinds.includes(s.kind)).reduce((n, s) => n + s.rows.filter((r) => r.action !== "same").length, 0);
 /** 節の件数のうち、あるときだけ書く項目（プロジェクト・状態・重要度・プロジェクト変更・削除）。要約と変更履歴の reason の先頭に付く */
-const extraParts = (sections) => [[["project"], "プロジェクト"], [["status"], "状態"], [["importance"], "重要度"], [["projectChange"], "プロジェクト変更"], [["milestone"], "マイルストーン"], [["removeTask", "removeProject"], "削除"]]
+const extraParts = (sections) => [[["project"], "プロジェクト"], [["status"], "状態"], [["importance"], "重要度"], [["checklist"], "チェックリスト"], [["projectChange"], "プロジェクト変更"], [["milestone"], "マイルストーン"], [["removeTask", "removeProject"], "削除"]]
   .filter(([kinds]) => count(sections, ...kinds)).map(([kinds, label]) => `${label} ${count(sections, ...kinds)} 件`);
 
 /** 変更案（sections）の要約。例: 「期限 2 件・順番 1 件・登録 2 件」（変更なしの前のタスクは数えない）。ほかの節があるときだけ、先頭に「プロジェクト 1 件・」などが付く */
@@ -3283,6 +3339,7 @@ function applyProposal(data, proposal, { reason, cause, today }) {
   for (const [id, v] of Object.entries(proposal.base?.tasks ?? {})) {
     const t = data.tasks.find((x) => x.id === id);
     if (!t || t.due !== v.due || t.status !== v.status || (t.predecessors ?? []).join(",") !== (v.predecessors ?? []).join(",")) throw stale();
+    if ("checklist" in v && JSON.stringify(t.checklist ?? []) !== v.checklist) throw stale(); // 提案のあとに画面で項目が変わった
   }
   for (const pid of proposal.base?.projects ?? []) if (!(data.projects ?? []).some((p) => p.id === pid)) throw stale();
 
@@ -4058,6 +4115,12 @@ function sectionHtml(data, s) {
     const rows = s.rows.map((r) => `<tr><td class="id">${esc(r.taskId)}</td><td>${esc(r.title)}</td><td>${esc(r.old ?? "（なし）")}</td><td><b>${esc(r.new ?? "（外す）")}</b></td></tr>`).join("");
     return `<div class="ib-sec"><b>重要度の変更（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>ID</th><th>件名</th><th>今の重要度</th><th>新しい重要度</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
+  if (s.kind === "checklist") {
+    const label = { add: "追加", check: "チェック", uncheck: "チェックを外す", text: "文言の変更", remove: "削除" };
+    const item = (r) => (r.action === "text" ? `${esc(r.old)} → <b>${esc(r.new)}</b>` : esc(r.text ?? r.new ?? r.old ?? ""));
+    const rows = s.rows.map((r) => `<tr><td class="id">${esc(r.taskId)}</td><td>${esc(r.title)}</td><td><span class="pill ${r.action === "remove" ? "bad" : "ok"}">${label[r.action] ?? esc(r.action)}</span></td><td><span class="mono muted">${esc(r.itemId)}</span> ${item(r)}</td></tr>`).join("");
+    return `<div class="ib-sec"><b>チェックリストの変更（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>ID</th><th>件名</th><th>操作</th><th>項目</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
   if (s.kind === "projectChange") {
     const label = { name: "名前", type: "種別", status: "状態", start: "開始日", due: "期限" };
     const rows = s.rows.flatMap((r) => r.changes.map((c) => `<tr><td class="id">${esc(r.projectId)}</td><td>${esc(r.name)}</td><td>${label[c.field] ?? esc(c.field)}</td><td>${esc(c.old)}</td><td><b>${esc(c.new)}</b></td></tr>`)).join("");
@@ -4077,7 +4140,7 @@ function sectionHtml(data, s) {
     return `<div class="ib-sec ib-danger"><b>プロジェクトの削除（${s.rows.length} 件）</b><ul class="ib-list">${rows}</ul></div>`;
   }
   if (s.kind === "add") {
-    const rows = s.rows.map((r, i) => `<tr data-row="${i + 1}"><td class="mono">${i + 1}</td><td>${esc(r.title)}</td><td>${r.group ? esc(r.group) : "（なし）"}${r.subgroup ? ` ▸ ${esc(r.subgroup)}` : ""}</td><td class="mono">${esc(r.businessDays ?? "—")}</td><td class="mono">${fmtMD(r.due)}</td><td class="mono">${(r.predecessors ?? []).length ? esc(r.predecessors.join(", ")) : "—"}</td></tr>`).join("");
+    const rows = s.rows.map((r, i) => `<tr data-row="${i + 1}"><td class="mono">${i + 1}</td><td>${esc(r.title)}${(r.checklist ?? []).length ? ` <span class="muted">（項目 ${r.checklist.length} 件）</span>` : ""}</td><td>${r.group ? esc(r.group) : "（なし）"}${r.subgroup ? ` ▸ ${esc(r.subgroup)}` : ""}</td><td class="mono">${esc(r.businessDays ?? "—")}</td><td class="mono">${fmtMD(r.due)}</td><td class="mono">${(r.predecessors ?? []).length ? esc(r.predecessors.join(", ")) : "—"}</td></tr>`).join("");
     return `<div class="ib-sec"><b>タスクの登録（${s.rows.length} 件）</b><table class="tbl"><thead><tr><th>#</th><th>件名</th><th>大項目 ▸ 中項目</th><th>営業日</th><th>期限</th><th>前のタスク</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   return "";

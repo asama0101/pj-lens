@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { addDays, diffDays, toMin, toHHMM, weekday } from "../plugins/pj-lens/src/core/dates.js";
-import { validate } from "../plugins/pj-lens/src/core/schema.js";
+import { validate, OP_KINDS } from "../plugins/pj-lens/src/core/schema.js";
 
 const load = () => JSON.parse(readFileSync(new URL("../plugins/pj-lens/data/sample.json", import.meta.url), "utf8"));
 const NOW = { date: "2026-10-20", time: "12:00" };
@@ -281,4 +281,8 @@ test("settings.countWeekendsAndHolidays: 真偽値でないと注意（エラー
   }
   for (const value of [true, false, null]) assert.equal(settingsWarn(withSettings({ countWeekendsAndHolidays: value }), "countWeekendsAndHolidays").length, 0, String(value));
   assert.equal(settingsWarn(load(), "countWeekendsAndHolidays").length, 0);
+});
+
+test("OP_KINDS: チェックリストの 4 つの操作を含む", () => {
+  for (const k of ["addChecklistItem", "setChecklistDone", "setChecklistText", "removeChecklistItem"]) assert.ok(OP_KINDS.includes(k), k);
 });
