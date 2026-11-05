@@ -509,3 +509,12 @@ body:has(.ptool){padding-block-start:8px}
 #view section.panel > .pstick{padding-top:20px}
 #view section.panel > .gtop{padding-top:22px}
 #view .cols>.side,#view .side-toggle{margin-top:8px}
+/* チェックリストの進み具合（細い線と「済み/全体」）。今日の優先・今日のタスク・ガントのラベルが使う */
+#view .ck-meter{display:flex;align-items:center;gap:6px}
+#view .ck-bar{display:block;width:72px;height:4px;border-radius:2px;background:var(--line);overflow:hidden;flex:none}
+#view .ck-bar i{display:block;height:100%;background:var(--accent)}
+#view .ck-n{font-size:11px;font-weight:400;color:var(--muted)}
+#view .ck-n.all{color:var(--ok)}
+#view .ck-meter:has(.ck-n.all) .ck-bar i{background:var(--ok)}
+#view .rank .ck-meter{grid-column:2}
+#view .rank.tl .ck-meter{grid-column:1}

@@ -6,6 +6,7 @@ import { renderProjects } from "../plugins/pj-lens/src/ui/views/project.js";
 import { renderGantt, assignLevels, layoutMilestones } from "../plugins/pj-lens/src/ui/views/gantt.js";
 import { renderPrio, renderTodayTasks, todayTaskIds } from "../plugins/pj-lens/src/ui/views/prio.js";
 import { renderSettings } from "../plugins/pj-lens/src/ui/views/settings.js";
+import { checkMeterHtml } from "../plugins/pj-lens/src/ui/common.js";
 import { renderTaskPop } from "../plugins/pj-lens/src/ui/views/taskpop.js";
 import { renderInboxBar, ibExamples } from "../plugins/pj-lens/src/ui/views/inboxpanel.js";
 import { ruleMeetingCounts } from "../plugins/pj-lens/src/core/rules.js";
@@ -1348,4 +1349,29 @@ test("renderList: .twrap は表（.tlist）だけを含み、メモ・マイル�
   assert.equal(count(wrap, /<table\b/g), 1);
   assert.ok(!wrap.includes("マイルストーン") && !wrap.includes("日程変更の履歴") && !wrap.includes("変更はその場でファイルに保存"), "表の外のものを含まない");
   assert.ok(html.indexOf("マイルストーン", end) > end, "マイルストーンは .twrap の後");
+});
+
+// ---- チェックリストの M/N 表示（今日の優先・今日のタスク） ----
+const ckTask = (n, done) => ({ checklist: Array.from({ length: n }, (_, i) => ({ id: `c${i + 1}`, text: `項目${i + 1}`, done: i < done })) });
+
+test("checkMeterHtml: 項目なしは空。あれば割合の幅と M/N。remain で残り件数。全部済みは all", () => {
+  assert.equal(checkMeterHtml({}), "");
+  assert.equal(checkMeterHtml({ checklist: [] }), "");
+  const a = checkMeterHtml(ckTask(5, 2));
+  assert.ok(a.includes("width:40%") && a.includes(">2/5<") && a.includes('class="ck-n mono"'));
+  assert.ok(checkMeterHtml(ckTask(5, 2), { remain: true }).includes("2/5（残り 3 件）"));
+  assert.ok(checkMeterHtml(ckTask(4, 4)).includes('class="ck-n mono all"'));
+});
+
+test("renderTodayTasks: チェックリストのあるタスクの行に M/N（残り K 件）。ないタスクの行には出ない", () => {
+  const { d } = withToday();
+  const [a5, a7] = items(renderTodayTasks(d, TODAY));
+  assert.ok(a5.html.includes("2/4（残り 2 件）") && a5.html.includes("ck-meter"));
+  assert.ok(!a7.html.includes("ck-meter"));
+});
+
+test("renderPrio: チェックリストのあるタスクの行に M/N（残り K 件）。ないタスクの行には出ない", () => {
+  const html = renderPrio(load(), TODAY, { sched: true });
+  assert.ok(html.includes("2/4（残り 2 件）"));
+  assert.equal(count(html, /ck-meter/g), 1, "チェックリストのあるタスク（A5）だけ");
 });

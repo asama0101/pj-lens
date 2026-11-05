@@ -1,5 +1,6 @@
 // 画面共通の小さな道具（HTML エスケープ、日付・時刻の表示、状態の見た目）。DOM には触れない。
 import { weekday, toHHMM } from "../core/dates.js";
+import { checklistCount } from "../core/checklist.js";
 
 export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -36,4 +37,12 @@ export function flagPills(data, projectId, today, flags) {
   if (flags.includes("waiting-long")) out.push(`<span class="pill wait">待ち長期化</span>`);
   if (flags.includes("past-due")) out.push(`<span class="pill late">プロジェクト期限超過</span>`);
   return out.join("");
+}
+
+/** チェックリストの進み具合（細い線と「済み/全体」）。項目がなければ空。remain なら「（残り K 件）」を添える */
+export function checkMeterHtml(t, { remain = false } = {}) {
+  const { total, done, open } = checklistCount(t);
+  if (!total) return "";
+  const pct = Math.round((done / total) * 100);
+  return `<span class="ck-meter"><span class="ck-bar"><i style="width:${pct}%"></i></span><b class="ck-n mono${done === total ? " all" : ""}">${done}/${total}${remain ? `（残り ${open} 件）` : ""}</b></span>`;
 }

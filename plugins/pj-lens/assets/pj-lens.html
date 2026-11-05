@@ -516,6 +516,15 @@ body:has(.ptool){padding-block-start:8px}
 #view section.panel > .pstick{padding-top:20px}
 #view section.panel > .gtop{padding-top:22px}
 #view .cols>.side,#view .side-toggle{margin-top:8px}
+/* チェックリストの進み具合（細い線と「済み/全体」）。今日の優先・今日のタスク・ガントのラベルが使う */
+#view .ck-meter{display:flex;align-items:center;gap:6px}
+#view .ck-bar{display:block;width:72px;height:4px;border-radius:2px;background:var(--line);overflow:hidden;flex:none}
+#view .ck-bar i{display:block;height:100%;background:var(--accent)}
+#view .ck-n{font-size:11px;font-weight:400;color:var(--muted)}
+#view .ck-n.all{color:var(--ok)}
+#view .ck-meter:has(.ck-n.all) .ck-bar i{background:var(--ok)}
+#view .rank .ck-meter{grid-column:2}
+#view .rank.tl .ck-meter{grid-column:1}
 </style>
 </head>
 <body>
@@ -2218,8 +2227,9 @@ return { saveHtmlFile };
 })();
 
 /* src/ui/common.js */
-const { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills } = (() => {
+const { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills, checkMeterHtml } = (() => {
 // 画面共通の小さな道具（HTML エスケープ、日付・時刻の表示、状態の見た目）。DOM には触れない。
+
 
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -2259,7 +2269,15 @@ function flagPills(data, projectId, today, flags) {
   return out.join("");
 }
 
-return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills };
+/** チェックリストの進み具合（細い線と「済み/全体」）。項目がなければ空。remain なら「（残り K 件）」を添える */
+function checkMeterHtml(t, { remain = false } = {}) {
+  const { total, done, open } = checklistCount(t);
+  if (!total) return "";
+  const pct = Math.round((done / total) * 100);
+  return `<span class="ck-meter"><span class="ck-bar"><i style="width:${pct}%"></i></span><b class="ck-n mono${done === total ? " all" : ""}">${done}/${total}${remain ? `（残り ${open} 件）` : ""}</b></span>`;
+}
+
+return { esc, fmtMD, wdJa, hm, hh, STATUS_UI, statusDotHtml, flagPills, checkMeterHtml };
 })();
 
 /* src/ui/deps.js */
@@ -3282,7 +3300,7 @@ function renderTodayTasks(data, today, opts = {}) {
     const proj = esc(data.projects.find((p) => p.id === t.projectId)?.name ?? "");
     const times = slots.map((s) => esc(`${s.start}–${s.end}`)).join("、");
     const ask = opts.pendingDone?.id === t.id ? doneAskHtml(opts.pendingDone) : "";
-    return `<li data-today="${esc(t.id)}"${isClosed(t) ? ' class="closed"' : ""}><span class="pj">${proj}</span><span class="t">${esc(t.title)} ${statusPill(t)}</span><span class="why mono">${times}</span>${isClosed(t) ? "" : statusButtons(t)}${ask}</li>`;
+    return `<li data-today="${esc(t.id)}"${isClosed(t) ? ' class="closed"' : ""}><span class="pj">${proj}</span><span class="t">${esc(t.title)} ${statusPill(t)}</span><span class="why mono">${times}</span>${isClosed(t) ? "" : checkMeterHtml(t, { remain: true })}${isClosed(t) ? "" : statusButtons(t)}${ask}</li>`;
   }).join("");
   return `<section class="panel todaytasks" aria-labelledby="h-td"><h2 id="h-td">今日のタスク</h2><ul class="rank tl">${items}</ul></section>`;
 }
@@ -3303,7 +3321,7 @@ function renderPrio(data, today, opts = {}) {
     const pill = a.count ? ` <span class="pill ok">${a.count}回・実績 ${a.hours.toFixed(1)}h</span>` : "";
     const proj = esc(data.projects.find((p) => p.id === t.projectId)?.name ?? "");
     const drag = sched ? ` draggable="true" data-pick="${esc(t.id)}" tabindex="0"` : "";
-    return `<li${drag} class="${picked === t.id ? "picked" : ""}"><span class="n">${i + 1}</span><span class="pj">${proj}</span><span class="t">${r.action === "chase" ? `<span class="act">${r.reasons.some((x) => x.includes("催促")) ? "催促" : "確認"}</span>` : ""}${esc(t.title)} ${statusPill(t)}${pill}</span><span class="why">${esc(r.reasons.join("。"))}</span></li>`;
+    return `<li${drag} class="${picked === t.id ? "picked" : ""}"><span class="n">${i + 1}</span><span class="pj">${proj}</span><span class="t">${r.action === "chase" ? `<span class="act">${r.reasons.some((x) => x.includes("催促")) ? "催促" : "確認"}</span>` : ""}${esc(t.title)} ${statusPill(t)}${pill}</span>${checkMeterHtml(t, { remain: true })}<span class="why">${esc(r.reasons.join("。"))}</span></li>`;
   }).join("");
   const note = sched
     ? "タスクをカレンダーへドラッグして配置します(15分刻み・長さ1時間)。配置済みの枠もドラッグで移動できます。キーボードでは、タスクを選んで日表示の空き枠を押します。"
