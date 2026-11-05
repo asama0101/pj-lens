@@ -545,3 +545,4 @@ body:has(.ptool){padding-block-start:8px}
 #view .ask.warn-ck{background:var(--warn-soft);border:1px solid var(--warn);border-radius:8px;padding:10px 12px}
 #view .ask.warn-ck b{color:var(--warn)}
 #view .ask.warn-ck ul{margin:6px 0;padding-left:18px}
+#view .ck-row .gx{opacity:1;position:static;min-width:32px;min-height:32px;color:var(--muted)}

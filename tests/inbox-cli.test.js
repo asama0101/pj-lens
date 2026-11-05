@@ -329,3 +329,37 @@ test("propose(businessDays): 土日祝を営業日に数える設定がオンな
   assert.equal(r2.status, 0, r2.err);
   assert.equal(addDue(r2), "2026-11-29", "手動の休みは飛ばす");
 });
+
+test("チェックリストの操作: propose → approve で、項目が追加・チェックされ、提案のあとに画面で項目が変わると approve は失敗してタスク不変", () => {
+  const ops = [
+    { op: "addChecklistItem", taskId: "A4", text: "ラックに搭載" },
+    { op: "setChecklistDone", taskId: "A5", itemId: "c3", done: true },
+    { op: "addTask", ref: "t1", projectId: "A", title: "疎通確認テスト", due: "2026-12-10", checklist: ["ping", "tracert"] },
+  ];
+  const go = (w) => {
+    assert.equal(run("submit", w.data, "A", "A4 に項目を足し、A5 の項目をチェックして、疎通確認テストを登録して").status, 0);
+    assert.equal(run("claim", w.data, "R1").status, 0);
+    return run("propose", w.data, "R1", w.put("ops.json", ops), "--summary", "チェックリスト", "--reason", "依頼", "--cause", "社内");
+  };
+  const w = work();
+  const p = go(w);
+  assert.equal(p.status, 0, p.err);
+  assert.ok(p.out.sections.some((x) => x.kind === "checklist"));
+  const a = run("approve", w.data, "R1");
+  assert.equal(a.status, 0, a.err);
+  const d = w.json();
+  assert.deepEqual(d.tasks.find((t) => t.id === "A4").checklist, [{ id: "c1", text: "ラックに搭載", done: false }]);
+  assert.equal(d.tasks.find((t) => t.id === "A5").checklist.find((c) => c.id === "c3").done, true);
+  assert.deepEqual(d.tasks.find((t) => t.title === "疎通確認テスト").checklist.map((c) => c.text), ["ping", "tracert"]);
+  assert.deepEqual(validate(d).errors, []);
+
+  const w2 = work(); go(w2);
+  const d2 = w2.json();
+  d2.tasks.find((t) => t.id === "A5").checklist.push({ id: "c5", text: "追加", done: false }); // 提案のあとに、画面で項目が増えた
+  w2.write(d2);
+  const tasksBefore = JSON.stringify(w2.json().tasks);
+  const b = run("approve", w2.data, "R1");
+  assert.notEqual(b.status, 0);
+  assert.equal(JSON.stringify(w2.json().tasks), tasksBefore, "タスクは不変");
+  assert.equal(w2.json().inbox.requests[0].status, "failed", "依頼は失敗になる（もう一度提案してもらう）");
+});
