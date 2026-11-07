@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { pickPython, venvPython, ensureEnv, readPin } from "../plugins/pj-lens/tools/xlsx.js";
+import { pickPython, libDir, ensureEnv, readPin } from "../plugins/pj-lens/tools/xlsx.js";
 
 const REPO = fileURLToPath(new URL("../plugins/pj-lens/", import.meta.url));
 const ok = (stdout = "") => ({ status: 0, stdout, stderr: "" });
@@ -20,133 +20,98 @@ test("pickPython: py -3 が使えればそれを、なければ python、python3
   assert.equal(pickPython(mk({})), null);
 });
 
-test("venvPython: win32 と linux でパスが違う", () => {
-  assert.match(venvPython("C:\\d\\x", "win32"), /venv[\\/]Scripts[\\/]python\.exe$/);
-  assert.match(venvPython("/d/x", "linux"), /venv[\\/]bin[\\/]python$/);
+const PIN = "3.1.5";
+const calls_of = () => { const calls = []; return { calls, push: (c, a) => calls.push([c, ...a]) }; };
+// -c の import 検査: システム側は系の接頭辞（startswith）、専用フォルダ側は固定した版との一致
+const isSystemCheck = (a) => a[a.length - 2] === "-c" && a[a.length - 1].includes("startswith");
+const isLibCheck = (a) => a[a.length - 2] === "-c" && a[a.length - 1].includes("__version__ ==");
+
+test("libDir: 置き場の下の lib", () => {
+  assert.equal(libDir("/d/x"), join("/d/x", "lib"));
 });
 
-const PIN = "3.1.5";
-
-test("ensureEnv: 承認(approve)なしで環境が足りないときは、何も作らず needsApproval で止まり、作成先と内容を案内する", () => {
+test("ensureEnv: システムの Python に同じ系の openpyxl があれば、承認なしでも何も入れず、システムを使う", () => {
   const calls = [];
-  const r = ensureEnv("/d/data dir", { run: (c, a) => { calls.push([c, ...a]); return ng; }, python: ["python"], exists: () => false, platform: "linux", pin: PIN });
+  const r = ensureEnv("/d", { run: (c, a) => { calls.push([c, ...a]); return ok(); }, python: ["python"], exists: () => false, pin: PIN });
+  assert.equal(r.ok, true);
+  assert.equal(r.source, "system");
+  assert.deepEqual(r.env, {});
+  assert.equal(calls.length, 1, "import の検査だけ");
+  assert.match(calls[0][2], /defusedxml/);
+  assert.match(calls[0][2], /et_xmlfile/);
+  assert.match(calls[0][2], /startswith\("3\.1\."\)/, "固定した版と同じ系（3.1.x）を許す");
+});
+
+test("ensureEnv: システムの版が範囲外／defusedxml が無いなら使わず、専用フォルダに固定した版があればそれを PYTHONPATH で使う", () => {
+  const seen = [];
+  const run = (c, a, env) => { seen.push({ a, env }); return isSystemCheck(a) ? ng : ok(); };
+  const r = ensureEnv("/d", { run, python: ["python"], exists: () => true, pin: PIN });
+  assert.equal(r.ok, true);
+  assert.equal(r.source, "lib");
+  assert.deepEqual(r.env, { PYTHONPATH: libDir("/d") });
+  const lib = seen.find((s) => isLibCheck(s.a));
+  assert.ok(lib.a[lib.a.length - 1].includes(JSON.stringify(PIN)), "専用フォルダは固定した版と一致を見る");
+  assert.deepEqual(lib.env, { PYTHONPATH: libDir("/d") });
+});
+
+test("ensureEnv: どちらも無く、承認(approve)なしのときは、何も入れず needsApproval で止まり、入れ先と内容を案内する", () => {
+  const calls = [];
+  const r = ensureEnv("/d/data dir", { run: (c, a) => { calls.push([c, ...a]); return ng; }, python: ["python"], exists: () => false, pin: PIN });
   assert.equal(r.ok, false);
   assert.equal(r.needsApproval, true);
   assert.match(r.message, /data dir/);
+  assert.match(r.message, /lib/);
   assert.match(r.message, new RegExp(`openpyxl==${PIN}`));
+  assert.match(r.message, /venv は作りません/);
   assert.match(r.message, /--yes/);
-  assert.equal(calls.length, 0, "承認前は何も実行しない");
+  assert.ok(calls.every(([, ...a]) => !a.includes("pip")), "承認前は pip を実行しない");
 });
 
-test("ensureEnv: 承認済みなら venv を作り、版を固定して pip install する（呼び出し順を検査）。dataDir の空白は1つの引数のまま", () => {
+test("ensureEnv: 承認済みなら pip で専用フォルダへ入れる（--require-hashes・--target）。空白を含む置き場も1つの引数のまま", () => {
   const dir = join(tmpdir(), "pjl x", "data dir");
   const calls = [];
-  let made = false;
-  const run = (cmd, args) => {
-    calls.push([cmd, ...args]);
-    if (args.includes("venv")) made = true;
-    return ok();
-  };
-  const r = ensureEnv(dir, { run, python: ["py", "-3"], exists: () => made, platform: "win32", approve: true, pin: PIN, requirements: "/req uirements.txt" });
+  const run = (cmd, args) => { calls.push([cmd, ...args]); return isSystemCheck(args) || isLibCheck(args) ? ng : ok(); };
+  const r = ensureEnv(dir, { run, python: ["py", "-3"], exists: () => false, approve: true, pin: PIN, requirements: "/req uirements.txt" });
   assert.equal(r.ok, true);
-  assert.deepEqual(calls[0], ["py", "-3", "-m", "venv", join(dir, "venv")]);
-  assert.deepEqual(calls[1].slice(1), ["-m", "pip", "install", "--quiet", "--require-hashes", "-r", "/req uirements.txt"], "ハッシュ付きの requirements.txt から入れる");
-  assert.equal(r.python, venvPython(dir, "win32"));
+  assert.equal(r.source, "lib");
+  assert.deepEqual(r.env, { PYTHONPATH: libDir(dir) });
+  const install = calls.find((c) => c.includes("install"));
+  assert.deepEqual(install, ["py", "-3", "-m", "pip", "install", "--quiet", "--require-hashes", "--target", libDir(dir), "-r", "/req uirements.txt"]);
+  assert.ok(!calls.some((c) => c.includes("venv")), "venv は作らない");
 });
 
-test("ensureEnv: venv と固定した版の openpyxl があれば、承認なしでも何も作らず入れない", () => {
-  const calls = [];
-  const r = ensureEnv("/d", { run: (c, a) => { calls.push([c, ...a]); return ok(); }, python: ["python"], exists: () => true, platform: "linux", pin: PIN });
+test("ensureEnv: 版のずれた専用フォルダは、消してから入れ直す。消せなければ、消せなかったと案内して ok:false", () => {
+  const removed = [];
+  const run = (c, a) => (isSystemCheck(a) || isLibCheck(a) ? ng : ok());
+  const r = ensureEnv("/d", { run, python: ["python"], exists: () => true, approve: true, pin: PIN, remove: (p) => removed.push(p) });
   assert.equal(r.ok, true);
-  assert.equal(calls.length, 1);
-  assert.ok(calls[0][2].includes(PIN), "固定した版を照合する");
+  assert.deepEqual(removed, [libDir("/d")]);
+  const b = ensureEnv("/d", { run, python: ["python"], exists: () => true, approve: true, pin: PIN, remove: () => { throw new Error("EBUSY"); } });
+  assert.equal(b.ok, false);
+  assert.match(b.message, /消せませんでした/);
+  assert.match(b.message, /EBUSY/);
 });
 
-test("ensureEnv: openpyxl が固定した版でも、defusedxml が入っていない venv は、使えるとは見なさない（既に作った venv にも入れさせる）", () => {
-  const calls = [];
-  ensureEnv("/d", { run: (c, a) => { calls.push(a); return ok(); }, python: ["python"], exists: () => true, platform: "linux", pin: PIN });
-  assert.match(calls[0][1], /defusedxml/);
-});
-
-test("ensureEnv: 版がずれた openpyxl は、承認なしでは needsApproval で止まる", () => {
-  const r = ensureEnv("/d", { run: (c, a) => (a[0] === "-c" ? ng : ok()), python: ["python"], exists: () => true, platform: "linux", pin: PIN });
-  assert.equal(r.needsApproval, true);
-  assert.doesNotMatch(r.message, /環境がありません/, "venv はあるので、入れ直すのは openpyxl だけと案内する");
-  assert.match(r.message, new RegExp(`openpyxl==${PIN}`));
-});
-
-test("ensureEnv: 承認済みでも venv を作れない／pip が失敗したら ok:false（needsApproval でない）で CSV を案内する", () => {
-  const a = ensureEnv("/d", { run: () => ng, python: ["python"], exists: () => false, platform: "linux", approve: true, pin: PIN });
+test("ensureEnv: 承認済みでも pip が使えない／pip install が失敗したら ok:false（needsApproval でない）で CSV を案内する", () => {
+  const noPip = (c, a) => (a.includes("pip") || isSystemCheck(a) || isLibCheck(a) ? ng : ok());
+  const a = ensureEnv("/d", { run: noPip, python: ["python"], exists: () => false, approve: true, pin: PIN });
   assert.equal(a.ok, false);
   assert.notEqual(a.needsApproval, true);
-  assert.match(a.message, /venv/);
-  const b = ensureEnv("/d", { run: (c, args) => (args.includes("pip") || args[0] === "-c" ? ng : ok()), python: ["python"], exists: () => true, platform: "linux", approve: true, pin: PIN, remove: () => {} });
+  assert.match(a.message, /pip が使えません/);
+  assert.match(a.message, /CSV/);
+  const offline = (c, a) => (a.includes("install") || isSystemCheck(a) || isLibCheck(a) ? ng : ok());
+  const b = ensureEnv("/d", { run: offline, python: ["python"], exists: () => false, approve: true, pin: PIN });
   assert.equal(b.ok, false);
   assert.match(b.message, /CSV/);
   assert.match(b.message, /openpyxl/);
 });
 
-test("ensureEnv: 既にある venv で pip install が失敗したら、venv を消して作り直し、入れ直す（pip が壊れた venv の復旧）", () => {
-  const calls = [];
-  const removed = [];
-  let broken = true;
-  const run = (cmd, args) => {
-    calls.push([cmd, ...args]);
-    if (args.includes("venv")) broken = false;
-    if (args[0] === "-c") return ng; // 版の照合は常に未達
-    return args.includes("pip") && broken ? ng : ok();
-  };
-  const r = ensureEnv("/d", { run, python: ["python"], exists: () => true, platform: "linux", approve: true, pin: PIN, remove: (p) => removed.push(p) });
-  assert.equal(r.ok, true);
-  assert.deepEqual(removed, [join("/d", "venv")]);
-  assert.equal(calls.filter((c) => c.includes("venv")).length, 1, "venv は 1 回だけ作り直す");
-  assert.equal(calls.filter((c) => c.includes("install")).length, 2, "pip install は、失敗した 1 回と作り直したあとの 1 回");
-});
-
-test("ensureEnv: 作り直しても pip install が失敗したら ok:false。作り直しは 1 回だけ", () => {
-  const calls = [];
-  const removed = [];
-  const run = (cmd, args) => { calls.push([cmd, ...args]); return args.includes("pip") || args[0] === "-c" ? ng : ok(); };
-  const r = ensureEnv("/d", { run, python: ["python"], exists: () => true, platform: "linux", approve: true, pin: PIN, remove: (p) => removed.push(p) });
-  assert.equal(r.ok, false);
-  assert.equal(removed.length, 1);
-  assert.equal(calls.filter((c) => c.includes("venv")).length, 1, "venv の作り直しも 1 回だけ");
-  assert.equal(calls.filter((c) => c.includes("install")).length, 2);
-});
-
-test("ensureEnv: pip は動くのに pip install が失敗したとき（オフライン・defusedxml が足りないだけの venv など）は、動いていた venv を消さない", () => {
-  const removed = [];
-  const run = (c, a) => (a.includes("install") || a[0] === "-c" ? ng : ok()); // pip --version は成功する
-  const r = ensureEnv("/d", { run, python: ["python"], exists: () => true, platform: "linux", approve: true, pin: PIN, remove: (p) => removed.push(p) });
-  assert.equal(r.ok, false);
-  assert.match(r.message, /CSV/);
-  assert.deepEqual(removed, []);
-});
-
-test("ensureEnv: 壊れた venv を消せなかったら、例外にせず、消せなかったと案内して ok:false", () => {
-  const run = (c, a) => (a.includes("pip") || a[0] === "-c" ? ng : ok());
-  const r = ensureEnv("/d", { run, python: ["python"], exists: () => true, platform: "linux", approve: true, pin: PIN, remove: () => { throw new Error("EBUSY"); } });
-  assert.equal(r.ok, false);
-  assert.match(r.message, /消せませんでした/);
-  assert.match(r.message, /EBUSY/);
-});
-
-test("ensureEnv: 消したあとに venv を作れなかったら、venv を作れなかったと案内して ok:false", () => {
-  let gone = false;
-  const run = (c, a) => (a.includes("venv") || a.includes("pip") || a[0] === "-c" ? ng : ok());
-  const r = ensureEnv("/d", { run, python: ["python"], exists: () => !gone, platform: "linux", approve: true, pin: PIN, remove: () => { gone = true; } });
-  assert.equal(r.ok, false);
-  assert.match(r.message, /venv を作れませんでした/);
-});
-
-test("ensureEnv: 作り直すための Python が無いときは、venv を消さずに失敗する。承認なしでも消さない", () => {
-  const removed = [];
-  const run = (c, a) => (a[0] === "-c" || a.includes("pip") ? ng : ok());
-  const a = ensureEnv("/d", { run, python: null, exists: () => true, platform: "linux", approve: true, pin: PIN, remove: (p) => removed.push(p) });
-  assert.equal(a.ok, false);
-  const b = ensureEnv("/d", { run, python: ["python"], exists: () => true, platform: "linux", approve: false, pin: PIN, remove: (p) => removed.push(p) });
-  assert.equal(b.needsApproval, true);
-  assert.deepEqual(removed, []);
+test("ensureEnv: Python が無いときは、承認なしなら needsApproval、承認済みなら Python が無いと案内して失敗する", () => {
+  const run = () => ng;
+  assert.equal(ensureEnv("/d", { run, python: null, exists: () => false, approve: false, pin: PIN }).needsApproval, true);
+  const b = ensureEnv("/d", { run, python: null, exists: () => false, approve: true, pin: PIN });
+  assert.equal(b.ok, false);
+  assert.match(b.message, /Python 3 が見つかりません/);
 });
 
 test("requirements.txt: openpyxl と et_xmlfile を == で固定し、すべてハッシュ付き", () => {
@@ -236,25 +201,31 @@ test("置き場の優先順: PJ_LENS_HOME が --data に勝つ。位置引数で
   assert.equal(cli([join(scratch, "arg"), "x.xlsx"]).status, 2);
 });
 
-test("diagnose: 環境がなければ usable:false で案内、固定した版が入っていれば usable:true。何も実行・変更しない", () => {
+test("diagnose: システムに同じ系があれば使える。無く専用フォルダに固定した版があれば使える。どちらも無ければ usable:false で案内。何も入れない", () => {
   const calls = [];
-  const run = (c, a) => { calls.push([c, ...a]); return a.includes("-c") && a[a.length - 1].includes("openpyxl") ? ok() : { status: 0, stdout: "C:\Python\python.exe\n", stderr: "" }; };
-  const none = diagnose("/d", { run, python: ["py", "-3"], exists: () => false, platform: "linux", pin: PIN });
+  const mk = (sys, lib) => (c, a) => { calls.push([c, ...a]); if (a.includes("-c") && a[a.length - 1].includes("openpyxl")) return (isSystemCheck(a) ? sys : lib) ? ok() : ng; return { status: 0, stdout: "C:\\Python\\python.exe\n", stderr: "" }; };
+  const sys = diagnose("/d", { run: mk(true, false), python: ["py", "-3"], exists: () => false, pin: PIN });
+  assert.equal(sys.usable, true);
+  assert.match(sys.lines.join("\n"), /システムの Python/);
+  const lib = diagnose("/d", { run: mk(false, true), python: ["py", "-3"], exists: () => true, pin: PIN });
+  assert.equal(lib.usable, true);
+  assert.match(lib.lines.join("\n"), /専用フォルダ/);
+  const none = diagnose("/d", { run: mk(false, false), python: ["py", "-3"], exists: () => false, pin: PIN });
   assert.equal(none.usable, false);
   assert.match(none.lines.join("\n"), /setup/);
-  assert.match(none.lines.join("\n"), /C:\Python\python\.exe/, "作成元の Python のパス");
-  assert.equal(diagnose("/d", { run, python: ["py", "-3"], exists: () => true, platform: "linux", pin: PIN }).usable, true);
-  assert.ok(calls.every(([, ...a]) => !a.includes("venv") && !a.includes("pip")), "診断は環境を作らない");
+  assert.match(none.lines.join("\n"), /C:\\Python\\python\.exe/, "使う Python のパス");
+  assert.ok(calls.every(([, ...a]) => !a.includes("pip") && !a.includes("install")), "診断は何も入れない");
 });
 
-test("統合: 空白と日本語を含む置き場で doctor が動き、setup は --yes なしでは何も作らない。--yes で作り、doctor が 0 になる（Python 3 が無い環境だけ skip）", (t) => {
+test("統合: 空白と日本語を含む置き場で doctor が動き、setup は --yes なしでは何も作らない。--yes で入れ、doctor が 0 になる（Python 3 が無い環境、またはシステムに使える openpyxl がある環境は skip）", (t) => {
   const real = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8" });
   if (!pickPython(real)) return t.skip("Python 3 が見つかりません");
   const home = join(scratch, "利用者 名", "データ 置き場");
   let r = cli(["doctor", "--data", home]);
+  if (r.status === 0) return t.skip("システムの Python に使える openpyxl があるため、専用フォルダへ入れる経路を試せません");
   assert.equal(r.status, 3, r.stderr);
-  assert.ok(r.stdout.includes(home) && r.stdout.includes(venvPython(home)), r.stdout);
-  assert.match(r.stdout, /作成元の Python: .+/);
+  assert.ok(r.stdout.includes(home), r.stdout);
+  assert.match(r.stdout, /Python: .+/);
   assert.equal(existsSync(home), false, "doctor は何も作らない");
   r = cli(["setup", "--data", home]);
   assert.equal(r.status, 3);
@@ -262,6 +233,8 @@ test("統合: 空白と日本語を含む置き場で doctor が動き、setup �
   assert.equal(existsSync(home), false, "承認なしでは作らない");
   r = cli(["setup", "--yes", "--data", home]);
   assert.equal(r.status, 0, r.stderr);
+  assert.equal(existsSync(join(home, "venv")), false, "venv は作らない");
+  assert.equal(existsSync(libDir(home)), true);
   r = cli(["doctor"], { PJ_LENS_HOME: home });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /使えます/);

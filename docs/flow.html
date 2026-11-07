@@ -267,18 +267,18 @@
   <div class="n">2</div>
   <div class="cell empty"></div>
   <div class="cell c">Excel を読むスクリプトを実行する。<small class="src">agents/intake.md wbs 2</small></div>
-  <div class="cell s">（Node.js）Excel を読むための専用環境（Python + openpyxl）が使えるか確かめ、使えれば（Python）<code>xlsx_dump.py</code> で全シートを JSON にして出す。結合セルは左上の値を展開、日付は <code>YYYY-MM-DD</code>、非表示の行・列は除く、1 シート最大 2000 行（超えたら <code>truncated</code>）。<small class="src">tools/xlsx.js main / tools/xlsx_dump.py</small></div>
+  <div class="cell s">（Node.js）Excel を読むための openpyxl（システムの Python、または専用フォルダ）が使えるか確かめ、使えれば（Python）<code>xlsx_dump.py</code> で全シートを JSON にして出す。結合セルは左上の値を展開、日付は <code>YYYY-MM-DD</code>、非表示の行・列は除く、1 シート最大 2000 行（超えたら <code>truncated</code>）。<small class="src">tools/xlsx.js main / tools/xlsx_dump.py</small></div>
 
   <div class="branch"><p class="bt">Excel を読むときの分岐（終了コードで分かれる）</p><div class="flow">
     <div class="case">終了コード 2: 保存先のフォルダが決まらない → <span class="tag stop">止まる</span>「置き場が決まりません」<small class="src">tools/home.js</small></div>
-    <div class="case">終了コード 3: 専用環境が使えない（未作成・版のずれ・壊れている・Python がない）</div>
+    <div class="case">終了コード 3: openpyxl が使えない（システムにも専用フォルダにも無い・版のずれ・壊れている・Python がない）</div>
     <div class="n"></div>
-    <div class="cell u"><span class="tag ok">承認</span>作成先・内容（約 20 MB、ネットワークが必要）・作成元の Python を見て、作ってよいか答える。</div>
+    <div class="cell u"><span class="tag ok">承認</span>入れ先・内容（約 20 MB、ネットワークが必要）・使う Python を見て、入れてよいか答える。</div>
     <div class="cell c">出力のメッセージを伝える。まず <code>setup</code> を <code>--yes</code> なしで実行し、表示をあなたに見せて承認を得る。承認なしに <code>--yes</code> を付けない。<small class="src">agents/intake.md wbs 2</small></div>
-    <div class="cell s"><code>setup</code>（<code>--yes</code> なし）: 何も作らず、作成先・内容・作成元の Python を表示して終了コード 3。<br><code>setup --yes</code>: <span class="tag write">書き込み</span>設定フォルダに専用環境を作り、版とハッシュを固定した Excel 読み取りの部品（<code>openpyxl</code>・<code>defusedxml</code>）を入れる。部品の導入の仕組み（pip）が壊れているときだけ、専用環境を消して 1 回作り直す。<small class="src">tools/xlsx.js ensureEnv</small></div>
+    <div class="cell s"><code>setup</code>（<code>--yes</code> なし）: 何も入れず、入れ先・内容・使う Python を表示して終了コード 3。<br><code>setup --yes</code>: <span class="tag write">書き込み</span>設定フォルダの <code>lib</code> に、版とハッシュを固定した Excel 読み取りの部品（<code>openpyxl</code>・<code>defusedxml</code>）を <code>pip --target</code> で入れる（venv は作らない）。<code>lib</code> に版のずれた・壊れたものがあれば、消してから入れ直す。<small class="src">tools/xlsx.js ensureEnv</small></div>
     <div class="n"></div>
     <div class="cell u">承認しない、または Python がない → Excel を CSV で保存し直す。</div>
-    <div class="cell c">承認されない、Python がない（3.8 未満、または専用環境を作る機能がない）、部品を入れられない（ネットワーク・プロキシ）→ Excel を CSV に保存してもらい、CSV を自分で読む。<small class="src">agents/intake.md wbs 2 / tools/xlsx.js</small></div>
+    <div class="cell c">承認されない、Python がない（3.8 未満）、pip が使えない、部品を入れられない（ネットワーク・プロキシ）→ Excel を CSV に保存してもらい、CSV を自分で読む。<small class="src">agents/intake.md wbs 2 / tools/xlsx.js</small></div>
     <div class="cell s">環境ができたら、読み取りをやり直す。</div>
     <div class="case">終了コード 1: ファイルが壊れている・読めない → 「読み取れません: （理由）」<small class="src">tools/xlsx_dump.py main</small></div>
     <div class="case">シートが複数ある → どのシートを取り込むか聞く（非表示のシートは除く）<small class="src">agents/intake.md wbs 2</small></div>
