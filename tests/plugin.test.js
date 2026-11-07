@@ -95,7 +95,7 @@ test("SKILL.md・agents に、相対リンク・ハードコードした絶対�
 test("E1-4: SKILL.md・agents の地の文に、${CLAUDE_PLUGIN_ROOT} なしの相対パス（tools/・assets/・data/）がない", () => {
   for (const { p, text } of docs()) {
     // ${CLAUDE_PLUGIN_ROOT}/ の直後のパスと、.pj-lens/data.json（利用者のデータ）は除く
-    const bare = text.replace(/\$\{CLAUDE_PLUGIN_ROOT\}\/\S*/g, "").replace(/\.pj-lens\/data\.json/g, "");
+    const bare = text.replace(/\$\{CLAUDE_PLUGIN_ROOT\}\/[\w.\/*<>-]*/g, "").replace(/\.pj-lens\/data\.json/g, "");
     assert.doesNotMatch(bare, /(^|[^\w.\/-])(tools|assets|data)\/[\w*.-]+/m, `${p}: 地の文の相対パス`);
   }
 });
