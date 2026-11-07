@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("../plugins/pj-lens/src/ui/app.js", import.meta.url), "utf8");
+const stk = readFileSync(new URL("../plugins/pj-lens/src/ui/sticky.js", import.meta.url), "utf8"); // 固定表示（日付軸・列見出しの複製、横スクロールのそろえ）
 
 // 編集は、いまのデータへの差分として書く。決まった結果を返す編集（() => data）は、保存の競合のとき、最新のファイルに当て直すと、
 // 他（Claude Code など）の更新を消してしまう。
@@ -285,11 +286,11 @@ test("theme.css: ガントの固定表示の規則は #view の中だけ。見�
 });
 
 test("app.js: pinTableHeads は日付軸（.g-head）をずらさない。syncSticky が --gh・--pgh を入れる（--ibh・--gt・--gsy・--sbw は使わない）", () => {
-  const fn = src.slice(src.indexOf("function pinTableHeads"), src.indexOf("let pinQueued"));
+  const fn = stk.slice(stk.indexOf("function pinTableHeads"), stk.indexOf("let pinQueued"));
   assert.ok(fn.length > 50, "pinTableHeads を切り出せた");
   assert.doesNotMatch(fn, /g-head/);
-  for (const v of ["--gh", "--pgh"]) assert.ok(src.includes(`setProperty("${v}"`), `${v} を入れる`);
-  for (const v of ["--gsy", "--sbw", "--ibh"]) assert.ok(!src.includes(v), `${v} はもう使わない`);
+  for (const v of ["--gh", "--pgh"]) assert.ok(stk.includes(`setProperty("${v}"`), `${v} を入れる`);
+  for (const v of ["--gsy", "--sbw", "--ibh"]) assert.ok(!stk.includes(v), `${v} はもう使わない`);
 });
 
 test("app.js: 描き直しで、ガントの横のスクロール位置（scrollLeft）とページの縦の位置（scrollY）を保って戻す。全 .gscroll の横位置は alignGScrolls でそろえる", () => {
@@ -299,20 +300,20 @@ test("app.js: 描き直しで、ガントの横のスクロール位置（scroll
   assert.match(fn, /window\.scrollTo\(0, /);
   assert.match(fn, /view\.style\.minHeight/, "描き直しの間、ページが縮んで scrollY が飛ばないようにする");
   assert.doesNotMatch(fn, /scrollTop/, "枠は縦にスクロールしない");
-  const al = src.slice(src.indexOf("function alignGScrolls"), src.indexOf("function alignGScrolls") + 600);
+  const al = stk.slice(stk.indexOf("function alignGScrolls"), stk.indexOf("function alignGScrolls") + 600);
   assert.match(al, /scrollLeft - /, "差があるときだけ代入する（ループしない）");
-  assert.match(src, /classList\?\.contains\("gscroll"\)\) return;\s+if \(aligned\.get\(gs\) === gs\.scrollLeft\)/, "そろえたときに起きる scroll は、そろえ直さない（動いている枠を引き戻さない）");
-  assert.match(src, /aligned\.set\(gs, gs\.scrollLeft\)/);
-  assert.match(src, /\}, true\);/, "scroll はバブルしないので、キャプチャで受ける");
+  assert.match(stk, /classList\?\.contains\("gscroll"\)\) return;\s+if \(aligned\.get\(gs\) === gs\.scrollLeft\)/, "そろえたときに起きる scroll は、そろえ直さない（動いている枠を引き戻さない）");
+  assert.match(stk, /aligned\.set\(gs, gs\.scrollLeft\)/);
+  assert.match(stk, /\}, true\);/, "scroll はバブルしないので、キャプチャで受ける");
 });
 
 // ---- 固定表示（リスト）: 名前・状態の行の中の、列見出しの複製 ----
 test("app.js: リストの列見出しは、表を包む枠（.twrap）の先頭の複製（.thstrip）で固定する。複製は aria-hidden、横スクロールは translateX でそろえる。出す・隠すの JS（thStripOn・updateThStrips）は持たない", () => {
-  assert.ok(src.includes('className = "thin"') && src.includes('className = "thc"'), "複製の中身(列の並び)を作る。複製の入れ物(.thstrip)は、renderList が aria-hidden つきで出す");
-  assert.match(src, /translateX\(\$\{-box\.scrollLeft\}px\)/);
-  assert.ok(!src.includes("thStripOn") && !src.includes("updateThStrips"), "固定していないときは本物の thead に重なるので、出し分けは要らない");
-  assert.ok(!src.includes("is-scroll") && !src.includes("--pst"), "表を横スクロールの枠にする案の名残がない");
-  const pin = src.slice(src.indexOf("function pinTableHeads"), src.indexOf("let pinQueued"));
+  assert.ok(stk.includes('className = "thin"') && stk.includes('className = "thc"'), "複製の中身(列の並び)を作る。複製の入れ物(.thstrip)は、renderList が aria-hidden つきで出す");
+  assert.match(stk, /translateX\(\$\{-box\.scrollLeft\}px\)/);
+  assert.ok(!(src + stk).includes("thStripOn") && !(src + stk).includes("updateThStrips"), "固定していないときは本物の thead に重なるので、出し分けは要らない");
+  assert.ok(!stk.includes("is-scroll") && !stk.includes("--pst"), "表を横スクロールの枠にする案の名残がない");
+  const pin = stk.slice(stk.indexOf("function pinTableHeads"), stk.indexOf("let pinQueued"));
   assert.match(pin, /classList\.contains\("tlist"\)\) continue/, "リストの表は pinTableHeads の対象外");
 });
 
@@ -324,7 +325,7 @@ test("theme.css: 列見出しの複製の規則は #view の中だけ。複製�
 
 // ---- 固定表示の見直し（ブランチ全体のレビューの指摘） ----
 test("app.js: --gt は使わない（ガントの枠の高さを決める変数は、もう持たない）", () => {
-  assert.ok(!src.includes('setProperty("--gt"'), "--gt はもう使わない");
+  assert.ok(!stk.includes('setProperty("--gt"'), "--gt はもう使わない");
   assert.doesNotMatch(css, /--gt/);
 });
 
@@ -334,9 +335,9 @@ test("app.js: 下の帯の高さ（syncIbh・--ibh）は、ガントの枠の高
 });
 
 test("app.js: 複製は .twrap の子で、syncThStrips が --ph（固定の行の高さ）と --sh（複製の高さ）を入れる", () => {
-  assert.ok(src.includes('wrap?.querySelector(":scope > .thstrip")'),"複製は .twrap の先頭の子（sticky の基準）");
-  const start = src.indexOf("function syncThStrips");
-  const fn = src.slice(start, src.indexOf("\n}\n", start));
+  assert.ok(stk.includes('wrap?.querySelector(":scope > .thstrip")'),"複製は .twrap の先頭の子（sticky の基準）");
+  const start = stk.indexOf("function syncThStrips");
+  const fn = stk.slice(start, stk.indexOf("\n}\n", start));
   assert.match(fn, /setProperty\("--ph"/);
   assert.match(fn, /setProperty\("--sh"/);
   assert.doesNotMatch(fn, /appendChild\(strip\)/, "固定の行の子にしない");
@@ -363,23 +364,23 @@ test("theme.css: ガント・リスト（.ptool がある画面）では、上�
 
 // ---- 固定表示（ガント）: 日付軸の複製（.gstrip）----
 test("app.js: 日付軸の複製（.gstrip）を syncSticky が作り直し、alignGScrolls が複製の横位置（translateX）を更新する", () => {
-  assert.ok(src.includes("function syncGStrips") && src.includes("function updateGStrip"));
-  const sync = src.slice(src.indexOf("function syncSticky"), src.indexOf("function syncThStrips"));
+  assert.ok(stk.includes("function syncGStrips") && stk.includes("function updateGStrip"));
+  const sync = stk.slice(stk.indexOf("function syncSticky"), stk.indexOf("function syncThStrips"));
   assert.match(sync, /syncGStrips\(\)/);
-  const upd = src.slice(src.indexOf("function updateGStrip"), src.indexOf("function updateGStrip") + 500);
+  const upd = stk.slice(stk.indexOf("function updateGStrip"), stk.indexOf("function updateGStrip") + 500);
   assert.match(upd, /translateX\(\$\{-gs\.scrollLeft\}px\)/);
-  const al = src.slice(src.indexOf("function alignGScrolls"), src.indexOf("const aligned = new WeakMap"));
+  const al = stk.slice(stk.indexOf("function alignGScrolls"), stk.indexOf("const aligned = new WeakMap"));
   assert.match(al, /updateGStrip\(/, "そろえた枠の複製も動かす");
-  assert.ok(src.includes('className = "gsl"') && src.includes('className = "gsv"'), "複製は、左の空き(.gsl)と窓(.gsv)の 2 つ");
-  assert.match(src, /\.g-head \.g-lane/, "本物の日付軸の行を写す");
-  assert.match(src, /removeAttribute\("id"\)/, "複製の中の id は外す（重複を避ける）");
+  assert.ok(stk.includes('className = "gsl"') && stk.includes('className = "gsv"'), "複製は、左の空き(.gsl)と窓(.gsv)の 2 つ");
+  assert.match(stk, /\.g-head \.g-lane/, "本物の日付軸の行を写す");
+  assert.match(stk, /removeAttribute\("id"\)/, "複製の中の id は外す（重複を避ける）");
 });
 
 test("theme.css: .gstrip は sticky で、top に --pgh を含み、複製の窓は本物の幅で隠す", () => {
   assert.match(css, /#view \.gstrip\{[^}]*position:sticky[^}]*top:calc\(var\(--hh,0px\) \+ var\(--th,0px\) \+ var\(--gh,0px\) \+ var\(--pgh,0px\)\)[^}]*display:flex/);
   assert.match(css, /#view \.gstrip \.gsl\{[^}]*width:var\(--lw\)/);
   assert.ok(css.includes("#view .gwrap{padding-bottom:calc(var(--sh,0px) + var(--sb,0px))}") && css.includes("#view .gwrap > .gscroll{margin-bottom:calc(-1 * (var(--sh,0px) + var(--sb,0px)))}"), "横スクロールバーの高さ(--sb)も、sticky の範囲から除く（複製が表・枠のスクロールバーに重ならない）");
-  assert.ok(src.includes('setProperty("--sb"'), "syncGStrips・syncThStrips が --sb を入れる");
+  assert.ok(stk.includes('setProperty("--sb"'), "syncGStrips・syncThStrips が --sb を入れる");
   assert.match(css, /#view \.gstrip \.gsv\{[^}]*overflow:hidden/);
 });
 
@@ -414,7 +415,7 @@ test("theme.css: 日付軸の複製（.gstrip、z-index:6）は、本物の日�
 });
 
 test("app.js: alignGScrolls は、代入で値が変わったときだけ aligned に記録する（右端で丸められて変わらないとき、古い値が残って、あとの本物のスクロールを飲み込まない）", () => {
-  const al = src.slice(src.indexOf("function alignGScrolls"), src.indexOf("const aligned = new WeakMap"));
+  const al = stk.slice(stk.indexOf("function alignGScrolls"), stk.indexOf("const aligned = new WeakMap"));
   assert.match(al, /const before = gs\.scrollLeft/);
   assert.match(al, /if \(gs\.scrollLeft !== before\) aligned\.set\(gs, gs\.scrollLeft\)/);
 });
