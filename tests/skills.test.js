@@ -38,8 +38,32 @@ test("init: 副作用があるので自動起動しない。init.js を呼び、
   const text = read("init");
   assert.match(front(text), /^disable-model-invocation: true$/m);
   assert.ok(text.includes('node "${CLAUDE_PLUGIN_ROOT}/tools/init.js"'));
-  assert.ok(text.includes("$ARGUMENTS"));
+  assert.ok(text.includes('node "${CLAUDE_PLUGIN_ROOT}/tools/init.js" --sample'));
   assert.ok(text.includes(".pj-lens/data.json") && text.includes("pj-lens.html"));
+});
+
+test("B3: init は $ARGUMENTS を Bash に埋め込まず、allowed-tools は引数なし・--sample の完全一致だけ", () => {
+  const text = read("init");
+  assert.ok(!text.includes("$ARGUMENTS"));
+  const line = /^allowed-tools: (.+)$/m.exec(front(text))?.[1] ?? "";
+  assert.ok(!line.includes("*"), line);
+});
+
+test("B3: mcp・watch の allowed-tools は、サブコマンドまで絞り、スクリプト全体を許可しない", () => {
+  for (const [name, script] of [["mcp", "mcpconf.js"], ["watch", "inbox.js"]]) {
+    const line = /^allowed-tools: (.+)$/m.exec(front(read(name)))?.[1] ?? "";
+    assert.doesNotMatch(line, new RegExp(`${script.replace(".", "\\.")}" \\*\\)`), `${name}: ${script} 全体を許可している`);
+  }
+});
+
+test("B1: init・mcp・両エージェントの description に、使わない場面と代わりを書いている", () => {
+  const desc = (t) => /^description: (.+)$/m.exec(front(t))?.[1] ?? "";
+  for (const t of [read("init"), read("mcp")]) assert.match(desc(t), /使わない/);
+  for (const n of ["inbox", "intake"]) {
+    const t = readFileSync(new URL(`../plugins/pj-lens/agents/${n}.md`, import.meta.url), "utf8");
+    assert.match(desc(t), /使わない/, n);
+    assert.ok(desc(t).length < 1536);
+  }
 });
 
 for (const name of ["intake"]) {
