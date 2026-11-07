@@ -119,7 +119,7 @@ test("Excel 用の Python: README は venv・ensurepip を要件にせず、シ�
   assert.doesNotMatch(readme, /ensurepip/);
   assert.match(readme, /Python 3\.8 以上と pip/);
   assert.match(readme, /システムの Python に openpyxl/);
-  assert.match(readme, /専用のフォルダ `lib`/);
+  assert.match(readme, /専用のフォルダ `pj-lens-pylib`/);
 });
 
 // claude コマンドが無ければ skip。Windows の claude.cmd を起動できるよう shell を経由する（引数は固定の文字列だけ）

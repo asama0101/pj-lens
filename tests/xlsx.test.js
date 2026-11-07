@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { pickPython, libDir, ensureEnv, readPin } from "../plugins/pj-lens/tools/xlsx.js";
+import { pickPython, choosePython, libDir, ensureEnv, readPin } from "../plugins/pj-lens/tools/xlsx.js";
 
 const REPO = fileURLToPath(new URL("../plugins/pj-lens/", import.meta.url));
 const ok = (stdout = "") => ({ status: 0, stdout, stderr: "" });
@@ -25,10 +25,6 @@ const calls_of = () => { const calls = []; return { calls, push: (c, a) => calls
 // -c の import 検査: システム側は系の接頭辞（startswith）、専用フォルダ側は固定した版との一致
 const isSystemCheck = (a) => a[a.length - 2] === "-c" && a[a.length - 1].includes("startswith");
 const isLibCheck = (a) => a[a.length - 2] === "-c" && a[a.length - 1].includes("__version__ ==");
-
-test("libDir: 置き場の下の lib", () => {
-  assert.equal(libDir("/d/x"), join("/d/x", "lib"));
-});
 
 test("ensureEnv: システムの Python に同じ系の openpyxl があれば、承認なしでも何も入れず、システムを使う", () => {
   const calls = [];
@@ -67,29 +63,58 @@ test("ensureEnv: どちらも無く、承認(approve)なしのときは、何も
   assert.ok(calls.every(([, ...a]) => !a.includes("pip")), "承認前は pip を実行しない");
 });
 
-test("ensureEnv: 承認済みなら pip で専用フォルダへ入れる（--require-hashes・--target）。空白を含む置き場も1つの引数のまま", () => {
+test("libDir: 他のものと名前がぶつからない、プラグイン専用の名前", () => {
+  assert.equal(libDir("/d"), join("/d", "pj-lens-pylib"));
+});
+
+test("ensureEnv: 承認済みなら pip で一時フォルダへ入れ（--require-hashes・--target）、成功してから置き場の専用フォルダへ置き換える。空白を含む置き場も1つの引数のまま", () => {
   const dir = join(tmpdir(), "pjl x", "data dir");
   const calls = [];
+  const renamed = [];
   const run = (cmd, args) => { calls.push([cmd, ...args]); return isSystemCheck(args) || isLibCheck(args) ? ng : ok(); };
-  const r = ensureEnv(dir, { run, python: ["py", "-3"], exists: () => false, approve: true, pin: PIN, requirements: "/req uirements.txt" });
+  const r = ensureEnv(dir, { run, python: ["py", "-3"], exists: () => false, approve: true, pin: PIN, requirements: "/req uirements.txt", rename: (a, b) => renamed.push([a, b]) });
   assert.equal(r.ok, true);
   assert.equal(r.source, "lib");
   assert.deepEqual(r.env, { PYTHONPATH: libDir(dir) });
   const install = calls.find((c) => c.includes("install"));
-  assert.deepEqual(install, ["py", "-3", "-m", "pip", "install", "--quiet", "--require-hashes", "--target", libDir(dir), "-r", "/req uirements.txt"]);
+  assert.deepEqual(install, ["py", "-3", "-m", "pip", "install", "--quiet", "--require-hashes", "--target", libDir(dir) + ".tmp", "-r", "/req uirements.txt"]);
+  assert.deepEqual(renamed, [[libDir(dir) + ".tmp", libDir(dir)]]);
   assert.ok(!calls.some((c) => c.includes("venv")), "venv は作らない");
 });
 
-test("ensureEnv: 版のずれた専用フォルダは、消してから入れ直す。消せなければ、消せなかったと案内して ok:false", () => {
-  const removed = [];
-  const run = (c, a) => (isSystemCheck(a) || isLibCheck(a) ? ng : ok());
-  const r = ensureEnv("/d", { run, python: ["python"], exists: () => true, approve: true, pin: PIN, remove: (p) => removed.push(p) });
+test("ensureEnv: 版のずれた古い専用フォルダは、入れ直しに成功したあとで消して置き換える（先には消さない）", () => {
+  const order = [];
+  const run = (c, a) => { if (a.includes("install")) order.push("install"); return isSystemCheck(a) || isLibCheck(a) ? ng : ok(); };
+  const r = ensureEnv("/d", { run, python: ["python"], exists: (p) => p === libDir("/d"), approve: true, pin: PIN, remove: (p) => order.push("remove " + p), rename: (a, b) => order.push("rename") });
   assert.equal(r.ok, true);
-  assert.deepEqual(removed, [libDir("/d")]);
-  const b = ensureEnv("/d", { run, python: ["python"], exists: () => true, approve: true, pin: PIN, remove: () => { throw new Error("EBUSY"); } });
+  assert.deepEqual(order, ["install", "remove " + libDir("/d"), "rename"]);
+});
+
+test("ensureEnv: 入れ直しに失敗したら、既にある専用フォルダは消さず、途中の一時フォルダだけ消す。置き換えに失敗したら案内して ok:false", () => {
+  const removed = [];
+  const failInstall = (c, a) => (a.includes("install") || isSystemCheck(a) || isLibCheck(a) ? ng : ok());
+  const a = ensureEnv("/d", { run: failInstall, python: ["python"], exists: () => true, approve: true, pin: PIN, remove: (p) => removed.push(p) });
+  assert.equal(a.ok, false);
+  assert.ok(!removed.includes(libDir("/d")), "動いていたかもしれない専用フォルダを、失敗で失わない");
+  assert.ok(removed.includes(libDir("/d") + ".tmp"));
+  const run = (c, args) => (isSystemCheck(args) || isLibCheck(args) ? ng : ok());
+  const b = ensureEnv("/d", { run, python: ["python"], exists: () => true, approve: true, pin: PIN, remove: () => {}, rename: () => { throw new Error("EBUSY"); } });
   assert.equal(b.ok, false);
-  assert.match(b.message, /消せませんでした/);
+  assert.match(b.message, /置けませんでした/);
   assert.match(b.message, /EBUSY/);
+});
+
+test("choosePython: 最低版を満たす候補のうち、openpyxl が使える最初のものを選ぶ。どれにも無ければ、最低版を満たす最初の候補", () => {
+  const isProbe = (a) => a[a.length - 1].includes("sys.version_info");
+  const table = (usable) => (c, a) => {
+    if (a.includes("--version")) return ok("Python 3.12.0\n");
+    if (isProbe(a)) return ok("/p/" + c + "\n");
+    return usable.includes(c) && isSystemCheck(a) ? ok() : ng;
+  };
+  assert.deepEqual(choosePython("/d", { run: table(["python"]), pin: PIN, exists: () => false }), ["python"], "py -3 に無く python にあれば、python");
+  assert.deepEqual(choosePython("/d", { run: table([]), pin: PIN, exists: () => false }), ["py", "-3"], "どこにも無ければ最初の候補（入れる先）");
+  const old = (c, a) => (a.includes("--version") ? ok("Python 3.7.9\n") : isProbe(a) ? { status: 4, stdout: "/p/old\n", stderr: "" } : ng);
+  assert.equal(choosePython("/d", { run: old, pin: PIN, exists: () => false }), null, "3.8 未満だけなら null");
 });
 
 test("ensureEnv: 承認済みでも pip が使えない／pip install が失敗したら ok:false（needsApproval でない）で CSV を案内する", () => {
@@ -127,7 +152,7 @@ test("統合: fixtures/wbs-merged.xlsx を読むと結合セルが展開され�
   if (!pickPython(real)) return t.skip("Python 3 が見つかりません");
   const fixture = fileURLToPath(new URL("fixtures/wbs-merged.xlsx", import.meta.url));
   assert.ok(existsSync(fixture), "fixture がありません");
-  const dataDir = join(tmpdir(), "pjlens-test-xlsx"); // 2回目以降は venv を使い回す
+  const dataDir = join(tmpdir(), "pjlens-test-xlsx"); // 2回目以降は入れ済みのものを使い回す
   const r = spawnSync(process.execPath, [join(REPO, "tools/xlsx.js"), "--data", dataDir, fixture, "--yes"], { encoding: "utf8", timeout: 300000 });
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
@@ -150,6 +175,26 @@ test("realRun: 1MB を超える標準出力でも切れずに受け取れる（�
   assert.equal(r.stdout.length, 5 * 1024 * 1024);
 });
 
+test("realRun: 作業フォルダではなく一時フォルダで実行し、PYTHONPATH は利用者の値を消さずに足す", () => {
+  const r = realRun(process.execPath, ["-e", "process.stdout.write(process.cwd() + '|' + process.env.PYTHONPATH)"], { PYTHONPATH: "/added" });
+  assert.equal(r.status, 0, String(r.error));
+  const [cwd, pp] = r.stdout.split("|");
+  assert.notEqual(cwd, process.cwd());
+  assert.ok(pp.startsWith("/added"), pp);
+  if (process.env.PYTHONPATH) assert.ok(pp.includes(process.env.PYTHONPATH));
+});
+
+test("統合: 作業フォルダに置かれた openpyxl.py は、doctor でも実行されない（Python 3 が無い環境だけ skip）", (t) => {
+  const real = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8" });
+  if (!pickPython(real)) return t.skip("Python 3 が見つかりません");
+  const work = mkdtempSync(join(tmpdir(), "pjl-cwd-"));
+  try {
+    writeFileSync(join(work, "openpyxl.py"), ['open("MARK.txt", "w").write("ran")', '__version__ = "3.1.5"', ""].join("\n"));
+    spawnSync(process.execPath, [XLSX_JS, "doctor", "--data", join(work, "home")], { cwd: work, encoding: "utf8", timeout: 120000, env: { ...process.env, PJ_LENS_HOME: "" } });
+    assert.equal(existsSync(join(work, "MARK.txt")), false, "作業フォルダの偽物を実行した");
+  } finally { rmSync(work, { recursive: true, force: true }); }
+});
+
 test("統合: 非表示の行・列は読み取らず、件数を hiddenRows・hiddenColumns で返す", (t) => {
   const real = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8" });
   if (!pickPython(real)) return t.skip("Python 3 が見つかりません");
@@ -166,7 +211,7 @@ test("統合: 非表示の行・列は読み取らず、件数を hiddenRows・h
 });
 
 // --- doctor / setup / 置き場の優先順 (A6・A7・H5) ---
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { after } from "node:test";
 import { diagnose } from "../plugins/pj-lens/tools/xlsx.js";
 

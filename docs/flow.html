@@ -275,7 +275,7 @@
     <div class="n"></div>
     <div class="cell u"><span class="tag ok">承認</span>入れ先・内容（約 20 MB、ネットワークが必要）・使う Python を見て、入れてよいか答える。</div>
     <div class="cell c">出力のメッセージを伝える。まず <code>setup</code> を <code>--yes</code> なしで実行し、表示をあなたに見せて承認を得る。承認なしに <code>--yes</code> を付けない。<small class="src">agents/intake.md wbs 2</small></div>
-    <div class="cell s"><code>setup</code>（<code>--yes</code> なし）: 何も入れず、入れ先・内容・使う Python を表示して終了コード 3。<br><code>setup --yes</code>: <span class="tag write">書き込み</span>設定フォルダの <code>lib</code> に、版とハッシュを固定した Excel 読み取りの部品（<code>openpyxl</code>・<code>defusedxml</code>）を <code>pip --target</code> で入れる（venv は作らない）。<code>lib</code> に版のずれた・壊れたものがあれば、消してから入れ直す。<small class="src">tools/xlsx.js ensureEnv</small></div>
+    <div class="cell s"><code>setup</code>（<code>--yes</code> なし）: 何も入れず、入れ先・内容・使う Python を表示して終了コード 3。<br><code>setup --yes</code>: <span class="tag write">書き込み</span>設定フォルダの <code>pj-lens-pylib</code> に、版とハッシュを固定した Excel 読み取りの部品（<code>openpyxl</code>・<code>defusedxml</code>）を <code>pip --target</code> で入れる（venv は作らない）。一時フォルダへ入れ、成功したときだけ置き換える（版のずれた古いものがあれば、そのあとで消す）。<small class="src">tools/xlsx.js ensureEnv</small></div>
     <div class="n"></div>
     <div class="cell u">承認しない、または Python がない → Excel を CSV で保存し直す。</div>
     <div class="cell c">承認されない、Python がない（3.8 未満）、pip が使えない、部品を入れられない（ネットワーク・プロキシ）→ Excel を CSV に保存してもらい、CSV を自分で読む。<small class="src">agents/intake.md wbs 2 / tools/xlsx.js</small></div>
