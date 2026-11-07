@@ -24,7 +24,7 @@ description: Excel の WBS、予定表の会議、会議のプロジェクト規
    ```
    node "${CLAUDE_PLUGIN_ROOT}/tools/xlsx.js" --data "${CLAUDE_PLUGIN_DATA}" "<ファイル>"
    ```
-   終了コードが 3 のときは、専用環境（Python の venv と openpyxl）が使えない。出力のメッセージを利用者に伝える。環境が無い・版がずれているだけなら、まず次を実行する（`--yes` なしは何も作らず、作成先・内容・作成元の Python を表示して終了コード 3 になる）。
+   終了コードが 3 のときは、Excel を読むための openpyxl が使えない（システムの Python にも専用フォルダにも無い）。出力のメッセージを利用者に伝える。環境が無い・版がずれているだけなら、まず次を実行する（`--yes` なしは何も入れず、入れ先・内容・使う Python を表示して終了コード 3 になる）。
    ```
    node "${CLAUDE_PLUGIN_ROOT}/tools/xlsx.js" setup --data "${CLAUDE_PLUGIN_DATA}"
    ```

@@ -114,6 +114,14 @@ test("A3・A4: README に、ネットワーク接続の依存と、環境の確�
   assert.match(readme, /xlsx\.js" doctor/);
 });
 
+test("Excel 用の Python: README は venv・ensurepip を要件にせず、システムの openpyxl を使うことと専用フォルダ lib を書く", () => {
+  const readme = readFileSync(new URL("README.md", repoRoot), "utf8");
+  assert.doesNotMatch(readme, /ensurepip/);
+  assert.match(readme, /Python 3\.8 以上と pip/);
+  assert.match(readme, /システムの Python に openpyxl/);
+  assert.match(readme, /専用のフォルダ `pj-lens-pylib`/);
+});
+
 // claude コマンドが無ければ skip。Windows の claude.cmd を起動できるよう shell を経由する（引数は固定の文字列だけ）
 const claude = (args, cwd) => spawnSync(`claude ${args}`, { cwd, encoding: "utf8", shell: true, timeout: 120000 });
 for (const [label, args, cwd] of [["プラグイン(--strict)", "plugin validate plugins/pj-lens --strict", repoRoot], ["marketplace", "plugin validate .", repoRoot]]) {

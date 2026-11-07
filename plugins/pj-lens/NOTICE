@@ -14,7 +14,7 @@ pj-lens 自体のライセンスは MIT（リポジトリ直下の LICENSE）。
   出典: 内閣府。利用条件は、内閣府のサイトの利用規約による。
 
 - Excel（.xlsx）を読むための Python パッケージ
-  tools/xlsx.js が、利用者の承認を得たうえで、requirements.txt に固定した版とハッシュで取得する（PyPI）。
+  システムの Python に使える版が無いときだけ、tools/xlsx.js が、利用者の承認を得たうえで、requirements.txt に固定した版とハッシュで、専用フォルダへ取得する（PyPI）。
   - openpyxl 3.1.5: MIT License
   - et_xmlfile 2.0.0: MIT License
   - defusedxml 0.7.1: Python Software Foundation License
