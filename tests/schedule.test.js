@@ -256,3 +256,12 @@ test("syncMcpEvents: 取得で日時が変わった確認済みの会議は未�
   const same = syncMcpEvents(d, [{ externalId: "e1", title: "改題", date: "2026-10-20", start: "09:00", end: "10:00" }], r);
   assert.equal(same.events[0].confirmed, true);
 });
+
+test("syncMcpEvents: 取得に無いだけの「参加しない」の会議は消さない。対象外になった会議（excludedIds）は消す", () => {
+  const d = base([
+    ev("09:00", "10:00", { id: "m1", source: "mcp", externalId: "skipped", skip: true }),
+    ev("10:00", "11:00", { id: "m2", source: "mcp", externalId: "solo", skip: true }),
+  ]);
+  const range = { start: "2026-10-19", end: "2026-10-25" };
+  assert.deepEqual(syncMcpEvents(d, [], range, new Set(["solo"])).events.map((e) => e.id), ["m1"]);
+});

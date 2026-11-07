@@ -458,3 +458,19 @@ test("checkAllChecklist: 全項目を済みにする。newChecklist: 空を除�
   assert.deepEqual(items(checkAllChecklist(d, "A4"), "A4").map((x) => x[2]), [true, true]);
   assert.deepEqual(newChecklist(["a", "", "b"]), [{ id: "c1", text: "a", done: false }, { id: "c2", text: "b", done: false }]);
 });
+
+// ---- コードレビューの指摘（#21 のあと） ----
+test("deleteProject: そのプロジェクトを絞り込みに持つ依頼も外す（残すと検証が不明な projectId で保存を止める）", () => {
+  const d = load();
+  d.inbox = { watching: null, requests: [{ id: "R1", at: "2026-10-20T00:00:00Z", projectId: "C", status: "pending", thread: [{ role: "user", at: "2026-10-20T00:00:00Z", text: "x" }], proposal: null, result: null }] };
+  const del = deleteProject(d, "C").data;
+  assert.equal(del.inbox.requests[0].projectId, null);
+  ok(del);
+});
+
+test("updateTask: すでに Done のタスクに Done を渡しても、元の完了日（doneAt）を保つ", () => {
+  const d = load();
+  const a = updateTask(d, "A5", { status: "Done" }, "2026-10-01");
+  const b = updateTask(a, "A5", { status: "Done" }, TODAY);
+  assert.equal(task(b, "A5").doneAt, "2026-10-01");
+});

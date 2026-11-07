@@ -116,7 +116,10 @@ const opts = {};
 const rest = [];
 for (let i = 0; i < argv.length; i++) {
   const f = /^--(\w+)$/.exec(argv[i])?.[1];
-  if (f === "working") { opts.working = true; } else if (f && FLAGS.includes(f)) { opts[f] = argv[++i]; } else rest.push(argv[i]);
+  if (f === "working") { opts.working = true; } else if (f && FLAGS.includes(f)) {
+    if (i + 1 >= argv.length) { console.error(`--${f} の値がありません`); process.exit(2); }
+    opts[f] = argv[++i];
+  } else rest.push(argv[i]);
 }
 const [cmd, ...args] = rest;
 if (cmd === "wait") {

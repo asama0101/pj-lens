@@ -363,3 +363,12 @@ test("チェックリストの操作: propose → approve で、項目が追加�
   assert.equal(JSON.stringify(w2.json().tasks), tasksBefore, "タスクは不変");
   assert.equal(w2.json().inbox.requests[0].status, "failed", "依頼は失敗になる（もう一度提案してもらう）");
 });
+
+test("値を取るフラグ（--summary など）に値が無いときは、使い方の誤りとして終了コード 2 で止まる。何も書かない", () => {
+  const w = work();
+  const before = readFileSync(w.data, "utf8");
+  const r = run("propose", w.data, "R1", w.put("ops.json", OPS), "--summary");
+  assert.equal(r.status, 2);
+  assert.match(r.err, /--summary の値がありません/);
+  assert.equal(readFileSync(w.data, "utf8"), before);
+});

@@ -108,9 +108,8 @@ export function updateMeeting(data, id, patch) {
   if (cur.source === "manual") { assertTimes(next); next.title = (next.title ?? "").trim() || "会議"; }
   // 日時が変わったら、確認済みは外す(別の時間の会議を、確認したことにしない)。confirmed を明示したときは、その値に従う
   if (!("confirmed" in patch) && cur.confirmed === true && (next.date !== cur.date || next.start !== cur.start || next.end !== cur.end)) next.confirmed = false;
-  let auto = false;
   if ("projectId" in patch) {
-    if (patch.projectId === "" || patch.projectId == null) { delete next.projectBy; next.projectId = null; auto = true; }
+    if (patch.projectId === "" || patch.projectId == null) { delete next.projectBy; next.projectId = null; }
     else {
       if (!(data.projects ?? []).some((p) => p.id === patch.projectId)) throw new Error(`プロジェクト ${patch.projectId} がありません`);
       next.projectId = patch.projectId;
@@ -146,14 +145,14 @@ export function deleteMeeting(data, id) {
   return { ...data, events: data.events.filter((e) => e.id !== id) };
 }
 
-/** 取得結果で、range 内の MCP 由来の会議だけを追加・更新・削除する。skip と手入力の会議は保つ */
-export function syncMcpEvents(data, fetched, range) {
+/** 取得結果で、range 内の MCP 由来の会議だけを追加・更新・削除する。手入力の会議と、取得に無いだけの「参加しない」の会議は保つ。excludedIds は、取り込みの対象外になった externalId（その会議は消す） */
+export function syncMcpEvents(data, fetched, range, excludedIds = new Set()) {
   const inRange = (d) => d >= range.start && d <= range.end;
   fetched = fetched.filter((f, k) => fetched.findIndex((x) => x.externalId === f.externalId) === k); // 同じ externalId は 1 件
   let seq = maxMeetingNo(data.events); // 消えた会議の ID を使い回さない
   const seen = new Set(fetched.map((f) => f.externalId));
   const existing = new Map(data.events.filter((e) => e.source === "mcp").map((e) => [e.externalId, e]));
-  const kept = data.events.filter((e) => e.source !== "mcp" || seen.has(e.externalId) || !inRange(e.date));
+  const kept = data.events.filter((e) => e.source !== "mcp" || (e.skip === true && !excludedIds.has(e.externalId)) || seen.has(e.externalId) || !inRange(e.date)); // 「参加しない」の印は、取得に無いだけなら消さない(対象外になった会議は消える)
   const events = kept.map((e) => {
     const f = e.source === "mcp" ? fetched.find((x) => x.externalId === e.externalId) : null;
     if (!f) return e;

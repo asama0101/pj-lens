@@ -216,3 +216,16 @@ test("apply: 再取り込みで、既存タスクのチェックリストは消�
   const r = rows(); r[0].due = "2026-11-12";
   assert.deepEqual(byKey(run(withCk, r), k).checklist, [{ id: "c1", text: "a", done: true }]);
 });
+
+test("planWbsImport: 開始日が期限より後の行は、新規でも更新でも弾く（取り込み全体は止めない）", () => {
+  const d = empty();
+  const bad = { title: "逆転", start: "2026-12-01", due: "2026-11-15" };
+  const p = planWbsImport(d, "A", [bad, { title: "正常", due: "2026-11-20" }]);
+  assert.deepEqual(p.rejected.map((r) => [r.key, r.reason]), [["逆転", "開始日が期限より後です"]]);
+  assert.equal(p.add.length, 1);
+  const d2 = run(d, [{ title: "既存", start: "2026-11-01", due: "2026-11-30" }]);
+  const p2 = planWbsImport(d2, "A", [{ title: "既存", due: "2026-10-15" }]); // 既存の開始日 11/01 より前の期限
+  assert.equal(p2.rejected.length, 1);
+  assert.equal(p2.update.length, 0);
+  assert.deepEqual(validate(run(d, [bad, { title: "正常", due: "2026-11-20" }])).errors, []);
+});

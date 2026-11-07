@@ -75,7 +75,7 @@ export function updateTask(data, taskId, patch, today = nowLocal().date) {
     if ("status" in patch) {
       if (!TASK_STATUS.includes(patch.status)) throw new Error(`不明な状態です: ${patch.status}`);
       n.status = patch.status;
-      n.doneAt = patch.status === "Done" ? today : null;
+      n.doneAt = patch.status === "Done" ? (t.status === "Done" && t.doneAt ? t.doneAt : today) : null; // すでに Done なら、元の完了日を保つ
     }
     if (n.status === "Waiting") {
       const w = "waitingOn" in patch ? patch.waitingOn : t.waitingOn;
@@ -421,7 +421,7 @@ export function addProject(data, { name, type = "その他" }, today = nowLocal(
 export function deleteProject(data, projectId) {
   if (!data.projects.some((p) => p.id === projectId)) throw new Error(`プロジェクト ${projectId} がありません`);
   const taskCount = data.tasks.filter((t) => t.projectId === projectId).length;
-  // そのプロジェクトを指す会議のひも付け・規則・WBS の対応も消す(ID が再利用されても、別のプロジェクトへ付け替わらないように)
+  // そのプロジェクトを指す会議のひも付け・規則・WBS の対応・依頼の絞り込みも消す(ID が再利用されても、別のプロジェクトへ付け替わらないように)
   const events = (data.events ?? []).map((e) => {
     if (e.projectId !== projectId) return e;
     const { projectBy, ...rest } = e;
@@ -435,5 +435,7 @@ export function deleteProject(data, projectId) {
     if (settings.wbsMappings) settings.wbsMappings = Object.fromEntries(Object.entries(settings.wbsMappings).filter(([k]) => k !== projectId));
     if (settings.wbsImports) settings.wbsImports = Object.fromEntries(Object.entries(settings.wbsImports).filter(([k]) => k !== projectId));
   }
-  return { data: { ...data, settings, events, projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
+  // 依頼(受信箱)の絞り込みも外す(残すと、検証が不明な projectId で保存を止める)
+  const inbox = data.inbox?.requests ? { ...data.inbox, requests: data.inbox.requests.map((r) => (r.projectId === projectId ? { ...r, projectId: null } : r)) } : data.inbox;
+  return { data: { ...data, settings, events, ...(inbox ? { inbox } : {}), projects: data.projects.filter((p) => p.id !== projectId), tasks: data.tasks.filter((t) => t.projectId !== projectId) }, taskCount };
 }
