@@ -15,6 +15,7 @@ xlsx の全シートを JSON（UTF-8）で標準出力へ出す。
 import datetime
 import json
 import sys
+import zipfile
 
 from openpyxl import load_workbook
 from openpyxl.utils import column_index_from_string
@@ -23,6 +24,8 @@ MAX_ROWS = 2000
 # 読む範囲の上限。遠い隅にセルが 1 つあるだけで、範囲が A1:XFD1048576 まで広がり、読み込みが終わらなくなるのを防ぐ（非表示の行・空行を飛ばす余裕を見て、MAX_ROWS より大きくする）
 SCAN_ROWS = 5000
 SCAN_COLS = 200
+# 展開後の合計サイズの上限。openpyxl は読む範囲を絞る前にシート全体をメモリへ読むため、圧縮率の極端なファイル（巨大なシートを小さく固めたもの）を先に断る
+MAX_UNZIPPED = 300 * 1024 * 1024
 
 
 def cell_value(v):
@@ -90,6 +93,9 @@ def sheet_rows(ws):
 
 def main(path):
     sys.stdout.reconfigure(encoding="utf-8")
+    with zipfile.ZipFile(path) as z:
+        if sum(i.file_size for i in z.infolist()) > MAX_UNZIPPED:
+            raise ValueError("展開後のサイズが 300MB を超えます。シートを減らすか、必要な範囲だけを別のファイルに保存してください")
     wb = load_workbook(path, data_only=True)
     sheets = []
     for ws in wb.worksheets:

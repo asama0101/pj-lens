@@ -47,3 +47,26 @@ test("renameWithRetry: 最初に成功すれば待たない。3 回とも失敗�
   assert.throws(() => renameWithRetry("a", "b", () => { calls++; throw new Error(`失敗${calls}`); }, () => {}), /失敗3/);
   assert.equal(calls, 3);
 });
+
+// ---- 読んでから書くまでの間の、他の更新 ----
+import { readJson } from "../plugins/pj-lens/tools/cli.js";
+
+test("save: readJson のあとに他がファイルを書き換えていたら、上書きせず例外にする。読み直せば保存できる", () => {
+  const path = join(dir, "race.json");
+  writeFileSync(path, JSON.stringify(empty));
+  const mine = readJson(path);
+  const theirs = { ...empty, settings: { other: 1 } };
+  writeFileSync(path, JSON.stringify(theirs, null, 2) + "\n"); // 他の更新（サイズが変わる）
+  assert.throws(() => save(path, { ...mine, settings: { mine: 1 } }), /他で更新されました/);
+  assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), theirs, "他の更新が残る");
+  save(path, { ...readJson(path), settings: { other: 1, mine: 1 } });
+  assert.deepEqual(JSON.parse(readFileSync(path, "utf8")).settings, { other: 1, mine: 1 });
+});
+
+test("save: 自分が保存したあとは、続けて保存できる（readJson を挟まなくてよい）", () => {
+  const path = join(dir, "twice.json");
+  writeFileSync(path, JSON.stringify(empty));
+  const d = readJson(path);
+  save(path, d);
+  save(path, { ...d, settings: { a: 1 } });
+});
