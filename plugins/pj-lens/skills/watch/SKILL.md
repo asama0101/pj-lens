@@ -1,7 +1,7 @@
 ---
 name: watch
 description: HTML の「Claude Code に依頼する」から届く依頼を、見張って処理する。見張っている間、予定表の会議も最新に保つ。HTML に「Claude Code が見ています」と出る。
-allowed-tools: 'Bash(node "${CLAUDE_PLUGIN_ROOT}/tools/inbox.js" *) Bash(node "${CLAUDE_PLUGIN_ROOT}/tools/holidays.js" ensure *)'
+allowed-tools: 'Bash(node "${CLAUDE_PLUGIN_ROOT}/tools/inbox.js" wait *) Bash(node "${CLAUDE_PLUGIN_ROOT}/tools/inbox.js" get *) Bash(node "${CLAUDE_PLUGIN_ROOT}/tools/inbox.js" approve *) Bash(node "${CLAUDE_PLUGIN_ROOT}/tools/inbox.js" reject *) Bash(node "${CLAUDE_PLUGIN_ROOT}/tools/holidays.js" ensure *)'
 disable-model-invocation: true
 ---
 

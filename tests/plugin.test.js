@@ -37,7 +37,7 @@ test("配布に必要なファイルが git に入っている（.gitignore で�
   if (r.status !== 0) return t.skip("git で調べられません");
   const tracked = new Set(r.stdout.split(/\r?\n/).map((f) => f.replace(/^plugins\/pj-lens\//, "")));
   const need = [
-    ".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "assets/pj-lens.html", "data/sample.json", "tools/init.js",
+    ".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "NOTICE", "assets/pj-lens.html", "data/sample.json", "tools/init.js",
     "tools/intake.js", "tools/inbox.js", "tools/validate.js", "tools/holidays.js", "tools/mcpconf.js", "tools/xlsx.js", "tools/xlsx_dump.py", "tools/home.js", "tools/cli.js",
     ...["init", "intake", "mcp", "watch"].map((n) => `skills/${n}/SKILL.md`),
     ...["intake", "inbox"].map((n) => `agents/${n}.md`),
@@ -90,6 +90,28 @@ test("SKILL.md・agents に、相対リンク・ハードコードした絶対�
     assert.doesNotMatch(text, /[A-Za-z]:[\/]+Users[\/]/i, `${p}: 絶対パス`);
     assert.doesNotMatch(text, /\$\{CLAUDE_SKILL_DIR\}/, `${p}: CLAUDE_SKILL_DIR`);
   }
+});
+
+test("E1-4: SKILL.md・agents の地の文に、${CLAUDE_PLUGIN_ROOT} なしの相対パス（tools/・assets/・data/）がない", () => {
+  for (const { p, text } of docs()) {
+    // ${CLAUDE_PLUGIN_ROOT}/ の直後のパスと、.pj-lens/data.json（利用者のデータ）は除く
+    const bare = text.replace(/\$\{CLAUDE_PLUGIN_ROOT\}\/\S*/g, "").replace(/\.pj-lens\/data\.json/g, "");
+    assert.doesNotMatch(bare, /(^|[^\w.\/-])(tools|assets|data)\/[\w*.-]+/m, `${p}: 地の文の相対パス`);
+  }
+});
+
+test("C1: NOTICE があり、git 管理下で、取得する外部依存の出典を書いている", (t) => {
+  const notice = readFileSync(new URL("NOTICE", root), "utf8");
+  for (const w of ["openpyxl", "et_xmlfile", "defusedxml", "syukujitsu.csv", "MIT", "同梱している外部のコード・文書"]) assert.ok(notice.includes(w), w);
+  const r = spawnSync("git", ["ls-files", "plugins/pj-lens/NOTICE"], { cwd: fileURLToPath(repoRoot), encoding: "utf8" });
+  if (r.status !== 0) return t.skip("git で調べられません");
+  assert.match(r.stdout, /NOTICE/);
+});
+
+test("A3・A4: README に、ネットワーク接続の依存と、環境の確認（doctor）の呼び出し方を書いている", () => {
+  const readme = readFileSync(new URL("README.md", repoRoot), "utf8");
+  assert.match(readme, /ネットワーク/);
+  assert.match(readme, /xlsx\.js" doctor/);
 });
 
 // claude コマンドが無ければ skip。Windows の claude.cmd を起動できるよう shell を経由する（引数は固定の文字列だけ）
