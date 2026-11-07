@@ -92,6 +92,8 @@ export function planWbsImport(data, projectId, rows) {
     if (predKeys) row.predecessorKeys = predKeys;
 
     const cur = existing.get(key) ?? adopt;
+    const due = row.due ?? cur?.due ?? null, start = row.start !== undefined ? row.start : (cur?.start ?? null);
+    if (start && due && start > due) { plan.rejected.push({ index, key, reason: "開始日が期限より後です" }); continue; }
     if (!cur) { plan.add.push({ key, row }); continue; }
     const before = {}, after = {};
     if (adopt) { before.wbsKey = null; after.wbsKey = key; }
@@ -111,8 +113,10 @@ export function planWbsImport(data, projectId, rows) {
   return plan;
 }
 
-/** plan を適用したデータを返す。変更が無ければ data をそのまま返す。検証エラーのときは例外（データは返らない） */
-/** source: 取り込んだファイル名（パスなし。分からなければ省略）。追加か更新があったときだけ、プロジェクトごとの取り込み記録（最後の 1 件）を settings.wbsImports に書く */
+/**
+ * plan を適用したデータを返す。変更が無ければ data をそのまま返す。検証エラーのときは例外（データは返らない）。
+ * source: 取り込んだファイル名（パスなし。分からなければ省略）。追加か更新があったときだけ、プロジェクトごとの取り込み記録（最後の 1 件）を settings.wbsImports に書く
+ */
 export function applyWbsImport(data, projectId, plan, { today, source = null }) {
   if (!plan.add.length && !plan.update.length) return data;
   let d = data;

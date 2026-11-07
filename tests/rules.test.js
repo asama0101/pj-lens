@@ -103,3 +103,8 @@ test("moveProjectRule: 入れ替えると、両方に当たる rule の会議は
   assert.deepEqual([get(moved, "m1").projectId, get(moved, "m1").projectBy], ["B", "rule"]);
   assert.deepEqual([get(moved, "m2").projectId, get(moved, "m2").projectBy], ["C", "manual"]);
 });
+
+test("assignMeetingProjects: projectBy が null で projectId のある会議は、手で書かれたものとして変えない", () => {
+  const d = data([ev("m1", "無関係", { projectId: "A", projectBy: null })], R);
+  assert.equal(assignMeetingProjects(d).events[0].projectId, "A");
+});

@@ -17,10 +17,10 @@ export function assignMeetingProjects(data) {
   const rules = (data.settings?.projectRules ?? []).filter((r) => ids.has(r.projectId));
   const events = (data.events ?? []).map((e) => {
     // 手動、または projectBy の無い projectId（手で書かれたもの）は変えない
-    if (e.projectBy === "manual" || (e.projectBy === undefined && e.projectId)) return e;
+    if (e.projectBy === "manual" || (e.projectBy == null && e.projectId)) return e;
     const m = matchProject(e.title, rules);
     if (m) return e.projectId === m && e.projectBy === "rule" ? e : { ...e, projectId: m, projectBy: "rule" };
-    if (e.projectBy === undefined) return e;
+    if (e.projectBy == null) return e;
     const { projectBy, ...rest } = e;
     void projectBy;
     return { ...rest, projectId: null };

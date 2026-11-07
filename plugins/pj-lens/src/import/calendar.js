@@ -30,7 +30,7 @@ export function excludeSolo(fetched, cfg = {}) {
 /** fetched = {externalId, title, date, start, end, attendees?}[]、range = {start, end}、cfg = {selfEmails, selfNames, roomKeywords}（excludeSolo を参照）。data は変えない */
 export function planCalendarSync(data, fetched, range, cfg) {
   const { kept, excluded, warnings } = excludeSolo(fetched, cfg);
-  const next = assignMeetingProjects(syncMcpEvents(data, kept, range));
+  const next = assignMeetingProjects(syncMcpEvents(data, kept, range, new Set(excluded.map((f) => f.externalId))));
   const before = new Map(data.events.map((e) => [e.id, e]));
   const after = new Map(next.events.map((e) => [e.id, e]));
   return {

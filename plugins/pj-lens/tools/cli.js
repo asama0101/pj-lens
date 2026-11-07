@@ -34,12 +34,13 @@ export function save(path, data) {
   const { errors } = validate(data);
   if (errors.length) throw new Error(errors.join(" / "));
   const key = resolve(path), read = seen.get(key);
-  if (read && read !== stamp(path)) throw new Error("他で更新されました。読み直して、もう一度実行してください");
+  const assertFresh = () => { if (read && read !== stamp(path)) throw new Error("他で更新されました。読み直して、もう一度実行してください"); };
+  assertFresh();
   const text = JSON.stringify(data, null, 2) + "\n";
   const tmp = `${path}.${process.pid}.tmp`;
   try {
     writeFileSync(tmp, text);
-    try { renameWithRetry(tmp, path); } catch { writeFileSync(path, text); }
+    try { renameWithRetry(tmp, path); } catch { assertFresh(); writeFileSync(path, text); } // 待ちの間に他が書いていないかを、その場で書く直前にも確かめる
   } finally {
     try { rmSync(tmp, { force: true }); } catch { /* 消せなくても、データは書けている */ }
   }
